@@ -901,13 +901,26 @@ async def admin_update_type(request: web.Request) -> web.Response:
 
     now = utcnow()
 
+    # Boolean columns need native types for PostgreSQL
+    bool_columns = {"enabled", "github_enabled", "stack_roles", "is_active"}
+    int_columns = {"default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"}
+
+    def _coerce(key, value):
+        if key in bool_columns:
+            if db.engine == "postgres":
+                return bool(value) if not isinstance(value, bool) else value
+            return int(bool(value))
+        if key in int_columns and value is not None:
+            return int(value) if str(value).strip() else None
+        return str(value)
+
     if existing:
         # Build dynamic UPDATE
         set_parts = []
         params = []
         for key, value in body.items():
             set_parts.append(f"{key}=%s")
-            params.append(str(value))
+            params.append(_coerce(key, value))
         set_parts.append("updated_at=%s")
         params.append(now)
         params.extend([guild_id, wl_type])
@@ -924,7 +937,7 @@ async def admin_update_type(request: web.Request) -> web.Response:
         for key, value in body.items():
             columns.append(key)
             placeholders.append("%s")
-            params.append(str(value))
+            params.append(_coerce(key, value))
         await db.execute(
             f"INSERT INTO whitelist_types ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
             tuple(params),
@@ -962,13 +975,13 @@ async def admin_toggle_type(request: web.Request) -> web.Response:
         await db.execute(
             "UPDATE whitelist_types SET enabled=%s, updated_at=%s "
             "WHERE guild_id=%s AND whitelist_type=%s",
-            (str(new_enabled).lower(), now, guild_id, wl_type),
+            (new_enabled if db.engine == 'postgres' else int(new_enabled), now, guild_id, wl_type),
         )
     else:
         await db.execute(
             "INSERT INTO whitelist_types (guild_id, whitelist_type, enabled, updated_at) "
             "VALUES (%s, %s, %s, %s)",
-            (guild_id, wl_type, str(new_enabled).lower(), now),
+            (guild_id, wl_type, new_enabled if db.engine == 'postgres' else int(new_enabled), now),
         )
 
     log.info("Guild %s: admin toggled type %s -> %s", guild_id, wl_type, new_enabled)
