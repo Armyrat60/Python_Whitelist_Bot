@@ -13,7 +13,11 @@ logging.basicConfig(
 log = logging.getLogger("WhitelistBot")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
-GUILD_ID = int(os.getenv("GUILD_ID", "0") or 0)  # Optional: legacy single-guild mode. Leave as 0 for multi-guild.
+_raw_guild = os.getenv("GUILD_ID", "0") or "0"
+try:
+    GUILD_ID = int(_raw_guild)
+except ValueError:
+    GUILD_ID = 0  # Multi-guild mode (no single-guild override)
 
 DB_ENGINE = os.getenv("DB_ENGINE", "mysql").strip().lower()  # "mysql" or "postgres"
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
