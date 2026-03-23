@@ -1056,9 +1056,9 @@ async def admin_add_role(request: web.Request) -> web.Response:
         return web.json_response({"error": "role_id is required."}, status=400)
 
     try:
-        role_id = str(int(role_id))
+        role_id = int(role_id)
     except (ValueError, TypeError):
-        return web.json_response({"error": "role_id must be a numeric string."}, status=400)
+        return web.json_response({"error": "role_id must be numeric."}, status=400)
 
     try:
         slot_limit = int(slot_limit)
@@ -1097,7 +1097,10 @@ async def admin_delete_role(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     wl_type = request.match_info["type"]
-    role_id = request.match_info["role_id"]
+    try:
+        role_id = int(request.match_info["role_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid role_id."}, status=400)
 
     bot = request.app["bot"]
     db = bot.db
