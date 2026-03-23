@@ -153,10 +153,11 @@ class WebServer:
             ),
         )
 
-        # Jinja2 template setup
+        # Jinja2 template setup with request context processor
         aiohttp_jinja2.setup(
             self.app,
             loader=jinja2.FileSystemLoader(str(BASE_DIR / "templates")),
+            context_processors=[aiohttp_jinja2.request_processor],
         )
 
         # Mount route modules
