@@ -61,11 +61,17 @@ class GeneralCog(commands.Cog):
                 "`/mod_set` \u2014 Replace a user's IDs\n"
                 "`/mod_remove` \u2014 Remove user from active output\n"
                 "`/mod_override` \u2014 Set or clear a slot override\n"
-                "`/report_now` \u2014 Generate an ad-hoc report"
+                "`/search` \u2014 Find a Steam/EOS ID across all whitelists\n"
+                "`/audit` \u2014 View recent audit log entries\n"
+                "`/stats` \u2014 Whitelist statistics overview\n"
+                "`/export` \u2014 Export whitelist data as CSV\n"
+                "`/import_csv` \u2014 Bulk import from CSV file\n"
+                "`/report_now` \u2014 Generate an ad-hoc report\n"
+                "`/reload` \u2014 Hot-reload bot modules"
             ),
             inline=False,
         )
-        embed.set_footer(text="Steam64 and EOSID supported. Output published to GitHub + web server. Deduped before publishing.")
+        embed.set_footer(text="Steam64 and EOSID supported. Output published to GitHub + web server.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="status", description="Show bot status")

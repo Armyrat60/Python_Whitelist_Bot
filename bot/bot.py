@@ -45,7 +45,7 @@ class WhitelistBot(commands.Bot):
                 log.debug("Could not prime web cache on startup")
 
         # Load cog extensions
-        for ext in ("bot.cogs.general", "bot.cogs.setup", "bot.cogs.whitelist", "bot.cogs.modtools", "bot.cogs.admin"):
+        for ext in ("bot.cogs.general", "bot.cogs.setup", "bot.cogs.whitelist", "bot.cogs.modtools", "bot.cogs.admin", "bot.cogs.notifications", "bot.cogs.search", "bot.cogs.audit", "bot.cogs.importexport"):
             await self.load_extension(ext)
 
         # Register persistent views for whitelist panels
