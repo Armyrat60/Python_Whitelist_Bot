@@ -65,6 +65,18 @@ def _get_client_ip(request: web.Request) -> str:
 
 
 @web.middleware
+async def error_logging_middleware(request: web.Request, handler):
+    """Log unhandled exceptions so we can debug 500 errors."""
+    try:
+        return await handler(request)
+    except web.HTTPException:
+        raise  # Let normal HTTP errors pass through
+    except Exception:
+        log.exception("Unhandled error on %s %s", request.method, request.path)
+        raise
+
+
+@web.middleware
 async def security_headers_middleware(request: web.Request, handler):
     """Add security headers to all responses."""
     response = await handler(request)
@@ -73,8 +85,8 @@ async def security_headers_middleware(request: web.Request, handler):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-    # Only set HSTS if we have SSL
-    if SSL_CERT_PATH:
+    # Only set HSTS if we have SSL or behind proxy
+    if SSL_CERT_PATH or WEB_BASE_URL.startswith("https"):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
@@ -115,7 +127,7 @@ class WebServer:
             log.info("WEB_FILE_SECRET not set, generated random token. Set it in .env for stable URLs across restarts.")
 
         self.app = web.Application(
-            middlewares=[security_headers_middleware, rate_limit_middleware],
+            middlewares=[error_logging_middleware, security_headers_middleware, rate_limit_middleware],
         )
 
         # Rate limiter: 60 requests/minute for general, applied globally
