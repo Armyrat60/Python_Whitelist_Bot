@@ -95,8 +95,9 @@ class WhitelistCog(commands.Cog):
     @app_commands.autocomplete(whitelist_type=setup_autocomplete)
     async def my_whitelist(self, interaction: discord.Interaction, whitelist_type: str):
         whitelist_type = whitelist_type.lower()
-        row = await self.bot.db.get_user_record(interaction.user.id, whitelist_type)
-        ids = await self.bot.db.get_identifiers(interaction.user.id, whitelist_type)
+        guild_id = interaction.guild.id
+        row = await self.bot.db.get_user_record(guild_id, interaction.user.id, whitelist_type)
+        ids = await self.bot.db.get_identifiers(guild_id, interaction.user.id, whitelist_type)
         if not row and not ids:
             await interaction.response.send_message("No record found.", ephemeral=True)
             return
@@ -117,7 +118,8 @@ class WhitelistCog(commands.Cog):
         if whitelist_type not in set(WHITELIST_TYPES):
             await interaction.response.send_message("Invalid whitelist type.", ephemeral=True)
             return
-        posted = await self.bot.post_or_refresh_panel(interaction, whitelist_type, interaction.channel)
+        guild_id = interaction.guild.id
+        posted = await self.bot.post_or_refresh_panel(interaction, guild_id, whitelist_type, interaction.channel)
         if posted:
             await interaction.response.send_message(f"Panel ready: https://discord.com/channels/{interaction.guild.id}/{posted.channel.id}/{posted.id}", ephemeral=True)
         else:

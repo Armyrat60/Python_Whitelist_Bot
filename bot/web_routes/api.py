@@ -10,6 +10,25 @@ from aiohttp import web
 from bot.config import WHITELIST_TYPES, STEAM64_RE, EOSID_RE, log
 
 
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+async def _get_active_guild_id(request: web.Request) -> int | None:
+    """Return the active guild_id from the session, or None."""
+    session = await aiohttp_session.get_session(request)
+    raw = session.get("active_guild_id")
+    if raw is None:
+        return None
+    return int(raw)
+
+
+def _find_guild_in_session(guilds: list[dict], guild_id: str) -> dict | None:
+    """Find a guild dict in the session guilds list by id string."""
+    for g in guilds:
+        if g["id"] == guild_id:
+            return g
+    return None
+
+
 # ── Auth decorators ──────────────────────────────────────────────────────────
 
 def require_login(handler: Callable) -> Callable:
@@ -19,21 +38,87 @@ def require_login(handler: Callable) -> Callable:
         session = await aiohttp_session.get_session(request)
         if not session.get("logged_in"):
             return web.json_response({"error": "Authentication required."}, status=401)
+        if not session.get("active_guild_id"):
+            return web.json_response({"error": "No active guild selected."}, status=400)
         return await handler(request)
     return wrapper
 
 
 def require_admin(handler: Callable) -> Callable:
-    """Decorator that checks the user is a mod/admin, returns 403 otherwise."""
+    """Decorator that checks the user is a mod/admin for the ACTIVE guild."""
     @functools.wraps(handler)
     async def wrapper(request: web.Request) -> web.Response:
         session = await aiohttp_session.get_session(request)
         if not session.get("logged_in"):
             return web.json_response({"error": "Authentication required."}, status=401)
-        if not session.get("is_mod"):
-            return web.json_response({"error": "Admin access required."}, status=403)
+        active_guild_id = session.get("active_guild_id")
+        if not active_guild_id:
+            return web.json_response({"error": "No active guild selected."}, status=400)
+        # Check is_mod for the active guild
+        guilds = session.get("guilds", [])
+        active_guild = _find_guild_in_session(guilds, active_guild_id)
+        if not active_guild or not active_guild.get("is_mod"):
+            return web.json_response({"error": "Admin access required for this guild."}, status=403)
         return await handler(request)
     return wrapper
+
+
+# ── Guild API routes ────────────────────────────────────────────────────────
+
+async def get_guilds(request: web.Request) -> web.Response:
+    """Return the user's mutual guilds from session."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        return web.json_response({"error": "Authentication required."}, status=401)
+
+    guilds = session.get("guilds", [])
+    active_guild_id = session.get("active_guild_id")
+
+    return web.json_response({
+        "guilds": guilds,
+        "active_guild_id": active_guild_id,
+    })
+
+
+async def switch_guild(request: web.Request) -> web.Response:
+    """Switch the active guild in the session."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        return web.json_response({"error": "Authentication required."}, status=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    target_guild_id = body.get("guild_id")
+    if not target_guild_id:
+        return web.json_response({"error": "guild_id is required."}, status=400)
+
+    target_guild_id = str(target_guild_id)
+
+    # Verify user has access to this guild
+    guilds = session.get("guilds", [])
+    target_guild = _find_guild_in_session(guilds, target_guild_id)
+    if not target_guild:
+        return web.json_response({"error": "You do not have access to this guild."}, status=403)
+
+    # Update session
+    session["active_guild_id"] = target_guild_id
+    session["is_mod"] = target_guild.get("is_mod", False)
+    session["roles"] = target_guild.get("roles", [])
+
+    log.info(
+        "User %s switched active guild to %s (%s)",
+        session.get("username"), target_guild.get("name"), target_guild_id,
+    )
+
+    return web.json_response({
+        "ok": True,
+        "active_guild_id": target_guild_id,
+        "guild_name": target_guild.get("name"),
+        "is_mod": target_guild.get("is_mod", False),
+    })
 
 
 # ── User API routes ──────────────────────────────────────────────────────────
@@ -47,10 +132,11 @@ async def get_my_whitelist(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
+    guild_id = int(session["active_guild_id"])
     discord_id = int(session["discord_id"])
 
-    user_record = await bot.db.get_user_record(discord_id, wl_type)
-    identifiers = await bot.db.get_identifiers(discord_id, wl_type)
+    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
+    identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_type)
 
     steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
     eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
@@ -81,11 +167,12 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
+    guild_id = int(session["active_guild_id"])
     discord_id = int(session["discord_id"])
     username = session.get("username", "Unknown")
 
     # Check type is enabled
-    type_config = await bot.db.get_type_config(wl_type)
+    type_config = await bot.db.get_type_config(guild_id, wl_type)
     if not type_config or not type_config["enabled"]:
         return web.json_response({"error": "This whitelist type is not enabled."}, status=400)
 
@@ -112,7 +199,7 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         return web.json_response({"error": "Validation failed.", "details": errors}, status=400)
 
     # Check slot limits
-    user_record = await bot.db.get_user_record(discord_id, wl_type)
+    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
     slot_limit = type_config["default_slot_limit"]
     if user_record and user_record[3]:  # effective_slot_limit
         slot_limit = user_record[3]
@@ -138,18 +225,18 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         identifiers.append(("eosid", str(eid), False, "web_dashboard"))
 
     # Save to DB
-    await bot.db.replace_identifiers(discord_id, wl_type, identifiers)
+    await bot.db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
 
     # Ensure user record exists
     if not user_record:
         await bot.db.upsert_user_record(
-            discord_id, wl_type, username, "active",
+            guild_id, discord_id, wl_type, username, "active",
             slot_limit, "web", None,
         )
 
     # Audit
     await bot.db.audit(
-        "web_update_ids", discord_id, discord_id,
+        guild_id, "web_update_ids", discord_id, discord_id,
         f"Updated {wl_type} IDs via web: {len(steam_ids)} steam, {len(eos_ids)} eos",
         wl_type,
     )
@@ -168,19 +255,22 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_stats(request: web.Request) -> web.Response:
-    """Dashboard statistics for admins."""
+    """Dashboard statistics for admins, scoped to the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+
     bot = request.app["bot"]
     db = bot.db
 
     stats = {}
     for wl_type in WHITELIST_TYPES:
         active_row = await db.fetchone(
-            "SELECT COUNT(*) FROM whitelist_users WHERE whitelist_type=%s AND status='active'",
-            (wl_type,),
+            "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'",
+            (guild_id, wl_type),
         )
         id_row = await db.fetchone(
-            "SELECT COUNT(*) FROM whitelist_identifiers WHERE whitelist_type=%s",
-            (wl_type,),
+            "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s",
+            (guild_id, wl_type),
         )
         stats[wl_type] = {
             "active_users": active_row[0] if active_row else 0,
@@ -191,9 +281,10 @@ async def admin_stats(request: web.Request) -> web.Response:
     total_ids = sum(s["total_ids"] for s in stats.values())
 
     audit_row = await db.fetchone(
-        "SELECT COUNT(*) FROM audit_log WHERE created_at >= NOW() - INTERVAL 7 DAY"
+        "SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND created_at >= NOW() - INTERVAL 7 DAY"
         if db.engine != "postgres" else
-        "SELECT COUNT(*) FROM audit_log WHERE created_at >= NOW() - INTERVAL '7 days'"
+        "SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND created_at >= NOW() - INTERVAL '7 days'",
+        (guild_id,),
     )
     recent_audit = audit_row[0] if audit_row else 0
 
@@ -207,7 +298,10 @@ async def admin_stats(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_users(request: web.Request) -> web.Response:
-    """List users with search/filter/pagination."""
+    """List users with search/filter/pagination, scoped to the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+
     bot = request.app["bot"]
     db = bot.db
 
@@ -217,8 +311,8 @@ async def admin_users(request: web.Request) -> web.Response:
     page = max(1, int(request.query.get("page", "1")))
     per_page = min(100, max(1, int(request.query.get("per_page", "25"))))
 
-    conditions = []
-    params = []
+    conditions = ["u.guild_id=%s"]
+    params: list = [guild_id]
 
     if search:
         conditions.append("(u.discord_name LIKE %s OR CAST(u.discord_id AS CHAR) LIKE %s)")
@@ -230,7 +324,7 @@ async def admin_users(request: web.Request) -> web.Response:
         conditions.append("u.status=%s")
         params.append(status)
 
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where = f"WHERE {' AND '.join(conditions)}"
 
     count_row = await db.fetchone(
         f"SELECT COUNT(*) FROM whitelist_users u {where}",
@@ -276,7 +370,10 @@ async def admin_users(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_audit(request: web.Request) -> web.Response:
-    """Audit log with filters and pagination."""
+    """Audit log with filters and pagination, scoped to the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+
     bot = request.app["bot"]
     db = bot.db
 
@@ -285,8 +382,8 @@ async def admin_audit(request: web.Request) -> web.Response:
     page = max(1, int(request.query.get("page", "1")))
     per_page = min(100, max(1, int(request.query.get("per_page", "25"))))
 
-    conditions = []
-    params = []
+    conditions = ["a.guild_id=%s"]
+    params: list = [guild_id]
 
     if wl_type and wl_type in WHITELIST_TYPES:
         conditions.append("a.whitelist_type=%s")
@@ -295,7 +392,7 @@ async def admin_audit(request: web.Request) -> web.Response:
         conditions.append("a.action_type=%s")
         params.append(action)
 
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where = f"WHERE {' AND '.join(conditions)}"
 
     count_row = await db.fetchone(
         f"SELECT COUNT(*) FROM audit_log a {where}",
@@ -340,6 +437,9 @@ async def admin_audit(request: web.Request) -> web.Response:
 
 
 def setup_routes(app: web.Application):
+    # Guild API
+    app.router.add_get("/api/guilds", get_guilds)
+    app.router.add_post("/api/guilds/switch", switch_guild)
     # User API
     app.router.add_get("/api/my-whitelist/{type}", get_my_whitelist)
     app.router.add_post("/api/my-whitelist/{type}", update_my_whitelist)

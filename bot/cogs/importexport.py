@@ -24,6 +24,7 @@ class ImportExportCog(commands.Cog):
         if not await self.bot.require_mod(interaction):
             return
 
+        guild_id = interaction.guild.id
         await interaction.response.defer(ephemeral=True)
 
         if include_inactive:
@@ -32,10 +33,10 @@ class ImportExportCog(commands.Cog):
                 SELECT u.discord_id, u.discord_name, u.status, u.effective_slot_limit,
                        u.last_plan_name, u.updated_at
                 FROM whitelist_users u
-                WHERE u.whitelist_type=%s
+                WHERE u.guild_id=%s AND u.whitelist_type=%s
                 ORDER BY u.discord_name
                 """,
-                (whitelist_type,),
+                (guild_id, whitelist_type,),
             )
         else:
             rows = await self.bot.db.fetchall(
@@ -43,10 +44,10 @@ class ImportExportCog(commands.Cog):
                 SELECT u.discord_id, u.discord_name, u.status, u.effective_slot_limit,
                        u.last_plan_name, u.updated_at
                 FROM whitelist_users u
-                WHERE u.whitelist_type=%s AND u.status='active'
+                WHERE u.guild_id=%s AND u.whitelist_type=%s AND u.status='active'
                 ORDER BY u.discord_name
                 """,
-                (whitelist_type,),
+                (guild_id, whitelist_type,),
             )
 
         output = io.StringIO()
@@ -54,7 +55,7 @@ class ImportExportCog(commands.Cog):
         writer.writerow(["discord_id", "discord_name", "status", "slots", "plan", "updated_at", "steam64_ids", "eos_ids"])
 
         for discord_id, discord_name, status, slots, plan, updated_at in rows:
-            identifiers = await self.bot.db.get_identifiers(int(discord_id), whitelist_type)
+            identifiers = await self.bot.db.get_identifiers(guild_id, int(discord_id), whitelist_type)
             steam_ids = ";".join(v for t, v, *_ in identifiers if t == "steam64")
             eos_ids = ";".join(v for t, v, *_ in identifiers if t == "eosid")
             writer.writerow([str(discord_id), discord_name, status, slots, plan or "", str(updated_at or ""), steam_ids, eos_ids])
@@ -78,6 +79,7 @@ class ImportExportCog(commands.Cog):
             await interaction.response.send_message("File too large. Maximum 5MB.", ephemeral=True)
             return
 
+        guild_id = interaction.guild.id
         await interaction.response.defer(ephemeral=True)
 
         content = (await file.read()).decode("utf-8")
@@ -121,18 +123,18 @@ class ImportExportCog(commands.Cog):
                 # Upsert user and identifiers
                 slots = len(identifiers)
                 await self.bot.db.upsert_user_record(
-                    discord_id, whitelist_type, discord_name, "active",
+                    guild_id, discord_id, whitelist_type, discord_name, "active",
                     slots, "csv_import", None,
                 )
-                await self.bot.db.replace_identifiers(discord_id, whitelist_type, identifiers)
+                await self.bot.db.replace_identifiers(guild_id, discord_id, whitelist_type, identifiers)
                 imported += 1
 
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)[:80]}")
 
         # Sync after import
-        changed = await self.bot.sync_github_outputs()
-        await self.bot.db.audit("bulk_import", interaction.user.id, None, f"type={whitelist_type} imported={imported} skipped={skipped} errors={len(errors)}", whitelist_type)
+        changed = await self.bot.sync_github_outputs(guild_id=guild_id)
+        await self.bot.db.audit(guild_id, "bulk_import", interaction.user.id, None, f"type={whitelist_type} imported={imported} skipped={skipped} errors={len(errors)}", whitelist_type)
 
         msg = f"Import complete.\n**Imported:** {imported}\n**Skipped:** {skipped}\n**Errors:** {len(errors)}\n**Files synced:** {changed}"
         if errors:
@@ -145,24 +147,25 @@ class ImportExportCog(commands.Cog):
         if not await self.bot.require_mod(interaction):
             return
 
+        guild_id = interaction.guild.id
         embed = discord.Embed(title="\U0001f4ca Whitelist Statistics", color=discord.Color.blurple())
 
         total_active = 0
         total_ids = 0
 
         for wt in WHITELIST_TYPES:
-            cfg = await self.bot.db.get_type_config(wt)
+            cfg = await self.bot.db.get_type_config(guild_id, wt)
             if not cfg:
                 continue
 
             active = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_users WHERE whitelist_type=%s AND status='active'", (wt,)
+                "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'", (guild_id, wt,)
             )
             inactive = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_users WHERE whitelist_type=%s AND status<>'active'", (wt,)
+                "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status<>'active'", (guild_id, wt,)
             )
             ids = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_identifiers WHERE whitelist_type=%s", (wt,)
+                "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s", (guild_id, wt,)
             )
 
             active_count = active[0] if active else 0
@@ -186,8 +189,8 @@ class ImportExportCog(commands.Cog):
 
         # Recent activity
         recent = await self.bot.db.fetchone(
-            "SELECT COUNT(*) FROM audit_log WHERE created_at >= %s",
-            (utcnow() - timedelta(days=7),),
+            "SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND created_at >= %s",
+            (guild_id, utcnow() - timedelta(days=7),),
         )
         embed.add_field(
             name="\U0001f4c8 Activity (7 days)",

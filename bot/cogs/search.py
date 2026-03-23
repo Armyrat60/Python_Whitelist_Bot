@@ -14,6 +14,7 @@ class SearchCog(commands.Cog):
         if not await self.bot.require_mod(interaction):
             return
 
+        guild_id = interaction.guild.id
         identifier = identifier.strip()
 
         # Search across all types
@@ -21,11 +22,11 @@ class SearchCog(commands.Cog):
             """
             SELECT i.discord_id, u.discord_name, i.whitelist_type, i.id_type, i.id_value, u.status
             FROM whitelist_identifiers i
-            JOIN whitelist_users u ON u.discord_id = i.discord_id AND u.whitelist_type = i.whitelist_type
-            WHERE i.id_value = %s
+            JOIN whitelist_users u ON u.guild_id = i.guild_id AND u.discord_id = i.discord_id AND u.whitelist_type = i.whitelist_type
+            WHERE i.guild_id = %s AND i.id_value = %s
             ORDER BY i.whitelist_type, u.discord_name
             """,
-            (identifier,),
+            (guild_id, identifier,),
         )
 
         if not rows:
@@ -34,12 +35,12 @@ class SearchCog(commands.Cog):
                 """
                 SELECT i.discord_id, u.discord_name, i.whitelist_type, i.id_type, i.id_value, u.status
                 FROM whitelist_identifiers i
-                JOIN whitelist_users u ON u.discord_id = i.discord_id AND u.whitelist_type = i.whitelist_type
-                WHERE i.id_value LIKE %s
+                JOIN whitelist_users u ON u.guild_id = i.guild_id AND u.discord_id = i.discord_id AND u.whitelist_type = i.whitelist_type
+                WHERE i.guild_id = %s AND i.id_value LIKE %s
                 ORDER BY i.whitelist_type, u.discord_name
                 LIMIT 20
                 """,
-                (f"%{identifier}%",),
+                (guild_id, f"%{identifier}%",),
             )
 
         if not rows:

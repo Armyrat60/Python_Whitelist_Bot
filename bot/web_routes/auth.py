@@ -7,7 +7,7 @@ import aiohttp
 import aiohttp_session
 from aiohttp import web
 
-from bot.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, WEB_BASE_URL, GUILD_ID, log
+from bot.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, WEB_BASE_URL, log
 
 DISCORD_API = "https://discord.com/api/v10"
 OAUTH2_SCOPES = "identify guilds guilds.members.read"
@@ -31,7 +31,7 @@ async def login(request: web.Request) -> web.Response:
 
 
 async def callback(request: web.Request) -> web.Response:
-    """Exchange the OAuth2 code for a token, fetch user info, create session."""
+    """Exchange the OAuth2 code for a token, fetch user info, determine mutual guilds."""
     session = await aiohttp_session.get_session(request)
 
     # CSRF check
@@ -68,35 +68,86 @@ async def callback(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="Failed to fetch user info.")
             user_data = await resp.json()
 
-        # Fetch guild member info for role checking
-        member_roles = []
-        try:
-            async with http.get(
-                f"{DISCORD_API}/users/@me/guilds/{GUILD_ID}/member",
-                headers=headers,
-            ) as resp:
-                if resp.status == 200:
-                    member_data = await resp.json()
-                    member_roles = member_data.get("roles", [])
-        except Exception:
-            log.warning("Could not fetch guild member data for user %s", user_data.get("id"))
+        # Fetch user's guilds from Discord
+        async with http.get(f"{DISCORD_API}/users/@me/guilds", headers=headers) as resp:
+            if resp.status != 200:
+                log.warning("Could not fetch user guilds: %s", await resp.text())
+                user_guilds_list = []
+            else:
+                user_guilds_list = await resp.json()
 
-    # Check if user has mod role
-    bot = request.app["bot"]
-    mod_role_id_str = await bot.db.get_setting("mod_role_id", "0")
-    mod_role_id = int(mod_role_id_str) if mod_role_id_str else 0
-    is_mod = str(mod_role_id) in member_roles if mod_role_id else False
+        # Build set of user's guild IDs
+        user_guild_ids = {int(g["id"]) for g in user_guilds_list}
+        user_guilds_by_id = {int(g["id"]): g for g in user_guilds_list}
+
+        # Intersect with bot's guilds
+        bot = request.app["bot"]
+        bot_guild_ids = {g.id for g in bot.guilds}
+        mutual_guild_ids = user_guild_ids & bot_guild_ids
+
+        # For each mutual guild, check if user has mod role and gather info
+        guilds_info = []
+        for gid in mutual_guild_ids:
+            user_guild_data = user_guilds_by_id.get(gid, {})
+            discord_guild = bot.get_guild(gid)
+            guild_name = discord_guild.name if discord_guild else user_guild_data.get("name", "Unknown")
+            guild_icon = None
+            if discord_guild and discord_guild.icon:
+                guild_icon = str(discord_guild.icon.url)
+            elif user_guild_data.get("icon"):
+                guild_icon = f"https://cdn.discordapp.com/icons/{gid}/{user_guild_data['icon']}.png"
+
+            # Fetch member roles for this guild
+            member_roles = []
+            try:
+                async with http.get(
+                    f"{DISCORD_API}/users/@me/guilds/{gid}/member",
+                    headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        member_data = await resp.json()
+                        member_roles = member_data.get("roles", [])
+            except Exception:
+                log.warning("Could not fetch guild member data for user %s in guild %s", user_data.get("id"), gid)
+
+            # Check if user has mod role for this guild
+            mod_role_id_str = await bot.db.get_setting(gid, "mod_role_id", "0")
+            mod_role_id = int(mod_role_id_str) if mod_role_id_str else 0
+            is_mod = str(mod_role_id) in member_roles if mod_role_id else False
+
+            guilds_info.append({
+                "id": str(gid),
+                "name": guild_name,
+                "icon": guild_icon,
+                "is_mod": is_mod,
+                "roles": member_roles,
+            })
+
+    # Sort guilds by name for consistent display
+    guilds_info.sort(key=lambda g: g["name"].lower())
+
+    # Pick first mutual guild as active (or None if no mutual guilds)
+    active_guild_id = guilds_info[0]["id"] if guilds_info else None
 
     # Store session data
     session["discord_id"] = user_data["id"]
     session["username"] = user_data.get("username", "")
     session["discriminator"] = user_data.get("discriminator", "0")
     session["avatar"] = user_data.get("avatar", "")
-    session["roles"] = member_roles
-    session["is_mod"] = is_mod
+    session["guilds"] = guilds_info
+    session["active_guild_id"] = active_guild_id
     session["logged_in"] = True
 
-    log.info("User %s (%s) logged in via OAuth2, is_mod=%s", user_data.get("username"), user_data["id"], is_mod)
+    # Compute is_mod for the active guild (convenience for templates)
+    active_guild = next((g for g in guilds_info if g["id"] == active_guild_id), None)
+    session["is_mod"] = active_guild["is_mod"] if active_guild else False
+    session["roles"] = active_guild["roles"] if active_guild else []
+
+    log.info(
+        "User %s (%s) logged in via OAuth2, mutual guilds=%d, active_guild=%s, is_mod=%s",
+        user_data.get("username"), user_data["id"],
+        len(guilds_info), active_guild_id, session["is_mod"],
+    )
     raise web.HTTPFound("/dashboard")
 
 

@@ -83,8 +83,9 @@ class GeneralCog(commands.Cog):
     async def resync_whitelist(self, interaction: discord.Interaction):
         if not await self.bot.require_mod(interaction):
             return
-        changed = await self.bot.sync_github_outputs()
-        await self.bot.db.audit("manual_resync", interaction.user.id, None, f"changed_files={changed}")
+        guild_id = interaction.guild.id
+        changed = await self.bot.sync_github_outputs(guild_id=guild_id)
+        await self.bot.db.audit(guild_id, "manual_resync", interaction.user.id, None, f"changed_files={changed}")
         await interaction.response.send_message(f"GitHub sync complete. Changed files: {changed}", ephemeral=True)
 
     @app_commands.command(name="report_now", description="Send a report immediately")
@@ -92,8 +93,9 @@ class GeneralCog(commands.Cog):
     async def report_now(self, interaction: discord.Interaction, whitelist_type: str):
         if not await self.bot.require_mod(interaction):
             return
-        active = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE whitelist_type=%s AND status='active'", (whitelist_type,))
-        ids = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE whitelist_type=%s", (whitelist_type,))
+        guild_id = interaction.guild.id
+        active = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'", (guild_id, whitelist_type,))
+        ids = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s", (guild_id, whitelist_type,))
         await interaction.response.send_message(f"{whitelist_type.title()} report\nActive users: {active[0]}\nIdentifiers: {ids[0]}", ephemeral=True)
 
 

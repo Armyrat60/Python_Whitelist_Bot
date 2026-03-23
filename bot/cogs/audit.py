@@ -28,10 +28,11 @@ class AuditCog(commands.Cog):
         if not await self.bot.require_mod(interaction):
             return
 
+        guild_id = interaction.guild.id
         count = min(max(1, count), 25)
 
-        conditions = []
-        params = []
+        conditions = ["a.guild_id=%s"]
+        params = [guild_id]
 
         if whitelist_type != "all" and whitelist_type in WHITELIST_TYPES:
             conditions.append("a.whitelist_type=%s")
@@ -41,7 +42,7 @@ class AuditCog(commands.Cog):
             conditions.append("(a.actor_discord_id=%s OR a.target_discord_id=%s)")
             params.extend([user.id, user.id])
 
-        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        where = f"WHERE {' AND '.join(conditions)}"
         params.append(count)
 
         rows = await self.bot.db.fetchall(

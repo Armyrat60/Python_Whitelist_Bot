@@ -22,14 +22,29 @@ async def dashboard(request: web.Request) -> web.Response:
     if not session.get("logged_in"):
         raise web.HTTPFound("/login")
 
+    # If no active guild, redirect to guild selector or show message
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+
+    if not active_guild_id or not guilds:
+        context = {
+            "session": dict(session),
+            "guilds": guilds,
+            "no_guilds": True,
+        }
+        return aiohttp_jinja2.render_template("dashboard.html", request, context)
+
+    guild_id = int(active_guild_id)
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
     bot = request.app["bot"]
     discord_id = int(session["discord_id"])
 
     whitelist_data = {}
     for wl_type in WHITELIST_TYPES:
-        type_config = await bot.db.get_type_config(wl_type)
-        user_record = await bot.db.get_user_record(discord_id, wl_type)
-        identifiers = await bot.db.get_identifiers(discord_id, wl_type)
+        type_config = await bot.db.get_type_config(guild_id, wl_type)
+        user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
+        identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_type)
 
         steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
         eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
@@ -57,6 +72,9 @@ async def dashboard(request: web.Request) -> web.Response:
         "session": dict(session),
         "whitelist_data": whitelist_data,
         "whitelist_types": WHITELIST_TYPES,
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
     }
     return aiohttp_jinja2.render_template("dashboard.html", request, context)
 
@@ -66,9 +84,20 @@ async def admin_page(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     if not session.get("logged_in"):
         raise web.HTTPFound("/login")
-    if not session.get("is_mod"):
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    if not active_guild or not active_guild.get("is_mod"):
         raise web.HTTPForbidden(text="Access denied.")
-    context = {"session": dict(session)}
+
+    context = {
+        "session": dict(session),
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
     return aiohttp_jinja2.render_template("admin.html", request, context)
 
 
@@ -77,9 +106,21 @@ async def admin_users_page(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     if not session.get("logged_in"):
         raise web.HTTPFound("/login")
-    if not session.get("is_mod"):
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    if not active_guild or not active_guild.get("is_mod"):
         raise web.HTTPForbidden(text="Access denied.")
-    context = {"session": dict(session), "whitelist_types": WHITELIST_TYPES}
+
+    context = {
+        "session": dict(session),
+        "whitelist_types": WHITELIST_TYPES,
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
     return aiohttp_jinja2.render_template("admin_users.html", request, context)
 
 
@@ -88,9 +129,21 @@ async def admin_audit_page(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     if not session.get("logged_in"):
         raise web.HTTPFound("/login")
-    if not session.get("is_mod"):
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    if not active_guild or not active_guild.get("is_mod"):
         raise web.HTTPForbidden(text="Access denied.")
-    context = {"session": dict(session), "whitelist_types": WHITELIST_TYPES}
+
+    context = {
+        "session": dict(session),
+        "whitelist_types": WHITELIST_TYPES,
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
     return aiohttp_jinja2.render_template("admin_audit.html", request, context)
 
 

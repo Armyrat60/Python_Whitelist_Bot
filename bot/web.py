@@ -17,7 +17,7 @@ import jinja2
 
 from bot.config import (
     WEB_HOST, WEB_PORT, SSL_CERT_PATH, SSL_KEY_PATH,
-    WEB_DISK_PATH, WEB_SESSION_SECRET, WEB_FILE_SECRET, log,
+    WEB_DISK_PATH, WEB_SESSION_SECRET, WEB_FILE_SECRET, WEB_BASE_URL, log,
 )
 from bot.web_routes import auth, dashboard, api
 
@@ -152,7 +152,7 @@ class WebServer:
 
         # Whitelist file routes with secret token path
         # URL format: /wl/{token}/{filename}
-        # The token is derived from file secret, making URLs unguessable
+        # The token is derived from guild_id + file secret, making URLs unguessable
         self.app.router.add_get("/wl/{token}/{filename}", self._handle_file)
 
         # Static file serving
@@ -161,17 +161,20 @@ class WebServer:
             self.app.router.add_static("/static", str(static_dir), name="static")
 
         self.runner: Optional[web.AppRunner] = None
-        self._cache: dict[str, str] = {}
 
-    def get_file_token(self) -> str:
-        """Get the secret token used in whitelist file URLs."""
-        from bot.config import GUILD_ID
-        return generate_file_token(str(GUILD_ID or "default"), self._file_secret)
+        # Per-guild file cache: {guild_id: {filename: content}}
+        self._cache: dict[int, dict[str, str]] = {}
 
-    def get_file_url(self, filename: str) -> str:
+        # Reverse mapping: {token: guild_id} for fast lookup in _handle_file
+        self._token_to_guild: dict[str, int] = {}
+
+    def get_file_token(self, guild_id: int) -> str:
+        """Get the secret token used in whitelist file URLs for a specific guild."""
+        return generate_file_token(str(guild_id), self._file_secret)
+
+    def get_file_url(self, guild_id: int, filename: str) -> str:
         """Get the full URL for a whitelist file (for display in setup/status)."""
-        from bot.config import WEB_BASE_URL
-        token = self.get_file_token()
+        token = self.get_file_token(guild_id)
         base = WEB_BASE_URL or f"http://{WEB_HOST}:{WEB_PORT}"
         return f"{base}/wl/{token}/{filename}"
 
@@ -188,34 +191,50 @@ class WebServer:
         proto = "https" if ssl_ctx else "http"
         log.info("Web server started on %s://%s:%s/", proto, WEB_HOST, WEB_PORT)
 
-        # Log the whitelist file URL so admin knows what to put in Squad config
-        token = self.get_file_token()
-        log.info("Whitelist file URL prefix: /wl/%s/<filename>", token)
+        # Log the whitelist file URL per guild so admin knows what to put in Squad config
+        for guild in self.bot.guilds:
+            token = self.get_file_token(guild.id)
+            log.info("Guild %s (%s) whitelist file URL prefix: /wl/%s/<filename>", guild.name, guild.id, token)
 
     async def stop(self):
         if self.runner:
             await self.runner.cleanup()
 
-    def update_cache(self, outputs: dict[str, str]):
-        self._cache = dict(outputs)
+    def update_cache(self, guild_id: int, outputs: dict[str, str]):
+        """Update the cached whitelist file content for a specific guild."""
+        self._cache[guild_id] = dict(outputs)
+
+        # Update reverse token mapping for this guild
+        token = self.get_file_token(guild_id)
+        self._token_to_guild[token] = guild_id
+
         if WEB_DISK_PATH:
-            disk = Path(WEB_DISK_PATH)
+            disk = Path(WEB_DISK_PATH) / str(guild_id)
             disk.mkdir(parents=True, exist_ok=True)
             for filename, content in outputs.items():
                 (disk / filename).write_text(content, encoding="utf-8")
 
     async def _handle_file(self, request: web.Request) -> web.Response:
-        """Serve whitelist files only if the token matches."""
+        """Serve whitelist files only if the token matches a known guild."""
         token = request.match_info["token"]
         filename = request.match_info["filename"]
 
-        # Validate token
-        expected_token = self.get_file_token()
-        if not hmac.compare_digest(token, expected_token):
-            # Don't reveal whether the file exists — always 404 for wrong token
+        # Look up the guild for this token
+        guild_id = self._token_to_guild.get(token)
+        if guild_id is None:
+            # Token not recognised — don't reveal whether any guild exists
             raise web.HTTPNotFound(text="Not found")
 
-        content = self._cache.get(filename)
+        # Double-check the token is correct (constant-time comparison)
+        expected_token = self.get_file_token(guild_id)
+        if not hmac.compare_digest(token, expected_token):
+            raise web.HTTPNotFound(text="Not found")
+
+        guild_cache = self._cache.get(guild_id)
+        if guild_cache is None:
+            raise web.HTTPNotFound(text="Not found")
+
+        content = guild_cache.get(filename)
         if content is None:
             raise web.HTTPNotFound(text="Not found")
 

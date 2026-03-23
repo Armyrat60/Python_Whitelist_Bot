@@ -20,8 +20,9 @@ class ModToolsView(discord.ui.View):
 
     @discord.ui.button(label="Post / Refresh Panel", style=discord.ButtonStyle.blurple)
     async def panel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = interaction.guild.id
         await interaction.response.defer(ephemeral=True)
-        posted = await self.bot.post_or_refresh_panel(interaction, self.whitelist_type, interaction.channel)
+        posted = await self.bot.post_or_refresh_panel(interaction, guild_id, self.whitelist_type, interaction.channel)
         if posted:
             await interaction.followup.send(f"Panel refreshed in <#{posted.channel.id}>.", ephemeral=True)
         else:
@@ -29,7 +30,8 @@ class ModToolsView(discord.ui.View):
 
     @discord.ui.button(label="Resync GitHub", style=discord.ButtonStyle.green)
     async def resync_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        changed = await self.bot.sync_github_outputs()
+        guild_id = interaction.guild.id
+        changed = await self.bot.sync_github_outputs(guild_id=guild_id)
         await interaction.response.send_message(f"Resync complete. Changed files: {changed}", ephemeral=True)
 
     @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary)
@@ -47,8 +49,9 @@ class ModToolsCog(commands.Cog):
     async def mod_view(self, interaction: discord.Interaction, user: discord.Member, whitelist_type: str):
         if not await self.bot.require_mod(interaction):
             return
-        row = await self.bot.db.get_user_record(user.id, whitelist_type)
-        ids = await self.bot.db.get_identifiers(user.id, whitelist_type)
+        guild_id = interaction.guild.id
+        row = await self.bot.db.get_user_record(guild_id, user.id, whitelist_type)
+        ids = await self.bot.db.get_identifiers(guild_id, user.id, whitelist_type)
         embed = discord.Embed(title=f"{user} | {whitelist_type.title()}", color=discord.Color.blurple())
         if row:
             embed.add_field(name="Status", value=row[1], inline=True)
@@ -63,9 +66,10 @@ class ModToolsCog(commands.Cog):
     async def mod_override(self, interaction: discord.Interaction, user: discord.Member, whitelist_type: str, slots: int):
         if not await self.bot.require_mod(interaction):
             return
+        guild_id = interaction.guild.id
         value = None if slots < 0 else slots
-        await self.bot.db.set_override(user.id, whitelist_type, value)
-        await self.bot.db.audit("mod_override", interaction.user.id, user.id, f"type={whitelist_type} override={value}", whitelist_type)
+        await self.bot.db.set_override(guild_id, user.id, whitelist_type, value)
+        await self.bot.db.audit(guild_id, "mod_override", interaction.user.id, user.id, f"type={whitelist_type} override={value}", whitelist_type)
         await interaction.response.send_message(f"Override updated for {user.mention}: {value}", ephemeral=True)
 
     @app_commands.command(name="mod_remove", description="Moderator: remove a user's whitelist from active output")
@@ -73,9 +77,10 @@ class ModToolsCog(commands.Cog):
     async def mod_remove(self, interaction: discord.Interaction, user: discord.Member, whitelist_type: str):
         if not await self.bot.require_mod(interaction):
             return
-        await self.bot.db.set_user_status(user.id, whitelist_type, "removed_by_staff")
-        await self.bot.db.audit("mod_remove", interaction.user.id, user.id, f"type={whitelist_type}", whitelist_type)
-        await self.bot.sync_github_outputs()
+        guild_id = interaction.guild.id
+        await self.bot.db.set_user_status(guild_id, user.id, whitelist_type, "removed_by_staff")
+        await self.bot.db.audit(guild_id, "mod_remove", interaction.user.id, user.id, f"type={whitelist_type}", whitelist_type)
+        await self.bot.sync_github_outputs(guild_id=guild_id)
         await interaction.response.send_message(f"Removed {user.mention} from active {whitelist_type} output.", ephemeral=True)
 
     @app_commands.command(name="mod_set", description="Moderator: replace a user's IDs")
@@ -83,8 +88,9 @@ class ModToolsCog(commands.Cog):
     async def mod_set(self, interaction: discord.Interaction, user: discord.Member, whitelist_type: str, steam_ids: str = "", eos_ids: str = ""):
         if not await self.bot.require_mod(interaction):
             return
+        guild_id = interaction.guild.id
         member = user
-        slots, plan = await self.bot.calculate_user_slots(member, whitelist_type)
+        slots, plan = await self.bot.calculate_user_slots(guild_id, member, whitelist_type)
         steam_vals = list(dict.fromkeys(token for token in split_identifier_tokens(steam_ids) if token))
         eos_vals = list(dict.fromkeys(token.lower() for token in split_identifier_tokens(eos_ids) if token))
         invalid_steam = [v for v in steam_vals if not validate_identifier("steam64", v)]
@@ -96,10 +102,10 @@ class ModToolsCog(commands.Cog):
         if len(submitted) > slots:
             await interaction.response.send_message(f"Target user only has {slots} slots.", ephemeral=True)
             return
-        await self.bot.db.upsert_user_record(user.id, whitelist_type, str(user), "active", slots, plan)
-        await self.bot.db.replace_identifiers(user.id, whitelist_type, submitted)
-        await self.bot.db.audit("mod_set", interaction.user.id, user.id, f"type={whitelist_type} count={len(submitted)}", whitelist_type)
-        changed = await self.bot.sync_github_outputs()
+        await self.bot.db.upsert_user_record(guild_id, user.id, whitelist_type, str(user), "active", slots, plan)
+        await self.bot.db.replace_identifiers(guild_id, user.id, whitelist_type, submitted)
+        await self.bot.db.audit(guild_id, "mod_set", interaction.user.id, user.id, f"type={whitelist_type} count={len(submitted)}", whitelist_type)
+        changed = await self.bot.sync_github_outputs(guild_id=guild_id)
         await interaction.response.send_message(f"Saved {len(submitted)} IDs for {user.mention}. Changed files: {changed}", ephemeral=True)
 
 async def setup(bot):

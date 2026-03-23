@@ -5,6 +5,139 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Whitelist Bot{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* ── Guild Selector ──────────────────────────────────────────────── */
+        .guild-selector {
+            position: relative;
+            display: flex;
+            align-items: center;
+            margin-right: 16px;
+        }
+        .guild-selector-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.15s, border-color 0.15s;
+            white-space: nowrap;
+        }
+        .guild-selector-btn:hover {
+            background: var(--bg-input);
+            border-color: var(--accent);
+        }
+        .guild-selector-icon {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .guild-selector-icon-placeholder {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .guild-selector-arrow {
+            margin-left: 4px;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+        }
+        .guild-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            min-width: 220px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            padding: 6px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .guild-dropdown.open {
+            display: block;
+        }
+        .guild-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            transition: background 0.1s, color 0.1s;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+        }
+        .guild-dropdown-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .guild-dropdown-item.active {
+            background: var(--accent);
+            color: #fff;
+        }
+        .guild-dropdown-item.active:hover {
+            background: var(--accent-hover);
+        }
+        .guild-dropdown-item-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+        .guild-dropdown-item-placeholder {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .guild-dropdown-item.active .guild-dropdown-item-placeholder {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .guild-dropdown-item-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .guild-dropdown-item-mod {
+            margin-left: auto;
+            font-size: 0.65rem;
+            padding: 1px 5px;
+            border-radius: 3px;
+            background: var(--success);
+            color: #fff;
+            flex-shrink: 0;
+        }
+    </style>
 </head>
 <body>
     <nav class="top-nav">
@@ -16,6 +149,61 @@
         </div>
         <div class="nav-user">
             {% if session and session.logged_in %}
+                {# Guild selector — only show if user has multiple guilds #}
+                {% set guilds = session.guilds | default([]) %}
+                {% set active_guild_id = session.active_guild_id | default('') %}
+                {% if guilds | length > 1 %}
+                <div class="guild-selector" id="guild-selector">
+                    {% set active_g = none %}
+                    {% for g in guilds %}
+                        {% if g.id == active_guild_id %}
+                            {% set _ = namespace() %}
+                            {# Jinja2 workaround for setting in loop #}
+                        {% endif %}
+                    {% endfor %}
+                    <button class="guild-selector-btn" id="guild-selector-btn" type="button">
+                        {% for g in guilds if g.id == active_guild_id %}
+                            {% if g.icon %}
+                                <img class="guild-selector-icon" src="{{ g.icon }}" alt="">
+                            {% else %}
+                                <span class="guild-selector-icon-placeholder">{{ g.name[0] | upper }}</span>
+                            {% endif %}
+                            <span>{{ g.name }}</span>
+                        {% endfor %}
+                        <span class="guild-selector-arrow">&#9660;</span>
+                    </button>
+                    <div class="guild-dropdown" id="guild-dropdown">
+                        {% for g in guilds %}
+                        <button class="guild-dropdown-item {% if g.id == active_guild_id %}active{% endif %}"
+                                data-guild-id="{{ g.id }}" type="button">
+                            {% if g.icon %}
+                                <img class="guild-dropdown-item-icon" src="{{ g.icon }}" alt="">
+                            {% else %}
+                                <span class="guild-dropdown-item-placeholder">{{ g.name[0] | upper }}</span>
+                            {% endif %}
+                            <span class="guild-dropdown-item-name">{{ g.name }}</span>
+                            {% if g.is_mod %}
+                                <span class="guild-dropdown-item-mod">MOD</span>
+                            {% endif %}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% elif guilds | length == 1 %}
+                {# Single guild — just show the name, no dropdown #}
+                {% set g = guilds[0] %}
+                <div class="guild-selector">
+                    <span class="guild-selector-btn" style="cursor: default; border-color: transparent;">
+                        {% if g.icon %}
+                            <img class="guild-selector-icon" src="{{ g.icon }}" alt="">
+                        {% else %}
+                            <span class="guild-selector-icon-placeholder">{{ g.name[0] | upper }}</span>
+                        {% endif %}
+                        <span>{{ g.name }}</span>
+                    </span>
+                </div>
+                {% endif %}
+
                 {% if session.avatar %}
                     <img class="user-avatar"
                          src="https://cdn.discordapp.com/avatars/{{ session.discord_id }}/{{ session.avatar }}.png?size=32"
@@ -64,5 +252,49 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script>
+    /* Guild selector dropdown logic */
+    (function() {
+        var btn = document.getElementById('guild-selector-btn');
+        var dropdown = document.getElementById('guild-dropdown');
+        if (!btn || !dropdown) return;
+
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            dropdown.classList.toggle('open');
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!dropdown.contains(e.target) && e.target !== btn) {
+                dropdown.classList.remove('open');
+            }
+        });
+
+        dropdown.querySelectorAll('.guild-dropdown-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                var guildId = this.getAttribute('data-guild-id');
+                if (this.classList.contains('active')) {
+                    dropdown.classList.remove('open');
+                    return;
+                }
+                fetch('/api/guilds/switch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({guild_id: guildId})
+                }).then(function(resp) {
+                    if (resp.ok) {
+                        window.location.reload();
+                    } else {
+                        resp.json().then(function(data) {
+                            alert(data.error || 'Failed to switch guild.');
+                        });
+                    }
+                }).catch(function() {
+                    alert('Network error switching guild.');
+                });
+            });
+        });
+    })();
+    </script>
 </body>
 </html>
