@@ -448,7 +448,7 @@
 <script>
 let channelOptions = [];
 let roleOptions = [];
-const TYPES = ['subscription', 'clan', 'staff'];
+let TYPES = []; // Populated dynamically from API
 
 /* ── Tooltip descriptions for type-level settings ────────────────────── */
 const TOOLTIPS = {
@@ -478,7 +478,13 @@ let settingsData = {};
 function loadSettings() {
     return fetch('/api/admin/settings')
         .then(function(r) { return r.json(); })
-        .then(function(data) { settingsData = data; populateGlobalSettings(data); });
+        .then(function(data) {
+            settingsData = data;
+            // Populate TYPES dynamically from API response
+            var tc = data.type_configs || data.types || {};
+            TYPES = Object.keys(tc);
+            populateGlobalSettings(data);
+        });
 }
 
 function loadChannels() {
@@ -495,11 +501,11 @@ function loadRoles() {
 
 /* ── Global settings ──────────────────────────────────────────────────── */
 function populateGlobalSettings(data) {
-    if (data.output_mode) document.getElementById('output-mode').value = data.output_mode;
-    if (data.combined_filename) document.getElementById('combined-filename').value = data.combined_filename;
-    if (data.retention_days) document.getElementById('retention-period').value = String(data.retention_days);
-    if (data.retention_period) document.getElementById('retention-period').value = String(data.retention_period);
-    if (data.report_frequency) document.getElementById('report-frequency').value = data.report_frequency;
+    var bs = data.bot_settings || data;
+    if (bs.output_mode) document.getElementById('output-mode').value = bs.output_mode;
+    if (bs.combined_filename) document.getElementById('combined-filename').value = bs.combined_filename;
+    if (bs.retention_days) document.getElementById('retention-period').value = String(bs.retention_days);
+    if (bs.report_frequency) document.getElementById('report-frequency').value = bs.report_frequency;
 }
 
 function saveGlobalSettings() {
@@ -689,18 +695,20 @@ function renderTypeCards() {
     var html = '';
 
     TYPES.forEach(function(type) {
-        var cfg = (settingsData.types && settingsData.types[type]) || {};
+        var tc = settingsData.type_configs || settingsData.types || {};
+        var rm = settingsData.role_mappings || {};
+        var cfg = tc[type] || {};
         var enabled = cfg.enabled || false;
-        var panelChannel = cfg.panel_channel || '';
-        var logChannel = cfg.log_channel || '';
+        var panelChannel = String(cfg.panel_channel_id || '');
+        var logChannel = String(cfg.log_channel_id || '');
         var slotLimit = cfg.default_slot_limit || 1;
         var stackRoles = cfg.stack_roles || false;
         var squadGroup = cfg.squad_group || '';
-        var ghFilename = cfg.github_filename || '';
-        var roleMappings = cfg.role_mappings || [];
+        var ghFilename = cfg.output_filename || cfg.github_filename || '';
+        var roleMappings = rm[type] || [];
 
         var stateClass = enabled ? 'type-card-enabled' : 'type-card-disabled';
-        var typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        var typeName = cfg.name || (type.charAt(0).toUpperCase() + type.slice(1));
 
         html += '<div class="card type-card ' + stateClass + '" id="type-card-' + type + '">';
 

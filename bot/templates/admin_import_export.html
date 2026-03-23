@@ -544,20 +544,21 @@ function loadWhitelistTypes() {
     fetch('/api/admin/settings')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            var settings = data.settings || data;
-            var types = settings.whitelist_types || settings.types || [];
+            var tc = data.type_configs || data.types || {};
+            var types = Object.keys(tc);
 
             // Populate import dropdown
             var importSel = document.getElementById('import-type');
             importSel.innerHTML = '';
             if (types.length === 0) {
-                importSel.innerHTML = '<option value="">No types configured</option>';
+                importSel.innerHTML = '<option value="">No whitelist types configured</option>';
             } else {
-                types.forEach(function(t) {
-                    var name = t.name || t.type_name || t;
+                types.forEach(function(slug) {
+                    var cfg = tc[slug] || {};
+                    var displayName = cfg.name || slug;
                     var opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
+                    opt.value = slug;
+                    opt.textContent = displayName;
                     importSel.appendChild(opt);
                 });
             }

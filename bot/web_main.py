@@ -182,11 +182,17 @@ async def start_web():
 
     db = Database()
     await db.connect()
+    await db.init_schema()
     log.info("DB connected")
 
     discord_client = DiscordRESTClient(DISCORD_TOKEN)
     await discord_client.fetch_guilds()
     log.info("Discord REST client initialized, %d guilds cached", len(discord_client.guilds))
+
+    # Seed defaults for all guilds the bot is in
+    for guild in discord_client.guilds:
+        await db.seed_guild_defaults(guild.id)
+    log.info("Guild defaults seeded")
 
     app_obj = WebOnlyApp(db, discord_client)
     web_server = WebServer(app_obj)
