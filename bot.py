@@ -1426,6 +1426,10 @@ class WhitelistBot(commands.Bot):
             self.add_view(self.panel_views[whitelist_type])
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
+            # Clear any stale global commands
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            # Sync guild commands fresh
             self.tree.clear_commands(guild=guild_obj)
             self.tree.copy_global_to(guild=guild_obj)
             synced = await self.tree.sync(guild=guild_obj)
