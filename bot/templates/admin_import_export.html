@@ -439,6 +439,8 @@
                 <div class="step-dot" id="step-dot-3">3</div>
                 <div class="step-line" id="step-line-3"></div>
                 <div class="step-dot" id="step-dot-4">4</div>
+                <div class="step-line" id="step-line-4"></div>
+                <div class="step-dot" id="step-dot-5">5</div>
             </div>
 
             <!-- ── STEP 1: Upload / Paste ──────────────────────────────── -->
@@ -467,7 +469,7 @@
                 <!-- Import Options -->
                 <div class="import-options">
                     <div class="form-group">
-                        <label>Target Whitelist Type</label>
+                        <label>Target List</label>
                         <select class="form-input form-select" id="import-type">
                             <option value="">Loading types...</option>
                         </select>
@@ -519,6 +521,60 @@
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                         Back
                     </button>
+                    <button class="btn btn-primary" id="btn-plan-mapping" onclick="goToPlanMapping()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                        Continue to Plan Mapping
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── STEP 3: Plan Mapping ────────────────────────────────── -->
+            <div class="import-step" id="import-step-3">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 3: Map Plans to Slot Limits</h4>
+                <p class="text-muted" style="font-size:0.85rem; margin-bottom:8px;">
+                    Match each plan found in your data to a role mapping or set a custom slot count.
+                    If a plan matches a configured role, its slot limit will be used automatically.
+                </p>
+
+                <div id="plan-mapping-auto" style="margin-bottom:16px;">
+                    <h5 style="font-size:0.9rem; color:var(--accent); margin-bottom:8px;">Auto-Matched (from role mappings)</h5>
+                    <table class="mapping-table" id="plan-auto-table">
+                        <thead>
+                            <tr><th>Plan Name</th><th>Matched Role</th><th>Slots</th></tr>
+                        </thead>
+                        <tbody id="plan-auto-tbody"></tbody>
+                    </table>
+                    <p class="text-muted" style="font-size:0.8rem;" id="plan-auto-empty">No auto-matches found.</p>
+                </div>
+
+                <div id="plan-mapping-custom">
+                    <h5 style="font-size:0.9rem; color:var(--warning); margin-bottom:8px;">Unmatched Plans (set slot count)</h5>
+                    <table class="mapping-table" id="plan-custom-table">
+                        <thead>
+                            <tr><th>Plan Name</th><th>Count</th><th>Slots</th></tr>
+                        </thead>
+                        <tbody id="plan-custom-tbody"></tbody>
+                    </table>
+                    <p class="text-muted" style="font-size:0.8rem;" id="plan-custom-empty">All plans matched!</p>
+                </div>
+
+                <div id="plan-mapping-discord-verify" style="margin-top:16px; display:none;">
+                    <h5 style="font-size:0.9rem; color:var(--info); margin-bottom:8px;">Discord Role Verification</h5>
+                    <p class="text-muted" style="font-size:0.8rem; margin-bottom:8px;">
+                        These users have Discord IDs. We can verify their current Discord roles to help match plans.
+                    </p>
+                    <button class="btn btn-outline btn-sm" onclick="verifyDiscordRoles()">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        Verify Discord Roles (Optional)
+                    </button>
+                    <div id="discord-verify-results" style="margin-top:8px;"></div>
+                </div>
+
+                <div class="btn-row" style="margin-top:16px;">
+                    <button class="btn btn-outline" onclick="goToStep(2)">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        Back
+                    </button>
                     <button class="btn btn-primary" id="btn-preview-import" onclick="previewImport()">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         Continue to Preview
@@ -526,9 +582,9 @@
                 </div>
             </div>
 
-            <!-- ── STEP 3: Preview ─────────────────────────────────────── -->
-            <div class="import-step" id="import-step-3">
-                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 3: Review Import Preview</h4>
+            <!-- ── STEP 4: Preview ─────────────────────────────────────── -->
+            <div class="import-step" id="import-step-4">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 4: Review Import Preview</h4>
 
                 <div class="preview-container visible" id="import-preview">
                     <div class="preview-header">
@@ -553,7 +609,7 @@
                 </div>
 
                 <div class="btn-row">
-                    <button class="btn btn-outline" onclick="goToStep(2)">
+                    <button class="btn btn-outline" onclick="goToStep(3)">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                         Back
                     </button>
@@ -564,9 +620,9 @@
                 </div>
             </div>
 
-            <!-- ── STEP 4: Import Result ───────────────────────────────── -->
-            <div class="import-step" id="import-step-4">
-                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 4: Import Complete</h4>
+            <!-- ── STEP 5: Import Result ───────────────────────────────── -->
+            <div class="import-step" id="import-step-5">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 5: Import Complete</h4>
 
                 <!-- Progress -->
                 <div class="progress-bar-container visible" id="import-progress">
@@ -722,7 +778,7 @@ function switchTab(tab) {
 
 function goToStep(step) {
     currentStep = step;
-    for (var i = 1; i <= 4; i++) {
+    for (var i = 1; i <= 5; i++) {
         var stepEl = document.getElementById('import-step-' + i);
         if (stepEl) stepEl.classList.toggle('active', i === step);
     }
@@ -730,8 +786,9 @@ function goToStep(step) {
 }
 
 function updateStepIndicator(step) {
-    for (var i = 1; i <= 4; i++) {
+    for (var i = 1; i <= 5; i++) {
         var dot = document.getElementById('step-dot-' + i);
+        if (!dot) continue;
         dot.classList.remove('active', 'done');
         if (i < step) dot.classList.add('done');
         else if (i === step) dot.classList.add('active');
@@ -764,21 +821,25 @@ function loadWhitelistTypes() {
     fetch('/api/admin/settings')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            var tc = data.type_configs || data.types || {};
-            var types = Object.keys(tc);
+            var tc = data.type_configs || {};
+            var slugs = Object.keys(tc);
+
+            // Store role mappings for plan matching during import
+            window._roleMappings = data.role_mappings || {};
 
             // Populate import dropdown
             var importSel = document.getElementById('import-type');
             importSel.innerHTML = '';
-            if (types.length === 0) {
-                importSel.innerHTML = '<option value="">No whitelist types configured</option>';
+            if (slugs.length === 0) {
+                importSel.innerHTML = '<option value="">No lists configured</option>';
             } else {
-                types.forEach(function(slug) {
+                slugs.forEach(function(slug) {
                     var cfg = tc[slug] || {};
                     var displayName = cfg.name || slug;
                     var opt = document.createElement('option');
                     opt.value = slug;
                     opt.textContent = displayName;
+                    if (cfg.is_default) opt.selected = true;
                     importSel.appendChild(opt);
                 });
             }
@@ -786,11 +847,12 @@ function loadWhitelistTypes() {
             // Populate export dropdown
             var exportSel = document.getElementById('export-type');
             exportSel.innerHTML = '<option value="_all">All Combined</option>';
-            types.forEach(function(t) {
-                var name = t.name || t.type_name || t;
+            slugs.forEach(function(slug) {
+                var cfg = tc[slug] || {};
+                var displayName = cfg.name || slug;
                 var opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = name;
+                opt.value = slug;
+                opt.textContent = displayName;
                 exportSel.appendChild(opt);
             });
         })
@@ -854,7 +916,7 @@ function loadHeaders() {
     var pasteText = document.getElementById('import-paste').value.trim();
 
     if (!type) {
-        showFlash('Please select a target whitelist type.', 'error');
+        showFlash('Please select a target list.', 'error');
         return;
     }
     if (!selectedFile && !pasteText) {
@@ -1032,10 +1094,188 @@ function getColumnMap() {
     return map;
 }
 
-/* ── Step 3: Preview Import ───────────────────────────────────────────────── */
+/* ── Step 3: Plan Mapping ─────────────────────────────────────────────────── */
+
+var importPlanMap = {};  // { planName: slotCount }
+
+function goToPlanMapping() {
+    importColumnMap = getColumnMap();
+
+    // Extract unique plan values from the raw data using column mapping
+    var planColumn = null;
+    for (var header in importColumnMap) {
+        if (importColumnMap[header] === 'plan') {
+            planColumn = header;
+            break;
+        }
+    }
+
+    // Parse CSV to find unique plan values and count occurrences
+    var planCounts = {};
+    if (planColumn && importRawData) {
+        var lines = importRawData.trim().split('\n');
+        var headers = lines[0].split(',').map(function(h) { return h.trim().replace(/^"|"$/g, ''); });
+        var planIdx = headers.indexOf(planColumn);
+        if (planIdx >= 0) {
+            for (var i = 1; i < lines.length; i++) {
+                var cols = lines[i].split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
+                var plan = (cols[planIdx] || '').trim();
+                if (plan) {
+                    planCounts[plan] = (planCounts[plan] || 0) + 1;
+                }
+            }
+        }
+    }
+
+    // Get role mappings for the selected whitelist type
+    var type = document.getElementById('import-type').value;
+    var roleMappings = (window._roleMappings || {})[type] || [];
+
+    // Try to auto-match plans to roles (case-insensitive partial match)
+    var autoMatched = {};
+    var unmatched = {};
+    var planNames = Object.keys(planCounts);
+
+    planNames.forEach(function(plan) {
+        var planLower = plan.toLowerCase();
+        var matched = false;
+        for (var i = 0; i < roleMappings.length; i++) {
+            var roleName = roleMappings[i].role_name.toLowerCase();
+            // Match if plan name contains role name or vice versa
+            if (planLower === roleName || roleName.indexOf(planLower) >= 0 || planLower.indexOf(roleName) >= 0) {
+                autoMatched[plan] = { role: roleMappings[i].role_name, slots: roleMappings[i].slot_limit };
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            // Try built-in plan names
+            var builtIn = { 'solo': 1, 'single': 1, 'basic': 1, 'duo': 2, 'double': 2, 'pair': 2,
+                            'trio': 3, 'triple': 3, 'squad': 4, 'quad': 4, 'family': 4 };
+            var slots = builtIn[planLower];
+            if (slots !== undefined) {
+                autoMatched[plan] = { role: 'Built-in: ' + plan, slots: slots };
+            } else {
+                unmatched[plan] = planCounts[plan];
+            }
+        }
+    });
+
+    // Populate auto-matched table
+    var autoTbody = document.getElementById('plan-auto-tbody');
+    autoTbody.innerHTML = '';
+    var autoEmpty = document.getElementById('plan-auto-empty');
+    var autoKeys = Object.keys(autoMatched);
+    autoEmpty.style.display = autoKeys.length ? 'none' : 'block';
+    autoKeys.forEach(function(plan) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td>' + plan + '</td><td>' + autoMatched[plan].role + '</td><td>' + autoMatched[plan].slots + '</td>';
+        autoTbody.appendChild(row);
+        importPlanMap[plan] = autoMatched[plan].slots;
+    });
+
+    // Populate unmatched table with editable slot inputs
+    var customTbody = document.getElementById('plan-custom-tbody');
+    customTbody.innerHTML = '';
+    var customEmpty = document.getElementById('plan-custom-empty');
+    var unmatchedKeys = Object.keys(unmatched);
+    customEmpty.style.display = unmatchedKeys.length ? 'none' : 'block';
+    unmatchedKeys.forEach(function(plan) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td>' + plan + '</td><td>' + unmatched[plan] + '</td>' +
+            '<td><input type="number" class="form-input" value="1" min="1" max="99" ' +
+            'style="width:80px;" data-plan="' + plan + '" onchange="updatePlanSlots(this)"></td>';
+        customTbody.appendChild(row);
+        importPlanMap[plan] = 1;  // Default to 1 slot
+    });
+
+    // Show Discord verify button if we have Discord IDs
+    var hasDiscordIds = false;
+    for (var header in importColumnMap) {
+        if (importColumnMap[header] === 'discord_id') { hasDiscordIds = true; break; }
+    }
+    document.getElementById('plan-mapping-discord-verify').style.display = hasDiscordIds ? 'block' : 'none';
+
+    // If no plan column found, skip to preview
+    if (!planColumn || planNames.length === 0) {
+        previewImport();
+        return;
+    }
+
+    goToStep(3);
+}
+
+function updatePlanSlots(input) {
+    var plan = input.getAttribute('data-plan');
+    importPlanMap[plan] = parseInt(input.value) || 1;
+}
+
+function verifyDiscordRoles() {
+    var type = document.getElementById('import-type').value;
+    var btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Verifying...';
+
+    // Collect Discord IDs from raw data
+    var discordIdColumn = null;
+    for (var header in importColumnMap) {
+        if (importColumnMap[header] === 'discord_id') { discordIdColumn = header; break; }
+    }
+
+    var discordIds = [];
+    if (discordIdColumn && importRawData) {
+        var lines = importRawData.trim().split('\n');
+        var headers = lines[0].split(',').map(function(h) { return h.trim().replace(/^"|"$/g, ''); });
+        var idx = headers.indexOf(discordIdColumn);
+        if (idx >= 0) {
+            for (var i = 1; i < lines.length; i++) {
+                var cols = lines[i].split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
+                var id = (cols[idx] || '').trim();
+                if (id && discordIds.indexOf(id) < 0) discordIds.push(id);
+            }
+        }
+    }
+
+    fetch('/api/admin/verify-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discord_ids: discordIds, whitelist_type: type })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.innerHTML = 'Verify Discord Roles (Optional)';
+
+        var container = document.getElementById('discord-verify-results');
+        if (data.error) {
+            container.innerHTML = '<span style="color:var(--danger);">' + data.error + '</span>';
+            return;
+        }
+
+        var results = data.results || [];
+        if (results.length === 0) {
+            container.innerHTML = '<span class="text-muted">No matching members found in Discord server.</span>';
+            return;
+        }
+
+        var html = '<table class="mapping-table"><thead><tr><th>User</th><th>Discord Roles</th><th>Suggested Plan</th></tr></thead><tbody>';
+        results.forEach(function(r) {
+            html += '<tr><td>' + r.name + '</td><td>' + (r.roles || []).join(', ') + '</td><td>' + (r.suggested_plan || 'None') + ' (' + (r.suggested_slots || 1) + ' slots)</td></tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    })
+    .catch(function() {
+        btn.disabled = false;
+        btn.innerHTML = 'Verify Discord Roles (Optional)';
+        showFlash('Failed to verify Discord roles.', 'error');
+    });
+}
+
+/* ── Step 4: Preview Import ───────────────────────────────────────────────── */
 
 function previewImport() {
-    importColumnMap = getColumnMap();
+    if (!importColumnMap) importColumnMap = getColumnMap();
 
     // Validate: need at least discord_name and steam64 mapped
     var mappedFields = Object.values(importColumnMap);
@@ -1061,7 +1301,8 @@ function previewImport() {
             data: importRawData,
             type: type,
             format: 'csv',
-            column_map: importColumnMap
+            column_map: importColumnMap,
+            plan_map: importPlanMap
         })
     })
     .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
@@ -1073,7 +1314,7 @@ function previewImport() {
 
         previewUsers = result.data.users || [];
         renderPreviewTable(result.data);
-        goToStep(3);
+        goToStep(4);
     })
     .catch(function() {
         showFlash('Network error previewing import.', 'error');
@@ -1111,7 +1352,7 @@ function previewImportDirect() {
             }
             previewUsers = result.data.users || [];
             renderPreviewTable(result.data);
-            goToStep(3);
+            goToStep(4);
         })
         .catch(function() {
             showFlash('Network error previewing import.', 'error');
@@ -1199,7 +1440,7 @@ function renderPreviewTable(data) {
     }
 }
 
-/* ── Step 4: Confirm Import ───────────────────────────────────────────────── */
+/* ── Step 5: Confirm Import ───────────────────────────────────────────────── */
 
 function confirmImport() {
     var type = document.getElementById('import-type').value;
@@ -1210,7 +1451,7 @@ function confirmImport() {
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> Importing...';
 
-    goToStep(4);
+    goToStep(5);
 
     // Show progress bar
     var progressFill = document.getElementById('import-progress-fill');
@@ -1227,6 +1468,9 @@ function confirmImport() {
     };
     if (fmt === 'csv' && Object.keys(importColumnMap).length > 0) {
         body.column_map = importColumnMap;
+    }
+    if (Object.keys(importPlanMap).length > 0) {
+        body.plan_map = importPlanMap;
     }
 
     // For squad_cfg with file, we need to read the file first

@@ -832,8 +832,11 @@ async def admin_get_settings(request: web.Request) -> web.Response:
     for key, default in DEFAULT_SETTINGS.items():
         bot_settings[key] = await db.get_setting(guild_id, key, default)
 
-    # Whitelist type configs from whitelists table
+    # Whitelist type configs from whitelists table (seed defaults if empty)
     whitelists = await db.get_whitelists(guild_id)
+    if not whitelists:
+        await db.seed_guild_defaults(guild_id)
+        whitelists = await db.get_whitelists(guild_id)
     type_configs = {}
     for wl in whitelists:
         type_configs[wl["slug"]] = {
@@ -1441,11 +1444,12 @@ def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: 
 
 
 def _group_rows_by_user(rows: list[dict], default_slot_limit: int,
-                        existing_discord_ids: set[int]) -> list[dict]:
+                        existing_discord_ids: set[int],
+                        plan_map: dict[str, int] | None = None) -> list[dict]:
     """Group parsed rows by Discord ID (or Discord Name if no ID).
 
     Aggregates all Steam IDs and EOS IDs per user. Determines slot_limit
-    from the plan field using PLAN_SLOT_MAP.
+    from plan_map (user-defined), then PLAN_SLOT_MAP (built-in), then default.
     """
     groups: dict[str, dict] = {}  # key -> aggregated user dict
 
@@ -1491,7 +1495,12 @@ def _group_rows_by_user(rows: list[dict], default_slot_limit: int,
     for user in groups.values():
         plan = user["plan"]
         plan_lower = plan.strip().lower() if plan else ""
-        slot_limit = PLAN_SLOT_MAP.get(plan_lower, default_slot_limit)
+        # Check user-provided plan_map first (exact match), then built-in, then default
+        slot_limit = default_slot_limit
+        if plan_map and plan in plan_map:
+            slot_limit = plan_map[plan]
+        elif plan_lower in PLAN_SLOT_MAP:
+            slot_limit = PLAN_SLOT_MAP[plan_lower]
 
         # Determine status
         try:
@@ -1622,12 +1631,14 @@ async def admin_import_preview(request: web.Request) -> web.Response:
     """Step 3: Preview import data grouped by user with column mapping.
 
     Accepts the column_map dict along with data and whitelist type.
-    Returns grouped users with slot_limit derived from plan field.
+    Returns grouped users with slot_limit derived from plan field and optional plan_map.
     """
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
     db = bot.db
+
+    plan_map = None  # Optional: {plan_name: slot_count} from plan mapping step
 
     # Accept multipart or JSON
     content_type = request.content_type or ""
@@ -1662,6 +1673,8 @@ async def admin_import_preview(request: web.Request) -> web.Response:
         column_map_raw = ""
         if "column_map" in body:
             column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
+        if isinstance(body.get("plan_map"), dict):
+            plan_map = {k: int(v) for k, v in body["plan_map"].items()}
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -1696,7 +1709,7 @@ async def admin_import_preview(request: web.Request) -> web.Response:
     existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
 
     default_slot = wl["default_slot_limit"] or 1
-    users = _group_rows_by_user(rows, default_slot, existing_discord_ids)
+    users = _group_rows_by_user(rows, default_slot, existing_discord_ids, plan_map=plan_map)
 
     # Build summary
     total_users = len(users)
@@ -2061,6 +2074,77 @@ async def admin_export(request: web.Request) -> web.Response:
     )
 
 
+@require_admin
+async def admin_verify_roles(request: web.Request) -> web.Response:
+    """Verify Discord roles for a list of Discord IDs and suggest plan mappings."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    discord_ids = body.get("discord_ids", [])
+    wl_type = body.get("whitelist_type", "")
+
+    if not discord_ids:
+        return web.json_response({"error": "No Discord IDs provided."}, status=400)
+
+    # Get role mappings for this whitelist type
+    db = bot.db
+    wl = await _resolve_whitelist(db, guild_id, wl_type)
+    role_mappings = []
+    if wl:
+        rows = await db.fetchall(
+            "SELECT role_id, role_name, slot_limit FROM role_mappings "
+            "WHERE guild_id=%s AND whitelist_id=%s",
+            (guild_id, wl["id"]),
+        )
+        role_mappings = [{"role_id": int(r[0]), "role_name": r[1], "slot_limit": r[2]} for r in (rows or [])]
+
+    # Use Discord REST client to look up member roles
+    results = []
+    rest = getattr(bot, "rest_client", None) or getattr(bot, "http", None)
+
+    for did in discord_ids[:50]:  # Limit to 50 to avoid rate limits
+        try:
+            did_int = int(did)
+            # Try getting member from bot's guild cache or REST
+            member = None
+            if hasattr(bot, "get_guild"):
+                guild = bot.get_guild(guild_id)
+                if guild:
+                    member = guild.get_member(did_int)
+
+            if member:
+                member_roles = [{"id": r.id, "name": r.name} for r in member.roles if r.name != "@everyone"]
+                # Find matching role mapping
+                suggested_plan = None
+                suggested_slots = 1
+                for rm in role_mappings:
+                    for mr in member_roles:
+                        if mr["id"] == rm["role_id"]:
+                            suggested_plan = rm["role_name"]
+                            suggested_slots = rm["slot_limit"]
+                            break
+                    if suggested_plan:
+                        break
+
+                results.append({
+                    "discord_id": str(did_int),
+                    "name": member.display_name,
+                    "roles": [r["name"] for r in member_roles],
+                    "suggested_plan": suggested_plan,
+                    "suggested_slots": suggested_slots,
+                })
+        except (ValueError, TypeError):
+            continue
+
+    return web.json_response({"results": results})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2093,3 +2177,4 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import/preview", admin_import_preview)
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_get("/api/admin/export", admin_export)
+    app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
