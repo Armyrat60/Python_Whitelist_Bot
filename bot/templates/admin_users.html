@@ -1,135 +1,922 @@
 {% extends "base.html" %}
 
-{% block title %}User Management - Squad Whitelister{% endblock %}
+{% block title %}Users - Squad Whitelister{% endblock %}
 
 {% block content %}
+<style>
+    /* ── Action Bar ─────────────────────────────────────────────────── */
+    .action-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .action-bar .form-input {
+        min-width: 180px;
+    }
+    .action-bar .search-input {
+        flex: 1;
+        min-width: 220px;
+    }
+    .action-bar .btn-add {
+        margin-left: auto;
+        white-space: nowrap;
+    }
+
+    /* ── Table enhancements ─────────────────────────────────────────── */
+    .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .data-table th.sortable {
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+    }
+    .data-table th.sortable:hover {
+        color: var(--accent);
+    }
+    .data-table th .sort-arrow {
+        font-size: 0.65rem;
+        margin-left: 4px;
+        opacity: 0.4;
+    }
+    .data-table th.sort-active .sort-arrow {
+        opacity: 1;
+        color: var(--accent);
+    }
+
+    /* Type badges */
+    .badge-subscription { background: var(--accent); color: #fff; }
+    .badge-clan { background: #9b59b6; color: #fff; }
+    .badge-staff { background: var(--warning); color: #1a1a2e; }
+
+    /* Status badges */
+    .badge-active { background: var(--success); color: #fff; }
+    .badge-inactive { background: var(--warning); color: #1a1a2e; }
+    .badge-suspended { background: var(--danger); color: #fff; }
+
+    /* Truncated cells */
+    .cell-truncate {
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: default;
+    }
+    .cell-steam {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: default;
+        font-family: monospace;
+        font-size: 0.8rem;
+    }
+
+    /* Action buttons in table */
+    .action-btns {
+        display: flex;
+        gap: 6px;
+        white-space: nowrap;
+    }
+    .btn-edit {
+        background: transparent;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+    .btn-edit:hover {
+        background: var(--accent);
+        color: #fff;
+    }
+    .btn-delete {
+        background: transparent;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+    .btn-delete:hover {
+        background: var(--danger);
+        color: #fff;
+    }
+
+    /* ── Pagination ──────────────────────────────────────────────────── */
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+    }
+    .pagination .page-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        padding: 5px 11px;
+        border-radius: 4px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .pagination .page-btn:hover {
+        border-color: var(--accent);
+        color: var(--text-primary);
+    }
+    .pagination .page-btn.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+    }
+    .pagination .page-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+    .pagination .page-ellipsis {
+        color: var(--text-muted);
+        padding: 0 4px;
+        font-size: 0.82rem;
+    }
+
+    /* ── Modal ───────────────────────────────────────────────────────── */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-overlay.open {
+        display: flex;
+    }
+    .modal {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        width: 100%;
+        max-width: 560px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        animation: modalIn 0.2s ease-out;
+    }
+    @keyframes modalIn {
+        from { opacity: 0; transform: translateY(20px) scale(0.97); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: var(--text-primary);
+    }
+    .modal-close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 1.4rem;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        transition: color 0.15s;
+    }
+    .modal-close:hover { color: var(--text-primary); }
+    .modal-body {
+        padding: 22px;
+    }
+    .modal-body .form-group {
+        margin-bottom: 16px;
+    }
+    .modal-body .form-group:last-child {
+        margin-bottom: 0;
+    }
+    .modal-body label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+    .modal-body label .label-hint {
+        font-weight: 400;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+    }
+    .modal-body .form-input,
+    .modal-body .form-select,
+    .modal-body textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 12px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.88rem;
+        font-family: inherit;
+        transition: border-color 0.15s;
+    }
+    .modal-body .form-input:focus,
+    .modal-body .form-select:focus,
+    .modal-body textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+    .modal-body textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+    }
+    .btn-cancel {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        padding: 8px 18px;
+        border-radius: 6px;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+    .btn-cancel:hover {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+    .btn-save {
+        background: var(--accent);
+        border: 1px solid var(--accent);
+        color: #fff;
+        padding: 8px 22px;
+        border-radius: 6px;
+        font-size: 0.88rem;
+        cursor: pointer;
+        font-weight: 500;
+        transition: opacity 0.15s;
+    }
+    .btn-save:hover { opacity: 0.9; }
+    .btn-save:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    /* ── Confirm dialog ─────────────────────────────────────────────── */
+    .confirm-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9500;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+        align-items: center;
+        justify-content: center;
+    }
+    .confirm-overlay.open { display: flex; }
+    .confirm-box {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 24px;
+        max-width: 400px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    }
+    .confirm-box h3 {
+        margin: 0 0 8px;
+        color: var(--text-primary);
+        font-size: 1.05rem;
+    }
+    .confirm-box p {
+        margin: 0 0 20px;
+        color: var(--text-secondary);
+        font-size: 0.88rem;
+    }
+    .confirm-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+    }
+    .btn-confirm-danger {
+        background: var(--danger);
+        border: 1px solid var(--danger);
+        color: #fff;
+        padding: 8px 22px;
+        border-radius: 6px;
+        font-size: 0.88rem;
+        cursor: pointer;
+        font-weight: 500;
+        transition: opacity 0.15s;
+    }
+    .btn-confirm-danger:hover { opacity: 0.9; }
+
+    /* ── Responsive ──────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+        .action-bar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .action-bar .btn-add {
+            margin-left: 0;
+        }
+        .action-bar .form-input,
+        .action-bar .form-select {
+            min-width: 0;
+        }
+    }
+</style>
+
 <div class="page-header">
     <h1>User Management</h1>
-    <p class="text-muted">Search and manage whitelisted users.</p>
+    <p class="text-muted">Search, add, edit, and remove whitelisted players.</p>
 </div>
 
+<!-- Action Bar -->
 <div class="card">
     <div class="card-body">
-        <div class="filter-bar">
-            <div class="filter-group">
-                <input type="text" id="user-search" class="form-input" placeholder="Search by username or Discord ID...">
-            </div>
-            <div class="filter-group">
-                <select id="filter-type" class="form-input form-select">
-                    <option value="">All Types</option>
-                    {% for wl_type in whitelist_types %}
-                    <option value="{{ wl_type }}">{{ wl_type | capitalize }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <select id="filter-status" class="form-input form-select">
-                    <option value="">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="removed">Removed</option>
-                </select>
-            </div>
-            <button class="btn btn-primary" id="search-btn">Search</button>
+        <div class="action-bar">
+            <input type="text" id="user-search" class="form-input search-input" placeholder="Search by name or Steam ID...">
+            <select id="filter-type" class="form-input form-select">
+                <option value="">All Types</option>
+                <option value="subscription">Subscription</option>
+                <option value="clan">Clan</option>
+                <option value="staff">Staff</option>
+            </select>
+            <select id="filter-status" class="form-input form-select">
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="suspended">Suspended</option>
+            </select>
+            <button class="btn btn-primary btn-add" id="add-player-btn">+ Add Player</button>
         </div>
     </div>
 </div>
 
+<!-- Users Table -->
 <div class="card">
-    <div class="card-body table-responsive">
-        <table class="data-table" id="users-table">
-            <thead>
-                <tr>
-                    <th>Username</th>
-                    <th>Discord ID</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Slots</th>
-                    <th>Last Updated</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="users-tbody">
-                <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
-            </tbody>
-        </table>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table class="data-table" id="users-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="discord_name">Discord Name <span class="sort-arrow">&#9650;</span></th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Steam IDs</th>
+                        <th class="sortable" data-sort="effective_slot_limit">Slots <span class="sort-arrow">&#9650;</span></th>
+                        <th>Notes</th>
+                        <th class="sortable" data-sort="expires_at">Expires <span class="sort-arrow">&#9650;</span></th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
         <div class="pagination" id="users-pagination"></div>
     </div>
 </div>
 
+<!-- Add Player Modal -->
+<div class="modal-overlay" id="add-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add Player</h2>
+            <button class="modal-close" id="add-modal-close">&times;</button>
+        </div>
+        <form id="add-form" autocomplete="off">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Discord Name <span class="label-hint">(required)</span></label>
+                    <input type="text" name="discord_name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Discord ID <span class="label-hint">(leave blank for non-Discord players)</span></label>
+                    <input type="text" name="discord_id" class="form-input" placeholder="e.g. 123456789012345678">
+                </div>
+                <div class="form-group">
+                    <label>Whitelist Type</label>
+                    <select name="whitelist_type" class="form-input form-select" required>
+                        <option value="subscription">Subscription</option>
+                        <option value="clan">Clan</option>
+                        <option value="staff">Staff</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Steam64 IDs <span class="label-hint">(one per line)</span></label>
+                    <textarea name="steam_ids" class="form-input" rows="3" placeholder="76561198012345678&#10;76561198087654321"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>EOS IDs <span class="label-hint">(one per line, optional)</span></label>
+                    <textarea name="eos_ids" class="form-input" rows="2" placeholder="0002a10186d9453eb9f53c0b optional"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Slot Limit</label>
+                    <input type="number" name="slot_limit" class="form-input" value="1" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label>Notes <span class="label-hint">(optional)</span></label>
+                    <textarea name="notes" class="form-input" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Expires At <span class="label-hint">(optional, leave blank for never)</span></label>
+                    <input type="date" name="expires_at" class="form-input">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" id="add-cancel-btn">Cancel</button>
+                <button type="submit" class="btn-save" id="add-save-btn">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Player Modal -->
+<div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Edit Player</h2>
+            <button class="modal-close" id="edit-modal-close">&times;</button>
+        </div>
+        <form id="edit-form" autocomplete="off">
+            <input type="hidden" name="original_discord_id">
+            <input type="hidden" name="original_type">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Discord Name <span class="label-hint">(required)</span></label>
+                    <input type="text" name="discord_name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Discord ID <span class="label-hint">(leave blank for non-Discord players)</span></label>
+                    <input type="text" name="discord_id" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Whitelist Type</label>
+                    <select name="whitelist_type" class="form-input form-select" required>
+                        <option value="subscription">Subscription</option>
+                        <option value="clan">Clan</option>
+                        <option value="staff">Staff</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status" class="form-input form-select">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="suspended">Suspended</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Steam64 IDs <span class="label-hint">(one per line)</span></label>
+                    <textarea name="steam_ids" class="form-input" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>EOS IDs <span class="label-hint">(one per line, optional)</span></label>
+                    <textarea name="eos_ids" class="form-input" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Slot Limit</label>
+                    <input type="number" name="slot_limit" class="form-input" value="1" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label>Notes <span class="label-hint">(optional)</span></label>
+                    <textarea name="notes" class="form-input" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Expires At <span class="label-hint">(optional, leave blank for never)</span></label>
+                    <input type="date" name="expires_at" class="form-input">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" id="edit-cancel-btn">Cancel</button>
+                <button type="submit" class="btn-save" id="edit-save-btn">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Confirmation -->
+<div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+        <h3>Delete Player</h3>
+        <p id="confirm-message">Are you sure you want to delete this player? This action cannot be undone.</p>
+        <div class="confirm-actions">
+            <button class="btn-cancel" id="confirm-cancel-btn">Cancel</button>
+            <button class="btn-confirm-danger" id="confirm-delete-btn">Delete</button>
+        </div>
+    </div>
+</div>
+
 <script>
+/* ── State ──────────────────────────────────────────────────────────── */
 let currentPage = 1;
 const perPage = 25;
+let currentSort = '';
+let sortDir = 'asc';
+let pendingDelete = null; // {discord_id, type, name}
 
+/* ── Init ───────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
     loadUsers();
-    document.getElementById('search-btn').addEventListener('click', function() {
-        currentPage = 1;
-        loadUsers();
-    });
+
+    // Search and filters
     document.getElementById('user-search').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { currentPage = 1; loadUsers(); }
     });
     document.getElementById('filter-type').addEventListener('change', function() { currentPage = 1; loadUsers(); });
     document.getElementById('filter-status').addEventListener('change', function() { currentPage = 1; loadUsers(); });
+
+    // Add player
+    document.getElementById('add-player-btn').addEventListener('click', openAddModal);
+    document.getElementById('add-modal-close').addEventListener('click', closeAddModal);
+    document.getElementById('add-cancel-btn').addEventListener('click', closeAddModal);
+    document.getElementById('add-form').addEventListener('submit', handleAddSubmit);
+    document.getElementById('add-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeAddModal();
+    });
+
+    // Edit player
+    document.getElementById('edit-modal-close').addEventListener('click', closeEditModal);
+    document.getElementById('edit-cancel-btn').addEventListener('click', closeEditModal);
+    document.getElementById('edit-form').addEventListener('submit', handleEditSubmit);
+    document.getElementById('edit-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditModal();
+    });
+
+    // Delete confirm
+    document.getElementById('confirm-cancel-btn').addEventListener('click', closeConfirm);
+    document.getElementById('confirm-delete-btn').addEventListener('click', handleConfirmDelete);
+    document.getElementById('confirm-overlay').addEventListener('click', function(e) {
+        if (e.target === this) closeConfirm();
+    });
+
+    // Sortable headers
+    document.querySelectorAll('.data-table th.sortable').forEach(function(th) {
+        th.addEventListener('click', function() {
+            var field = this.getAttribute('data-sort');
+            if (currentSort === field) {
+                sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort = field;
+                sortDir = 'asc';
+            }
+            updateSortIndicators();
+            currentPage = 1;
+            loadUsers();
+        });
+    });
+
+    // Close modals on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeAddModal();
+            closeEditModal();
+            closeConfirm();
+        }
+    });
 });
 
+/* ── Load Users ─────────────────────────────────────────────────────── */
 function loadUsers() {
-    const search = document.getElementById('user-search').value;
-    const type = document.getElementById('filter-type').value;
-    const status = document.getElementById('filter-status').value;
-    const params = new URLSearchParams({page: currentPage, per_page: perPage});
+    var search = document.getElementById('user-search').value;
+    var type = document.getElementById('filter-type').value;
+    var status = document.getElementById('filter-status').value;
+    var params = new URLSearchParams({page: currentPage, per_page: perPage});
     if (search) params.set('search', search);
     if (type) params.set('type', type);
     if (status) params.set('status', status);
+    if (currentSort) {
+        params.set('sort', currentSort);
+        params.set('dir', sortDir);
+    }
 
     fetch('/api/admin/users?' + params.toString())
-        .then(r => r.json())
-        .then(data => {
-            const tbody = document.getElementById('users-tbody');
-            if (!data.users || data.users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No users found.</td></tr>';
-                document.getElementById('users-pagination').innerHTML = '';
-                return;
-            }
-            let html = '';
-            data.users.forEach(u => {
-                const statusClass = u.status === 'active' ? 'badge-success' : (u.status === 'removed' ? 'badge-danger' : 'badge-muted');
-                html += '<tr>';
-                html += '<td>' + escapeHtml(u.discord_name) + '</td>';
-                html += '<td><code>' + escapeHtml(u.discord_id) + '</code></td>';
-                html += '<td><span class="badge badge-sm">' + escapeHtml(u.whitelist_type) + '</span></td>';
-                html += '<td><span class="badge ' + statusClass + '">' + escapeHtml(u.status) + '</span></td>';
-                html += '<td>' + u.effective_slot_limit + '</td>';
-                html += '<td>' + escapeHtml(u.updated_at ? new Date(u.updated_at).toLocaleDateString() : '') + '</td>';
-                html += '<td><button class="btn btn-sm btn-outline" onclick="viewUser(\'' + u.discord_id + '\', \'' + u.whitelist_type + '\')">View</button></td>';
-                html += '</tr>';
-            });
-            tbody.innerHTML = html;
-            renderPagination(data.page, data.pages, 'users-pagination');
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderTable(data);
+            renderPagination(data.page, data.pages);
         })
-        .catch(() => {
-            document.getElementById('users-tbody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Failed to load users.</td></tr>';
+        .catch(function() {
+            document.getElementById('users-tbody').innerHTML =
+                '<tr><td colspan="8" class="text-center text-muted">Failed to load users.</td></tr>';
+            document.getElementById('users-pagination').innerHTML = '';
         });
 }
 
-function viewUser(discordId, type) {
-    showFlash('User details view: ' + discordId + ' (' + type + ')', 'info');
+/* ── Render Table ───────────────────────────────────────────────────── */
+function renderTable(data) {
+    var tbody = document.getElementById('users-tbody');
+    if (!data.users || data.users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No users found.</td></tr>';
+        return;
+    }
+    var html = '';
+    data.users.forEach(function(u) {
+        var typeBadge = 'badge-subscription';
+        if (u.whitelist_type === 'clan') typeBadge = 'badge-clan';
+        else if (u.whitelist_type === 'staff') typeBadge = 'badge-staff';
+
+        var statusBadge = 'badge-active';
+        if (u.status === 'inactive') statusBadge = 'badge-inactive';
+        else if (u.status === 'suspended') statusBadge = 'badge-suspended';
+
+        // Steam IDs: join from array or show from string
+        var steamDisplay = '';
+        if (u.steam_ids && Array.isArray(u.steam_ids) && u.steam_ids.length > 0) {
+            steamDisplay = u.steam_ids.join(', ');
+        } else if (u.steam_ids && typeof u.steam_ids === 'string') {
+            steamDisplay = u.steam_ids;
+        } else {
+            steamDisplay = '-';
+        }
+
+        var notesText = u.notes || '';
+        var expiresText = u.expires_at ? formatDate(u.expires_at) : 'Never';
+
+        html += '<tr>';
+        html += '<td>' + escapeHtml(u.discord_name || '') + '</td>';
+        html += '<td><span class="badge badge-sm ' + typeBadge + '">' + escapeHtml(u.whitelist_type || '') + '</span></td>';
+        html += '<td><span class="badge badge-sm ' + statusBadge + '">' + escapeHtml(u.status || '') + '</span></td>';
+        html += '<td class="cell-steam" title="' + escapeHtml(steamDisplay) + '">' + escapeHtml(steamDisplay) + '</td>';
+        html += '<td>' + (u.effective_slot_limit != null ? u.effective_slot_limit : '-') + '</td>';
+        html += '<td class="cell-truncate" title="' + escapeHtml(notesText) + '">' + escapeHtml(notesText || '-') + '</td>';
+        html += '<td>' + escapeHtml(expiresText) + '</td>';
+        html += '<td><div class="action-btns">';
+        html += '<button class="btn-edit" onclick="openEditModal(\'' + escapeAttr(u.discord_id) + '\', \'' + escapeAttr(u.whitelist_type) + '\')">Edit</button>';
+        html += '<button class="btn-delete" onclick="confirmDelete(\'' + escapeAttr(u.discord_id) + '\', \'' + escapeAttr(u.whitelist_type) + '\', \'' + escapeAttr(u.discord_name || '') + '\')">Delete</button>';
+        html += '</div></td>';
+        html += '</tr>';
+    });
+    tbody.innerHTML = html;
 }
 
-function renderPagination(current, total, containerId) {
-    const container = document.getElementById(containerId);
-    if (total <= 1) { container.innerHTML = ''; return; }
-    let html = '';
-    if (current > 1) html += '<button class="btn btn-sm btn-outline" onclick="goToPage(' + (current-1) + ')">Prev</button>';
-    html += '<span class="page-info">Page ' + current + ' of ' + total + '</span>';
-    if (current < total) html += '<button class="btn btn-sm btn-outline" onclick="goToPage(' + (current+1) + ')">Next</button>';
+/* ── Pagination ─────────────────────────────────────────────────────── */
+function renderPagination(current, total) {
+    var container = document.getElementById('users-pagination');
+    if (!total || total <= 1) { container.innerHTML = ''; return; }
+
+    var html = '';
+    // Previous
+    html += '<button class="page-btn"' + (current <= 1 ? ' disabled' : ' onclick="goToPage(' + (current - 1) + ')"') + '>&laquo; Prev</button>';
+
+    // Page numbers with ellipsis
+    var pages = buildPageRange(current, total);
+    for (var i = 0; i < pages.length; i++) {
+        if (pages[i] === '...') {
+            html += '<span class="page-ellipsis">...</span>';
+        } else {
+            var pg = pages[i];
+            html += '<button class="page-btn' + (pg === current ? ' active' : '') + '" onclick="goToPage(' + pg + ')">' + pg + '</button>';
+        }
+    }
+
+    // Next
+    html += '<button class="page-btn"' + (current >= total ? ' disabled' : ' onclick="goToPage(' + (current + 1) + ')"') + '>Next &raquo;</button>';
+
     container.innerHTML = html;
+}
+
+function buildPageRange(current, total) {
+    if (total <= 7) {
+        var arr = [];
+        for (var i = 1; i <= total; i++) arr.push(i);
+        return arr;
+    }
+    var pages = [1];
+    if (current > 3) pages.push('...');
+    for (var p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) {
+        pages.push(p);
+    }
+    if (current < total - 2) pages.push('...');
+    pages.push(total);
+    return pages;
 }
 
 function goToPage(page) {
     currentPage = page;
     loadUsers();
+}
+
+/* ── Sort indicators ────────────────────────────────────────────────── */
+function updateSortIndicators() {
+    document.querySelectorAll('.data-table th.sortable').forEach(function(th) {
+        var field = th.getAttribute('data-sort');
+        var arrow = th.querySelector('.sort-arrow');
+        if (field === currentSort) {
+            th.classList.add('sort-active');
+            arrow.innerHTML = sortDir === 'asc' ? '&#9650;' : '&#9660;';
+        } else {
+            th.classList.remove('sort-active');
+            arrow.innerHTML = '&#9650;';
+        }
+    });
+}
+
+/* ── Add Modal ──────────────────────────────────────────────────────── */
+function openAddModal() {
+    document.getElementById('add-form').reset();
+    document.getElementById('add-modal').classList.add('open');
+}
+function closeAddModal() {
+    document.getElementById('add-modal').classList.remove('open');
+}
+
+function handleAddSubmit(e) {
+    e.preventDefault();
+    var form = document.getElementById('add-form');
+    var btn = document.getElementById('add-save-btn');
+    btn.disabled = true;
+
+    var body = {
+        discord_name: form.discord_name.value.trim(),
+        discord_id: form.discord_id.value.trim() || null,
+        whitelist_type: form.whitelist_type.value,
+        steam_ids: parseLines(form.steam_ids.value),
+        eos_ids: parseLines(form.eos_ids.value),
+        slot_limit: parseInt(form.slot_limit.value, 10) || 1,
+        notes: form.notes.value.trim() || null,
+        expires_at: form.expires_at.value || null
+    };
+
+    fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw d; });
+        return r.json();
+    })
+    .then(function() {
+        closeAddModal();
+        showFlash('Player added successfully.', 'success');
+        loadUsers();
+    })
+    .catch(function(err) {
+        showFlash(err.error || err.message || 'Failed to add player.', 'error');
+    })
+    .finally(function() {
+        btn.disabled = false;
+    });
+}
+
+/* ── Edit Modal ─────────────────────────────────────────────────────── */
+function openEditModal(discordId, type) {
+    var params = new URLSearchParams({search: discordId, type: type, per_page: 1});
+    fetch('/api/admin/users?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.users || data.users.length === 0) {
+                showFlash('User not found.', 'error');
+                return;
+            }
+            var u = data.users[0];
+            var form = document.getElementById('edit-form');
+            form.original_discord_id.value = u.discord_id || '';
+            form.original_type.value = u.whitelist_type || '';
+            form.discord_name.value = u.discord_name || '';
+            form.discord_id.value = u.discord_id || '';
+            form.whitelist_type.value = u.whitelist_type || 'subscription';
+            form.status.value = u.status || 'active';
+            form.steam_ids.value = Array.isArray(u.steam_ids) ? u.steam_ids.join('\n') : (u.steam_ids || '');
+            form.eos_ids.value = Array.isArray(u.eos_ids) ? u.eos_ids.join('\n') : (u.eos_ids || '');
+            form.slot_limit.value = u.effective_slot_limit || 1;
+            form.notes.value = u.notes || '';
+            form.expires_at.value = u.expires_at ? u.expires_at.substring(0, 10) : '';
+            document.getElementById('edit-modal').classList.add('open');
+        })
+        .catch(function() {
+            showFlash('Failed to load user details.', 'error');
+        });
+}
+function closeEditModal() {
+    document.getElementById('edit-modal').classList.remove('open');
+}
+
+function handleEditSubmit(e) {
+    e.preventDefault();
+    var form = document.getElementById('edit-form');
+    var btn = document.getElementById('edit-save-btn');
+    btn.disabled = true;
+
+    var origId = form.original_discord_id.value;
+    var origType = form.original_type.value;
+
+    var body = {
+        discord_name: form.discord_name.value.trim(),
+        discord_id: form.discord_id.value.trim() || null,
+        whitelist_type: form.whitelist_type.value,
+        status: form.status.value,
+        steam_ids: parseLines(form.steam_ids.value),
+        eos_ids: parseLines(form.eos_ids.value),
+        slot_limit: parseInt(form.slot_limit.value, 10) || 1,
+        notes: form.notes.value.trim() || null,
+        expires_at: form.expires_at.value || null
+    };
+
+    fetch('/api/admin/users/' + encodeURIComponent(origId) + '/' + encodeURIComponent(origType), {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw d; });
+        return r.json();
+    })
+    .then(function() {
+        closeEditModal();
+        showFlash('Player updated successfully.', 'success');
+        loadUsers();
+    })
+    .catch(function(err) {
+        showFlash(err.error || err.message || 'Failed to update player.', 'error');
+    })
+    .finally(function() {
+        btn.disabled = false;
+    });
+}
+
+/* ── Delete ──────────────────────────────────────────────────────────── */
+function confirmDelete(discordId, type, name) {
+    pendingDelete = {discord_id: discordId, type: type};
+    document.getElementById('confirm-message').textContent =
+        'Are you sure you want to delete "' + name + '" (' + type + ')? This action cannot be undone.';
+    document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm() {
+    pendingDelete = null;
+    document.getElementById('confirm-overlay').classList.remove('open');
+}
+
+function handleConfirmDelete() {
+    if (!pendingDelete) return;
+    var id = pendingDelete.discord_id;
+    var type = pendingDelete.type;
+    closeConfirm();
+
+    fetch('/api/admin/users/' + encodeURIComponent(id) + '/' + encodeURIComponent(type), {
+        method: 'DELETE'
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw d; });
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Player deleted.', 'success');
+        loadUsers();
+    })
+    .catch(function(err) {
+        showFlash(err.error || err.message || 'Failed to delete player.', 'error');
+    });
+}
+
+/* ── Helpers ─────────────────────────────────────────────────────────── */
+function parseLines(text) {
+    if (!text) return [];
+    return text.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return 'Never';
+    try {
+        var d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'});
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+function escapeAttr(str) {
+    if (!str) return '';
+    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 </script>
 {% endblock %}

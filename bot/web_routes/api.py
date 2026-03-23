@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import functools
 from typing import Callable
 
@@ -28,6 +29,40 @@ def _find_guild_in_session(guilds: list[dict], guild_id: str) -> dict | None:
         if g["id"] == guild_id:
             return g
     return None
+
+
+def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
+                    expires_at: str | None = None) -> str:
+    """Encode plan/notes/expires_at into a JSON string for last_plan_name."""
+    payload: dict = {}
+    if plan:
+        payload["plan"] = plan
+    if notes:
+        payload["notes"] = notes
+    if expires_at:
+        payload["expires_at"] = expires_at
+    return json.dumps(payload) if payload else ""
+
+
+def _unpack_plan_meta(raw: str | None) -> dict:
+    """Decode last_plan_name into {"plan", "notes", "expires_at"} dict.
+
+    If the stored value is plain text (not JSON), treat it as the plan name.
+    """
+    if not raw:
+        return {"plan": None, "notes": None, "expires_at": None}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return {
+                "plan": data.get("plan"),
+                "notes": data.get("notes"),
+                "expires_at": data.get("expires_at"),
+            }
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Fallback: treat raw string as legacy plan name
+    return {"plan": raw, "notes": None, "expires_at": None}
 
 
 # ── Auth decorators ──────────────────────────────────────────────────────────
@@ -350,13 +385,16 @@ async def admin_users(request: web.Request) -> web.Response:
 
     users = []
     for row in rows:
+        meta = _unpack_plan_meta(row[5])
         users.append({
             "discord_id": str(row[0]),
             "discord_name": row[1],
             "whitelist_type": row[2],
             "status": row[3],
             "effective_slot_limit": row[4],
-            "last_plan_name": row[5],
+            "last_plan_name": meta["plan"],
+            "notes": meta["notes"],
+            "expires_at": meta["expires_at"],
             "updated_at": str(row[6]) if row[6] else "",
         })
 
@@ -435,6 +473,303 @@ async def admin_audit(request: web.Request) -> web.Response:
         "per_page": per_page,
         "pages": max(1, (total + per_page - 1) // per_page),
     })
+
+
+# ── Admin Player Management API routes ───────────────────────────────────────
+
+@require_admin
+async def admin_add_user(request: web.Request) -> web.Response:
+    """Admin manually adds a player to a whitelist type."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    # -- Required fields --
+    discord_name = body.get("discord_name", "").strip()
+    wl_type = body.get("whitelist_type", "").strip()
+    steam_ids = body.get("steam_ids", [])
+
+    if not discord_name:
+        return web.json_response({"error": "discord_name is required."}, status=400)
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(WHITELIST_TYPES)}"}, status=400)
+    if not isinstance(steam_ids, list) or len(steam_ids) == 0:
+        return web.json_response({"error": "At least one steam_id is required."}, status=400)
+
+    # -- Optional fields --
+    eos_ids = body.get("eos_ids", [])
+    if not isinstance(eos_ids, list):
+        return web.json_response({"error": "eos_ids must be an array."}, status=400)
+
+    raw_discord_id = body.get("discord_id", 0)
+    try:
+        discord_id = int(raw_discord_id) if raw_discord_id else 0
+    except (ValueError, TypeError):
+        return web.json_response({"error": "discord_id must be numeric."}, status=400)
+
+    # Generate placeholder for non-Discord players
+    if discord_id == 0:
+        discord_id = -abs(int(time.time() * 1000))
+
+    slot_limit = body.get("slot_limit")
+    if slot_limit is not None:
+        try:
+            slot_limit = int(slot_limit)
+        except (ValueError, TypeError):
+            return web.json_response({"error": "slot_limit must be an integer."}, status=400)
+
+    notes = body.get("notes")
+    expires_at = body.get("expires_at")
+
+    # -- Validate IDs --
+    errors = []
+    for sid in steam_ids:
+        if not STEAM64_RE.match(str(sid)):
+            errors.append(f"Invalid Steam64 ID: {sid}")
+    for eid in eos_ids:
+        if not EOSID_RE.match(str(eid)):
+            errors.append(f"Invalid EOS ID: {eid}")
+    if errors:
+        return web.json_response({"error": "Validation failed.", "details": errors}, status=400)
+
+    # -- Check for existing user --
+    existing = await db.get_user_record(guild_id, discord_id, wl_type)
+    if existing:
+        return web.json_response(
+            {"error": f"User {discord_id} already exists for whitelist type '{wl_type}'. Use PATCH to update."},
+            status=409,
+        )
+
+    # -- Determine effective slot limit --
+    type_config = await db.get_type_config(guild_id, wl_type)
+    default_slot = type_config["default_slot_limit"] if type_config else 1
+    effective_slot = slot_limit if slot_limit is not None else default_slot
+
+    # -- Pack notes/expires_at into last_plan_name --
+    plan_meta = _pack_plan_meta(notes=notes, expires_at=expires_at)
+
+    # -- Create user record --
+    await db.upsert_user_record(
+        guild_id, discord_id, wl_type, discord_name, "active",
+        effective_slot, plan_meta,
+        slot_limit_override=slot_limit,
+    )
+
+    # -- Create identifiers --
+    identifiers = []
+    for sid in steam_ids:
+        identifiers.append(("steam64", str(sid), False, "admin_web"))
+    for eid in eos_ids:
+        identifiers.append(("eosid", str(eid), False, "admin_web"))
+    await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+
+    # -- Audit --
+    detail_parts = [f"Admin added user '{discord_name}' (discord_id={discord_id}) to {wl_type}"]
+    detail_parts.append(f"steam_ids={steam_ids}")
+    if eos_ids:
+        detail_parts.append(f"eos_ids={eos_ids}")
+    if notes:
+        detail_parts.append(f"notes={notes}")
+    if expires_at:
+        detail_parts.append(f"expires_at={expires_at}")
+    await db.audit(guild_id, "admin_add_user", actor_id, discord_id, "; ".join(detail_parts), wl_type)
+
+    log.info("Guild %s: admin %s added user %s (%s) to %s", guild_id, actor_id, discord_id, discord_name, wl_type)
+
+    return web.json_response({
+        "ok": True,
+        "discord_id": str(discord_id),
+        "discord_name": discord_name,
+        "whitelist_type": wl_type,
+    }, status=201)
+
+
+@require_admin
+async def admin_update_user(request: web.Request) -> web.Response:
+    """Update an existing user's settings for a whitelist type."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        discord_id = int(request.match_info["discord_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid discord_id in URL."}, status=400)
+
+    wl_type = request.match_info["type"]
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    # -- Check user exists --
+    user_record = await db.get_user_record(guild_id, discord_id, wl_type)
+    if not user_record:
+        return web.json_response({"error": "User not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    if not isinstance(body, dict) or not body:
+        return web.json_response({"error": "Body must be a non-empty JSON object."}, status=400)
+
+    # user_record layout: (discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
+    current_name = user_record[0]
+    current_status = user_record[1]
+    current_slot_override = user_record[2]
+    current_effective_slot = user_record[3]
+    current_meta = _unpack_plan_meta(user_record[4])
+
+    changes = []
+
+    # -- Status --
+    new_status = current_status
+    if "status" in body:
+        if body["status"] not in ("active", "inactive", "suspended"):
+            return web.json_response({"error": "status must be 'active', 'inactive', or 'suspended'."}, status=400)
+        new_status = body["status"]
+        if new_status != current_status:
+            changes.append(f"status: {current_status} -> {new_status}")
+
+    # -- Slot limit override --
+    new_slot_override = current_slot_override
+    new_effective_slot = current_effective_slot
+    if "slot_limit_override" in body:
+        val = body["slot_limit_override"]
+        if val is None:
+            new_slot_override = None
+            # Reset effective to default
+            type_config = await db.get_type_config(guild_id, wl_type)
+            new_effective_slot = type_config["default_slot_limit"] if type_config else 1
+            if new_slot_override != current_slot_override:
+                changes.append("slot_limit_override: cleared")
+        else:
+            try:
+                new_slot_override = int(val)
+                new_effective_slot = new_slot_override
+                if new_slot_override != current_slot_override:
+                    changes.append(f"slot_limit_override: {current_slot_override} -> {new_slot_override}")
+            except (ValueError, TypeError):
+                return web.json_response({"error": "slot_limit_override must be an integer or null."}, status=400)
+
+    # -- Notes and expires_at --
+    new_notes = current_meta.get("notes")
+    new_expires = current_meta.get("expires_at")
+    new_plan = current_meta.get("plan")
+
+    if "notes" in body:
+        new_notes = body["notes"] if body["notes"] else None
+        changes.append("notes updated")
+    if "expires_at" in body:
+        new_expires = body["expires_at"] if body["expires_at"] else None
+        changes.append(f"expires_at: {new_expires}")
+
+    plan_meta = _pack_plan_meta(plan=new_plan, notes=new_notes, expires_at=new_expires)
+
+    # -- Validate and replace identifiers if provided --
+    if "steam_ids" in body or "eos_ids" in body:
+        steam_ids = body.get("steam_ids", [])
+        eos_ids = body.get("eos_ids", [])
+        if not isinstance(steam_ids, list) or not isinstance(eos_ids, list):
+            return web.json_response({"error": "steam_ids and eos_ids must be arrays."}, status=400)
+
+        errors = []
+        for sid in steam_ids:
+            if not STEAM64_RE.match(str(sid)):
+                errors.append(f"Invalid Steam64 ID: {sid}")
+        for eid in eos_ids:
+            if not EOSID_RE.match(str(eid)):
+                errors.append(f"Invalid EOS ID: {eid}")
+        if errors:
+            return web.json_response({"error": "Validation failed.", "details": errors}, status=400)
+
+        identifiers = []
+        for sid in steam_ids:
+            identifiers.append(("steam64", str(sid), False, "admin_web"))
+        for eid in eos_ids:
+            identifiers.append(("eosid", str(eid), False, "admin_web"))
+        await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+        changes.append(f"identifiers replaced: {len(steam_ids)} steam, {len(eos_ids)} eos")
+
+    # -- Update user record --
+    await db.upsert_user_record(
+        guild_id, discord_id, wl_type, current_name, new_status,
+        new_effective_slot, plan_meta,
+        slot_limit_override=new_slot_override,
+    )
+
+    # -- Audit --
+    if changes:
+        await db.audit(
+            guild_id, "admin_update_user", actor_id, discord_id,
+            f"Admin updated user {discord_id} in {wl_type}: {'; '.join(changes)}",
+            wl_type,
+        )
+
+    log.info("Guild %s: admin %s updated user %s/%s: %s", guild_id, actor_id, discord_id, wl_type, changes)
+
+    return web.json_response({"ok": True, "changes": changes})
+
+
+@require_admin
+async def admin_delete_user(request: web.Request) -> web.Response:
+    """Remove a user from a whitelist type entirely."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        discord_id = int(request.match_info["discord_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid discord_id in URL."}, status=400)
+
+    wl_type = request.match_info["type"]
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    # -- Check user exists --
+    user_record = await db.get_user_record(guild_id, discord_id, wl_type)
+    if not user_record:
+        return web.json_response({"error": "User not found."}, status=404)
+
+    discord_name = user_record[0]
+
+    # -- Delete identifiers --
+    await db.execute(
+        "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_type=%s",
+        (guild_id, discord_id, wl_type),
+    )
+
+    # -- Delete user record --
+    await db.execute(
+        "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_type=%s",
+        (guild_id, discord_id, wl_type),
+    )
+
+    # -- Audit --
+    await db.audit(
+        guild_id, "admin_delete_user", actor_id, discord_id,
+        f"Admin removed user '{discord_name}' (discord_id={discord_id}) from {wl_type}",
+        wl_type,
+    )
+
+    log.info("Guild %s: admin %s deleted user %s (%s) from %s", guild_id, actor_id, discord_id, discord_name, wl_type)
+
+    return web.json_response({"ok": True, "deleted_discord_id": str(discord_id), "whitelist_type": wl_type})
 
 
 # ── Admin Setup API routes ───────────────────────────────────────────────────
@@ -786,6 +1121,9 @@ def setup_routes(app: web.Application):
     # Admin API
     app.router.add_get("/api/admin/stats", admin_stats)
     app.router.add_get("/api/admin/users", admin_users)
+    app.router.add_post("/api/admin/users", admin_add_user)
+    app.router.add_patch("/api/admin/users/{discord_id}/{type}", admin_update_user)
+    app.router.add_delete("/api/admin/users/{discord_id}/{type}", admin_delete_user)
     app.router.add_get("/api/admin/audit", admin_audit)
     # Admin Setup API
     app.router.add_get("/api/admin/settings", admin_get_settings)
