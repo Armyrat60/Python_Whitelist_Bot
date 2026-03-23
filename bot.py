@@ -136,7 +136,20 @@ DEFAULT_TYPES = {
         "stack_roles": "false",
         "default_slot_limit": "1",
     },
+    "staff": {
+        "enabled": "false",
+        "panel_channel_id": "",
+        "panel_message_id": "",
+        "log_channel_id": "",
+        "github_enabled": "true",
+        "github_filename": "StaffWhitelist.txt",
+        "input_mode": "modal",
+        "stack_roles": "false",
+        "default_slot_limit": "1",
+    },
 }
+
+WHITELIST_TYPES = tuple(DEFAULT_TYPES.keys())  # ("subscription", "clan", "staff")
 
 
 class Database:
@@ -847,7 +860,7 @@ class GroupManagementView(discord.ui.View):
                 lines.append(f"**{name}**{tag}\n`{perms}`")
         # Show which types are assigned to which groups
         assignments = []
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.bot.db.get_type_config(wt)
             if cfg:
                 assignments.append(f"{wt.title()} \u2192 `{cfg.get('squad_group', 'Whitelist')}`")
@@ -920,7 +933,7 @@ class GroupManagementView(discord.ui.View):
             return
         # Build type selector
         type_options = []
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.bot.db.get_type_config(wt)
             if cfg and cfg["enabled"]:
                 current = cfg.get("squad_group", "Whitelist")
@@ -1003,7 +1016,7 @@ class MainSetupView(discord.ui.View):
             "",
         ]
 
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.bot.db.get_type_config(wt)
             if not cfg:
                 continue
@@ -1056,7 +1069,13 @@ class MainSetupView(discord.ui.View):
         embed = await view._build_embed(interaction.guild)
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @discord.ui.button(label="Groups", style=discord.ButtonStyle.green, row=0, emoji="\U0001f396\ufe0f")
+    @discord.ui.button(label="Staff", style=discord.ButtonStyle.gray, row=0, emoji="\U0001f6e1\ufe0f")
+    async def staff_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = TypeSettingsView(self.bot, "staff", hub_view=self)
+        embed = await view._build_embed(interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="Groups", style=discord.ButtonStyle.green, row=1, emoji="\U0001f396\ufe0f")
     async def groups_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = GroupManagementView(self.bot, hub_view=self)
         embed = await view._build_embed()
@@ -1180,7 +1199,7 @@ class GlobalSettingsView(discord.ui.View):
             await interaction.response.defer()
 
 
-# ─── Setup: Type Settings (subscription / clan) ──────────────────────────────
+# ─── Setup: Type Settings (subscription / clan / staff) ───────────────────────
 
 class TypeSettingsView(discord.ui.View):
     """Per-type settings: toggles on row 0, channels on rows 1-2, actions on row 3, slots on row 4."""
@@ -1472,7 +1491,7 @@ class WhitelistBot(commands.Bot):
                 self.web.update_cache(outputs)
             except Exception:
                 log.debug("Could not prime web cache on startup")
-        for whitelist_type in ("subscription", "clan"):
+        for whitelist_type in WHITELIST_TYPES:
             self.panel_views[whitelist_type] = WhitelistPanelView(self, whitelist_type)
             self.add_view(self.panel_views[whitelist_type])
         if GUILD_ID:
@@ -1497,7 +1516,7 @@ class WhitelistBot(commands.Bot):
         log.info("Connected as %s (%s)", self.user, self.user.id)
         await self.log_startup_summary()
         # Refresh existing panels so buttons are live after restart
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             try:
                 await self.post_or_refresh_panel(None, wt)
             except Exception:
@@ -1528,7 +1547,7 @@ class WhitelistBot(commands.Bot):
         combined_filename = await self.db.get_setting("combined_filename", WHITELIST_FILENAME)
         retention_days = await self.db.get_setting("retention_days", "90")
         parts = [f"guild_id={guild.id if guild else 'n/a'}", f"output_mode={output_mode}", f"combined_filename={combined_filename}", f"retention_days={retention_days}"]
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.db.get_type_config(wt)
             parts.append(f"{wt}: enabled={cfg['enabled']} panel_channel_id={cfg['panel_channel_id']} log_channel_id={cfg['log_channel_id']} github_enabled={cfg['github_enabled']} file={cfg['github_filename']}")
         return " | ".join(parts)
@@ -1550,7 +1569,7 @@ class WhitelistBot(commands.Bot):
         if groups:
             group_text = " | ".join(f"`{n}`: {p}" for n, p, _ in groups)
             embed.add_field(name="Squad Groups", value=group_text, inline=False)
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.db.get_type_config(wt)
             if not cfg:
                 continue
@@ -1695,7 +1714,7 @@ class WhitelistBot(commands.Bot):
 
         # Load group configs per type and all squad groups
         type_cfgs = {}
-        for wt in ("subscription", "clan"):
+        for wt in WHITELIST_TYPES:
             cfg = await self.db.get_type_config(wt)
             if cfg:
                 type_cfgs[wt] = cfg
@@ -1719,9 +1738,9 @@ class WhitelistBot(commands.Bot):
         combined_lines = []
         combined_seen = set()
         combined_groups = set()
-        type_lines = {wt: [] for wt in ("subscription", "clan")}
-        type_seen = {wt: set() for wt in ("subscription", "clan")}
-        type_groups = {wt: set() for wt in ("subscription", "clan")}
+        type_lines = {wt: [] for wt in WHITELIST_TYPES}
+        type_seen = {wt: set() for wt in WHITELIST_TYPES}
+        type_groups = {wt: set() for wt in WHITELIST_TYPES}
 
         for whitelist_type, _, discord_name, id_type, id_value in rows:
             group_name = type_cfgs.get(whitelist_type, {}).get("squad_group", "Whitelist")
@@ -1742,7 +1761,7 @@ class WhitelistBot(commands.Bot):
             content = build_group_headers(combined_groups) + combined_lines
             outputs[await self.db.get_setting("combined_filename", WHITELIST_FILENAME)] = "\n".join(content)
         if mode in {"separate", "hybrid"}:
-            for wt in ("subscription", "clan"):
+            for wt in WHITELIST_TYPES:
                 cfg = type_cfgs.get(wt)
                 if cfg and cfg["github_enabled"]:
                     content = build_group_headers(type_groups.get(wt, set())) + type_lines.get(wt, [])
@@ -1815,9 +1834,14 @@ class WhitelistBot(commands.Bot):
             except Exception:
                 posted = None
 
-        # If no existing panel found, post a new one in the provided channel
-        if posted is None and channel is not None:
-            posted = await channel.send(embed=embed, view=self.panel_views[whitelist_type])
+        # If no existing panel found, post a new one
+        if posted is None:
+            # Use provided channel, or fall back to the configured panel channel
+            target = channel
+            if target is None and stored_channel_id:
+                target = self.get_channel(int(stored_channel_id))
+            if target is not None:
+                posted = await target.send(embed=embed, view=self.panel_views[whitelist_type])
 
         if posted is not None:
             await self.db.set_type_config(whitelist_type, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
@@ -1826,7 +1850,7 @@ class WhitelistBot(commands.Bot):
         return posted
 
     async def enforce_member_roles(self, member: discord.Member):
-        for whitelist_type in ("subscription", "clan"):
+        for whitelist_type in WHITELIST_TYPES:
             cfg = await self.db.get_type_config(whitelist_type)
             if not cfg or not cfg["enabled"]:
                 continue
@@ -1854,7 +1878,7 @@ class WhitelistBot(commands.Bot):
             await self.enforce_member_roles(after)
 
     async def on_member_remove(self, member: discord.Member):
-        for whitelist_type in ("subscription", "clan"):
+        for whitelist_type in WHITELIST_TYPES:
             row = await self.db.get_user_record(member.id, whitelist_type)
             if row:
                 await self.db.set_user_status(member.id, whitelist_type, "left_guild")
@@ -1880,7 +1904,7 @@ class WhitelistBot(commands.Bot):
         should_send = frequency == "daily" or (frequency == "weekly" and now.weekday() == 0)
         if not should_send:
             return
-        for whitelist_type in ("subscription", "clan"):
+        for whitelist_type in WHITELIST_TYPES:
             cfg = await self.db.get_type_config(whitelist_type)
             if not cfg["log_channel_id"]:
                 continue
@@ -1897,7 +1921,7 @@ class WhitelistBot(commands.Bot):
 bot = WhitelistBot()
 
 async def setup_autocomplete(interaction: discord.Interaction, current: str):
-    return [app_commands.Choice(name=item, value=item) for item in ("subscription", "clan") if current.lower() in item][:25]
+    return [app_commands.Choice(name=item, value=item) for item in WHITELIST_TYPES if current.lower() in item][:25]
 
 
 @bot.tree.command(name="ping", description="Check bot latency and health")
@@ -1987,7 +2011,7 @@ async def setup_mod_role(interaction: discord.Interaction, role: discord.Role):
 @app_commands.autocomplete(whitelist_type=setup_autocomplete)
 async def whitelist(interaction: discord.Interaction, whitelist_type: str):
     whitelist_type = whitelist_type.lower()
-    if whitelist_type not in {"subscription", "clan"}:
+    if whitelist_type not in set(WHITELIST_TYPES):
         await interaction.response.send_message("Invalid whitelist type.", ephemeral=True)
         return
     await bot.start_whitelist_flow(interaction, whitelist_type)
@@ -2017,7 +2041,7 @@ async def whitelist_panel(interaction: discord.Interaction, whitelist_type: str)
     if not await bot.require_mod(interaction):
         return
     whitelist_type = whitelist_type.lower()
-    if whitelist_type not in {"subscription", "clan"}:
+    if whitelist_type not in set(WHITELIST_TYPES):
         await interaction.response.send_message("Invalid whitelist type.", ephemeral=True)
         return
     posted = await bot.post_or_refresh_panel(interaction, whitelist_type, interaction.channel)
