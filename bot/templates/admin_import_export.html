@@ -114,6 +114,90 @@
         }
     }
 
+    /* ── Import Steps ────────────────────────────────────────────────────── */
+    .import-step {
+        display: none;
+    }
+    .import-step.active {
+        display: block;
+    }
+    .step-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    .step-dot {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.8rem;
+        background: var(--bg-primary);
+        border: 2px solid var(--border);
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+    .step-dot.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+    }
+    .step-dot.done {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+    }
+    .step-line {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+    }
+    .step-line.done {
+        background: var(--green);
+    }
+
+    /* ── Column Mapping Table ────────────────────────────────────────────── */
+    .mapping-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 16px;
+    }
+    .mapping-table th {
+        text-align: left;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 2px solid var(--border);
+    }
+    .mapping-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.88rem;
+    }
+    .mapping-table td:first-child {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .mapping-table td .sample-values {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+        font-weight: 400;
+    }
+    .mapping-table select {
+        width: 100%;
+    }
+
     /* ── Preview Table ───────────────────────────────────────────────────── */
     .preview-container {
         display: none;
@@ -143,6 +227,18 @@
         font-weight: 600;
         color: var(--text-primary);
     }
+
+    .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .status-badge.new { background: rgba(87, 242, 135, 0.15); color: var(--green); }
+    .status-badge.existing { background: rgba(88, 101, 242, 0.15); color: var(--accent); }
+    .status-badge.invalid { background: rgba(237, 66, 69, 0.15); color: var(--red); }
 
     /* ── Progress Bar ────────────────────────────────────────────────────── */
     .progress-bar-container {
@@ -334,106 +430,180 @@
         </div>
         <div class="card-body">
 
-            <!-- File Upload Drop Zone -->
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-                <div class="drop-zone-icon">
-                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <!-- Step Indicator -->
+            <div class="step-indicator" id="step-indicator">
+                <div class="step-dot active" id="step-dot-1">1</div>
+                <div class="step-line" id="step-line-1"></div>
+                <div class="step-dot" id="step-dot-2">2</div>
+                <div class="step-line" id="step-line-2"></div>
+                <div class="step-dot" id="step-dot-3">3</div>
+                <div class="step-line" id="step-line-3"></div>
+                <div class="step-dot" id="step-dot-4">4</div>
+            </div>
+
+            <!-- ── STEP 1: Upload / Paste ──────────────────────────────── -->
+            <div class="import-step active" id="import-step-1">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 1: Upload or Paste Data</h4>
+
+                <!-- File Upload Drop Zone -->
+                <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                    <div class="drop-zone-icon">
+                        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </div>
+                    <div class="drop-zone-text">Drag &amp; drop a file here, or click to browse</div>
+                    <div class="drop-zone-hint">Supports .csv, .cfg, .txt files</div>
+                    <div class="drop-zone-selected" id="selected-file-name"></div>
+                    <input type="file" class="drop-zone-file" id="file-input" accept=".csv,.cfg,.txt,.json">
                 </div>
-                <div class="drop-zone-text">Drag &amp; drop a file here, or click to browse</div>
-                <div class="drop-zone-hint">Supports .csv, .cfg, .txt files</div>
-                <div class="drop-zone-selected" id="selected-file-name"></div>
-                <input type="file" class="drop-zone-file" id="file-input" accept=".csv,.cfg,.txt,.json">
-            </div>
 
-            <div class="or-divider">or paste data below</div>
+                <div class="or-divider">or paste data below</div>
 
-            <!-- Paste Textarea -->
-            <div class="form-group">
-                <label>Paste CSV / Text Data</label>
-                <textarea class="form-input" id="import-paste" rows="6" placeholder="Paste CSV rows or Squad RemoteAdminList content here..."></textarea>
-            </div>
-
-            <!-- Import Options -->
-            <div class="import-options">
+                <!-- Paste Textarea -->
                 <div class="form-group">
-                    <label>Target Whitelist Type</label>
-                    <select class="form-input form-select" id="import-type">
-                        <option value="">Loading types...</option>
-                    </select>
+                    <label>Paste CSV / Text Data</label>
+                    <textarea class="form-input" id="import-paste" rows="6" placeholder="Paste CSV rows or Squad RemoteAdminList content here..."></textarea>
                 </div>
-                <div class="form-group">
-                    <label>Format</label>
-                    <select class="form-input form-select" id="import-format">
-                        <option value="csv">CSV</option>
-                        <option value="squad_cfg">Squad RemoteAdminList (.cfg)</option>
-                    </select>
+
+                <!-- Import Options -->
+                <div class="import-options">
+                    <div class="form-group">
+                        <label>Target Whitelist Type</label>
+                        <select class="form-input form-select" id="import-type">
+                            <option value="">Loading types...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Format</label>
+                        <select class="form-input form-select" id="import-format">
+                            <option value="csv">CSV</option>
+                            <option value="squad_cfg">Squad RemoteAdminList (.cfg)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Duplicate Handling</label>
+                        <select class="form-input form-select" id="import-duplicates">
+                            <option value="skip">Skip Duplicates</option>
+                            <option value="overwrite">Overwrite</option>
+                            <option value="merge">Merge</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Duplicate Handling</label>
-                    <select class="form-input form-select" id="import-duplicates">
-                        <option value="skip">Skip Duplicates</option>
-                        <option value="overwrite">Overwrite</option>
-                        <option value="merge">Merge</option>
-                    </select>
+
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btn-load-headers" onclick="loadHeaders()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                        Continue to Column Mapping
+                    </button>
                 </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="btn-row">
-                <button class="btn btn-primary" id="btn-preview-import" onclick="previewImport()">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    Preview Import
-                </button>
-                <button class="btn btn-success" id="btn-confirm-import" onclick="confirmImport()" disabled>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                    Import
-                </button>
+            <!-- ── STEP 2: Column Mapping ──────────────────────────────── -->
+            <div class="import-step" id="import-step-2">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 2: Map Your Columns</h4>
+                <p class="text-muted" style="font-size:0.85rem; margin-bottom:16px;">
+                    Match each column from your file to the correct field. Columns auto-detected are pre-selected.
+                </p>
+
+                <table class="mapping-table" id="mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Your Column</th>
+                            <th>Maps To</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mapping-tbody"></tbody>
+                </table>
+
+                <div class="btn-row">
+                    <button class="btn btn-outline" onclick="goToStep(1)">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        Back
+                    </button>
+                    <button class="btn btn-primary" id="btn-preview-import" onclick="previewImport()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        Continue to Preview
+                    </button>
+                </div>
             </div>
 
-            <!-- Preview Table -->
-            <div class="preview-container" id="import-preview">
-                <div class="preview-header">
-                    <h4>Import Preview</h4>
-                    <div class="preview-summary" id="preview-summary"></div>
+            <!-- ── STEP 3: Preview ─────────────────────────────────────── -->
+            <div class="import-step" id="import-step-3">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 3: Review Import Preview</h4>
+
+                <div class="preview-container visible" id="import-preview">
+                    <div class="preview-header">
+                        <h4>Grouped Users</h4>
+                        <div class="preview-summary" id="preview-summary"></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="preview-table">
+                            <thead>
+                                <tr>
+                                    <th>Discord Name</th>
+                                    <th>Discord ID</th>
+                                    <th>Plan</th>
+                                    <th>Slots</th>
+                                    <th>Steam IDs</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="preview-tbody"></tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="data-table" id="preview-table">
-                        <thead>
-                            <tr id="preview-thead-row"></tr>
-                        </thead>
-                        <tbody id="preview-tbody"></tbody>
-                    </table>
+
+                <div class="btn-row">
+                    <button class="btn btn-outline" onclick="goToStep(2)">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        Back
+                    </button>
+                    <button class="btn btn-success" id="btn-confirm-import" onclick="confirmImport()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        Import
+                    </button>
                 </div>
             </div>
 
-            <!-- Progress -->
-            <div class="progress-bar-container" id="import-progress">
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" id="import-progress-fill"></div>
-                </div>
-                <div class="progress-text" id="import-progress-text">Importing...</div>
-            </div>
+            <!-- ── STEP 4: Import Result ───────────────────────────────── -->
+            <div class="import-step" id="import-step-4">
+                <h4 style="margin-bottom:12px; font-size:0.95rem;">Step 4: Import Complete</h4>
 
-            <!-- Import Result -->
-            <div class="import-result" id="import-result">
-                <h4>Import Complete</h4>
-                <div class="result-stats">
-                    <div class="result-stat">
-                        <div class="result-stat-value added" id="result-added">0</div>
-                        <div class="result-stat-label">Added</div>
+                <!-- Progress -->
+                <div class="progress-bar-container visible" id="import-progress">
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="import-progress-fill"></div>
                     </div>
-                    <div class="result-stat">
-                        <div class="result-stat-value updated" id="result-updated">0</div>
-                        <div class="result-stat-label">Updated</div>
+                    <div class="progress-text" id="import-progress-text">Importing...</div>
+                </div>
+
+                <!-- Import Result -->
+                <div class="import-result" id="import-result">
+                    <h4>Results</h4>
+                    <div class="result-stats">
+                        <div class="result-stat">
+                            <div class="result-stat-value added" id="result-added">0</div>
+                            <div class="result-stat-label">Added</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="result-stat-value updated" id="result-updated">0</div>
+                            <div class="result-stat-label">Updated</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="result-stat-value skipped" id="result-skipped">0</div>
+                            <div class="result-stat-label">Skipped</div>
+                        </div>
+                        <div class="result-stat">
+                            <div class="result-stat-value errors" id="result-errors">0</div>
+                            <div class="result-stat-label">Errors</div>
+                        </div>
                     </div>
-                    <div class="result-stat">
-                        <div class="result-stat-value skipped" id="result-skipped">0</div>
-                        <div class="result-stat-label">Skipped</div>
-                    </div>
-                    <div class="result-stat">
-                        <div class="result-stat-value errors" id="result-errors">0</div>
-                        <div class="result-stat-label">Errors</div>
-                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-outline" onclick="resetImport()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                        Import More
+                    </button>
                 </div>
             </div>
 
@@ -527,6 +697,16 @@ document.addEventListener('DOMContentLoaded', function() {
     setupDropZone();
 });
 
+/* ── State ────────────────────────────────────────────────────────────────── */
+
+var selectedFile = null;
+var importRawData = '';  // The raw text/CSV data from file or paste
+var importHeaders = [];  // Column names detected
+var importAutoMap = {};  // Auto-detected mapping {csvCol: ourField}
+var importColumnMap = {};  // User-confirmed mapping {csvCol: ourField}
+var previewUsers = [];  // Preview result from server
+var currentStep = 1;
+
 /* ── Tab Switching ────────────────────────────────────────────────────────── */
 
 function switchTab(tab) {
@@ -536,6 +716,46 @@ function switchTab(tab) {
     document.querySelectorAll('.ie-section').forEach(function(el) {
         el.classList.toggle('active', el.id === 'section-' + tab);
     });
+}
+
+/* ── Step Navigation ──────────────────────────────────────────────────────── */
+
+function goToStep(step) {
+    currentStep = step;
+    for (var i = 1; i <= 4; i++) {
+        var stepEl = document.getElementById('import-step-' + i);
+        if (stepEl) stepEl.classList.toggle('active', i === step);
+    }
+    updateStepIndicator(step);
+}
+
+function updateStepIndicator(step) {
+    for (var i = 1; i <= 4; i++) {
+        var dot = document.getElementById('step-dot-' + i);
+        dot.classList.remove('active', 'done');
+        if (i < step) dot.classList.add('done');
+        else if (i === step) dot.classList.add('active');
+
+        var line = document.getElementById('step-line-' + i);
+        if (line) {
+            line.classList.toggle('done', i < step);
+        }
+    }
+}
+
+function resetImport() {
+    selectedFile = null;
+    importRawData = '';
+    importHeaders = [];
+    importAutoMap = {};
+    importColumnMap = {};
+    previewUsers = [];
+    document.getElementById('import-paste').value = '';
+    document.getElementById('selected-file-name').style.display = 'none';
+    document.getElementById('file-input').value = '';
+    document.getElementById('import-result').classList.remove('visible');
+    document.getElementById('import-progress').classList.remove('visible');
+    goToStep(1);
 }
 
 /* ── Load Whitelist Types ─────────────────────────────────────────────────── */
@@ -580,8 +800,6 @@ function loadWhitelistTypes() {
 }
 
 /* ── Drop Zone Setup ──────────────────────────────────────────────────────── */
-
-var selectedFile = null;
 
 function setupDropZone() {
     var zone = document.getElementById('drop-zone');
@@ -628,14 +846,11 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-/* ── Import Preview ───────────────────────────────────────────────────────── */
+/* ── Step 1: Load Headers ─────────────────────────────────────────────────── */
 
-var previewData = null;
-
-function previewImport() {
+function loadHeaders() {
     var type = document.getElementById('import-type').value;
-    var format = document.getElementById('import-format').value;
-    var duplicates = document.getElementById('import-duplicates').value;
+    var fmt = document.getElementById('import-format').value;
     var pasteText = document.getElementById('import-paste').value.trim();
 
     if (!type) {
@@ -647,15 +862,240 @@ function previewImport() {
         return;
     }
 
+    // For squad_cfg format, skip column mapping and go straight to preview
+    if (fmt === 'squad_cfg') {
+        importColumnMap = {};
+        previewImportDirect();
+        return;
+    }
+
+    var btn = document.getElementById('btn-load-headers');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Reading headers...';
+
+    // Read file content if file selected
+    if (selectedFile) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            importRawData = e.target.result;
+            sendHeadersRequest(importRawData, btn);
+        };
+        reader.readAsText(selectedFile);
+    } else {
+        importRawData = pasteText;
+        sendHeadersRequest(importRawData, btn);
+    }
+}
+
+function sendHeadersRequest(data, btn) {
+    fetch('/api/admin/import/headers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: data })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to read headers.', 'error');
+            return;
+        }
+
+        importHeaders = result.data.headers;
+        importAutoMap = result.data.auto_map || {};
+        renderColumnMapping();
+        goToStep(2);
+    })
+    .catch(function() {
+        showFlash('Network error reading headers.', 'error');
+    })
+    .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg> Continue to Column Mapping';
+    });
+}
+
+/* ── Step 2: Column Mapping ───────────────────────────────────────────────── */
+
+var FIELD_OPTIONS = [
+    { value: 'discord_name', label: 'Discord Name' },
+    { value: 'discord_id', label: 'Discord ID' },
+    { value: 'steam64', label: 'Steam64 ID' },
+    { value: 'eos_id', label: 'EOS ID' },
+    { value: 'plan', label: 'Plan / Tier' },
+    { value: 'notes', label: 'Notes' },
+    { value: 'skip', label: 'Skip (ignore)' }
+];
+
+function renderColumnMapping() {
+    var tbody = document.getElementById('mapping-tbody');
+    tbody.innerHTML = '';
+
+    // Parse a few sample values from the raw data for display
+    var sampleRows = parseSampleRows(importRawData, 3);
+
+    importHeaders.forEach(function(header) {
+        var tr = document.createElement('tr');
+
+        // Column name cell with sample values
+        var tdName = document.createElement('td');
+        tdName.textContent = header;
+        if (sampleRows.length > 0) {
+            var sampleSpan = document.createElement('span');
+            sampleSpan.className = 'sample-values';
+            var samples = sampleRows.map(function(row) { return row[header] || ''; }).filter(function(v) { return v; });
+            sampleSpan.textContent = samples.length > 0 ? 'e.g. ' + samples.slice(0, 3).join(', ') : '';
+            tdName.appendChild(sampleSpan);
+        }
+        tr.appendChild(tdName);
+
+        // Dropdown cell
+        var tdMap = document.createElement('td');
+        var select = document.createElement('select');
+        select.className = 'form-input form-select';
+        select.setAttribute('data-header', header);
+
+        FIELD_OPTIONS.forEach(function(opt) {
+            var option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            select.appendChild(option);
+        });
+
+        // Pre-select auto-detected mapping
+        var autoVal = importAutoMap[header] || 'skip';
+        select.value = autoVal;
+
+        tdMap.appendChild(select);
+        tr.appendChild(tdMap);
+
+        tbody.appendChild(tr);
+    });
+}
+
+function parseSampleRows(data, maxRows) {
+    var lines = data.split('\n');
+    if (lines.length < 2) return [];
+    var headers = parseCSVLine(lines[0]);
+    var rows = [];
+    for (var i = 1; i < lines.length && rows.length < maxRows; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var values = parseCSVLine(line);
+        var row = {};
+        headers.forEach(function(h, idx) {
+            row[h] = values[idx] || '';
+        });
+        rows.push(row);
+    }
+    return rows;
+}
+
+function parseCSVLine(line) {
+    var result = [];
+    var current = '';
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                current += ch;
+            }
+        } else {
+            if (ch === '"') {
+                inQuotes = true;
+            } else if (ch === ',') {
+                result.push(current.trim());
+                current = '';
+            } else {
+                current += ch;
+            }
+        }
+    }
+    result.push(current.trim());
+    return result;
+}
+
+function getColumnMap() {
+    var map = {};
+    var selects = document.querySelectorAll('#mapping-tbody select');
+    selects.forEach(function(sel) {
+        var header = sel.getAttribute('data-header');
+        map[header] = sel.value;
+    });
+    return map;
+}
+
+/* ── Step 3: Preview Import ───────────────────────────────────────────────── */
+
+function previewImport() {
+    importColumnMap = getColumnMap();
+
+    // Validate: need at least discord_name and steam64 mapped
+    var mappedFields = Object.values(importColumnMap);
+    if (mappedFields.indexOf('discord_name') === -1) {
+        showFlash('You must map at least one column to "Discord Name".', 'error');
+        return;
+    }
+    if (mappedFields.indexOf('steam64') === -1) {
+        showFlash('You must map at least one column to "Steam64 ID".', 'error');
+        return;
+    }
+
     var btn = document.getElementById('btn-preview-import');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Previewing...';
+
+    var type = document.getElementById('import-type').value;
+
+    fetch('/api/admin/import/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            data: importRawData,
+            type: type,
+            format: 'csv',
+            column_map: importColumnMap
+        })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to preview import.', 'error');
+            return;
+        }
+
+        previewUsers = result.data.users || [];
+        renderPreviewTable(result.data);
+        goToStep(3);
+    })
+    .catch(function() {
+        showFlash('Network error previewing import.', 'error');
+    })
+    .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Continue to Preview';
+    });
+}
+
+// For squad_cfg format: skip column mapping step
+function previewImportDirect() {
+    var type = document.getElementById('import-type').value;
+    var pasteText = document.getElementById('import-paste').value.trim();
+
+    var btn = document.getElementById('btn-load-headers');
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> Previewing...';
 
     var formData = new FormData();
     formData.append('type', type);
-    formData.append('format', format);
-    formData.append('duplicate_handling', duplicates);
-
+    formData.append('format', 'squad_cfg');
     if (selectedFile) {
         formData.append('file', selectedFile);
     } else {
@@ -669,102 +1109,144 @@ function previewImport() {
                 showFlash(result.data.error || 'Failed to preview import.', 'error');
                 return;
             }
-
-            previewData = result.data;
+            previewUsers = result.data.users || [];
             renderPreviewTable(result.data);
-
-            document.getElementById('import-preview').classList.add('visible');
-            document.getElementById('btn-confirm-import').disabled = false;
+            goToStep(3);
         })
         .catch(function() {
             showFlash('Network error previewing import.', 'error');
         })
         .finally(function() {
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview Import';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg> Continue to Column Mapping';
         });
 }
 
 function renderPreviewTable(data) {
-    var rows = data.rows || data.entries || [];
-    var columns = data.columns || ['steam_id', 'eos_id', 'discord_name', 'status'];
+    var users = data.users || [];
     var summary = data.summary || {};
 
-    // Summary
+    // Summary bar
     var summaryEl = document.getElementById('preview-summary');
     var parts = [];
-    if (summary.total != null) parts.push('<span class="count">' + summary.total + '</span> total');
+    if (summary.total_users != null) parts.push('<span class="count">' + summary.total_users + '</span> users');
+    if (summary.total_ids != null) parts.push('<span class="count">' + summary.total_ids + '</span> IDs');
     if (summary.new != null) parts.push('<span class="count">' + summary.new + '</span> new');
-    if (summary.duplicates != null) parts.push('<span class="count">' + summary.duplicates + '</span> duplicates');
-    if (summary.errors != null) parts.push('<span class="count">' + summary.errors + '</span> errors');
+    if (summary.existing != null) parts.push('<span class="count">' + summary.existing + '</span> existing');
+    if (summary.invalid != null && summary.invalid > 0) parts.push('<span class="count">' + summary.invalid + '</span> invalid');
     summaryEl.innerHTML = parts.join(' &middot; ');
 
-    // Header
-    var thead = document.getElementById('preview-thead-row');
-    thead.innerHTML = '';
-    columns.forEach(function(col) {
-        var th = document.createElement('th');
-        th.textContent = col.replace(/_/g, ' ');
-        thead.appendChild(th);
-    });
-
-    // Body (max 20 rows in preview)
+    // Body (max 30 users in preview)
     var tbody = document.getElementById('preview-tbody');
     tbody.innerHTML = '';
-    var displayRows = rows.slice(0, 20);
-    displayRows.forEach(function(row) {
+    var displayUsers = users.slice(0, 30);
+    displayUsers.forEach(function(user) {
         var tr = document.createElement('tr');
-        columns.forEach(function(col) {
-            var td = document.createElement('td');
-            var val = row[col] != null ? row[col] : '';
-            td.textContent = typeof val === 'object' ? JSON.stringify(val) : val;
-            tr.appendChild(td);
-        });
+
+        // Discord Name
+        var tdName = document.createElement('td');
+        tdName.textContent = user.discord_name || '(unknown)';
+        tr.appendChild(tdName);
+
+        // Discord ID
+        var tdId = document.createElement('td');
+        tdId.textContent = user.discord_id || '';
+        tdId.style.fontFamily = "'Consolas', monospace";
+        tdId.style.fontSize = '0.82rem';
+        tr.appendChild(tdId);
+
+        // Plan
+        var tdPlan = document.createElement('td');
+        tdPlan.textContent = user.plan || '-';
+        tr.appendChild(tdPlan);
+
+        // Slots
+        var tdSlots = document.createElement('td');
+        tdSlots.textContent = user.slot_limit || '-';
+        tr.appendChild(tdSlots);
+
+        // Steam IDs
+        var tdSteam = document.createElement('td');
+        var steamIds = user.steam_ids || [];
+        tdSteam.textContent = steamIds.join(', ');
+        tdSteam.style.fontFamily = "'Consolas', monospace";
+        tdSteam.style.fontSize = '0.78rem';
+        tdSteam.style.maxWidth = '280px';
+        tdSteam.style.overflow = 'hidden';
+        tdSteam.style.textOverflow = 'ellipsis';
+        tdSteam.title = steamIds.join('\n');
+        tr.appendChild(tdSteam);
+
+        // Status
+        var tdStatus = document.createElement('td');
+        var badge = document.createElement('span');
+        badge.className = 'status-badge ' + (user.status || 'new');
+        badge.textContent = user.status || 'new';
+        tdStatus.appendChild(badge);
+        tr.appendChild(tdStatus);
+
         tbody.appendChild(tr);
     });
 
-    if (rows.length > 20) {
+    if (users.length > 30) {
         var tr = document.createElement('tr');
         var td = document.createElement('td');
-        td.setAttribute('colspan', columns.length);
+        td.setAttribute('colspan', '6');
         td.className = 'text-muted text-center';
-        td.textContent = '... and ' + (rows.length - 20) + ' more rows';
+        td.textContent = '... and ' + (users.length - 30) + ' more users';
         tr.appendChild(td);
         tbody.appendChild(tr);
     }
 }
 
-/* ── Confirm Import ───────────────────────────────────────────────────────── */
+/* ── Step 4: Confirm Import ───────────────────────────────────────────────── */
 
 function confirmImport() {
     var type = document.getElementById('import-type').value;
-    var format = document.getElementById('import-format').value;
+    var fmt = document.getElementById('import-format').value;
     var duplicates = document.getElementById('import-duplicates').value;
-    var pasteText = document.getElementById('import-paste').value.trim();
 
     var btn = document.getElementById('btn-confirm-import');
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> Importing...';
 
+    goToStep(4);
+
     // Show progress bar
-    var progressContainer = document.getElementById('import-progress');
-    progressContainer.classList.add('visible');
     var progressFill = document.getElementById('import-progress-fill');
     var progressText = document.getElementById('import-progress-text');
     progressFill.style.width = '10%';
     progressText.textContent = 'Starting import...';
 
-    var formData = new FormData();
-    formData.append('type', type);
-    formData.append('format', format);
-    formData.append('duplicate_handling', duplicates);
-
-    if (selectedFile) {
-        formData.append('file', selectedFile);
-    } else {
-        formData.append('paste_data', pasteText);
+    // Build request body
+    var body = {
+        data: importRawData,
+        type: type,
+        format: fmt,
+        duplicate_handling: duplicates
+    };
+    if (fmt === 'csv' && Object.keys(importColumnMap).length > 0) {
+        body.column_map = importColumnMap;
     }
 
+    // For squad_cfg with file, we need to read the file first
+    if (fmt === 'squad_cfg' && selectedFile && !importRawData) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            body.data = e.target.result;
+            doImportRequest(body, btn, progressFill, progressText);
+        };
+        reader.readAsText(selectedFile);
+    } else {
+        // If we don't have raw data yet (squad_cfg from paste)
+        if (!body.data) {
+            body.data = document.getElementById('import-paste').value.trim();
+        }
+        doImportRequest(body, btn, progressFill, progressText);
+    }
+}
+
+function doImportRequest(body, btn, progressFill, progressText) {
     // Simulate progress
     var progressInterval = setInterval(function() {
         var current = parseFloat(progressFill.style.width) || 10;
@@ -774,40 +1256,39 @@ function confirmImport() {
         }
     }, 500);
 
-    fetch('/api/admin/import', { method: 'POST', body: formData })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(result) {
-            clearInterval(progressInterval);
-            progressFill.style.width = '100%';
-            progressText.textContent = 'Complete!';
+    fetch('/api/admin/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+        clearInterval(progressInterval);
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Complete!';
 
-            if (!result.ok) {
-                showFlash(result.data.error || 'Import failed.', 'error');
-                return;
-            }
+        if (!result.ok) {
+            showFlash(result.data.error || 'Import failed.', 'error');
+            return;
+        }
 
-            var res = result.data;
-            // Show result summary
-            document.getElementById('result-added').textContent = res.added || 0;
-            document.getElementById('result-updated').textContent = res.updated || 0;
-            document.getElementById('result-skipped').textContent = res.skipped || 0;
-            document.getElementById('result-errors').textContent = res.errors || 0;
-            document.getElementById('import-result').classList.add('visible');
+        var res = result.data;
+        document.getElementById('result-added').textContent = res.added || 0;
+        document.getElementById('result-updated').textContent = res.updated || 0;
+        document.getElementById('result-skipped').textContent = res.skipped || 0;
+        document.getElementById('result-errors').textContent = res.errors || 0;
+        document.getElementById('import-result').classList.add('visible');
 
-            showFlash('Import completed successfully.', 'success');
-        })
-        .catch(function() {
-            clearInterval(progressInterval);
-            showFlash('Network error during import.', 'error');
-        })
-        .finally(function() {
-            btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Import';
-
-            setTimeout(function() {
-                progressContainer.classList.remove('visible');
-            }, 2000);
-        });
+        showFlash('Import completed successfully.', 'success');
+    })
+    .catch(function() {
+        clearInterval(progressInterval);
+        showFlash('Network error during import.', 'error');
+    })
+    .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Import';
+    });
 }
 
 /* ── Export ────────────────────────────────────────────────────────────────── */

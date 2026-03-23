@@ -1314,43 +1314,91 @@ async def admin_report(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "message": "Report generation triggered"})
 
 
-def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: set) -> tuple[list[dict], dict]:
+PLAN_SLOT_MAP = {
+    "solo": 1, "single": 1, "basic": 1, "1": 1,
+    "duo": 2, "double": 2, "pair": 2, "2": 2,
+    "trio": 3, "triple": 3, "3": 3,
+    "squad": 4, "quad": 4, "family": 4, "4": 4,
+    "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
+}
+
+
+# Column auto-detection name sets for CSV headers
+_AUTO_DETECT_MAP = {
+    "discord_name": {"discord_name", "name", "player", "playername", "player_name",
+                     "username", "user_name", "user"},
+    "discord_id": {"discord_id", "discordid", "discord_user_id"},
+    "steam64": {"steam64", "steamid", "steam_id", "steam64id", "steam64_id", "steam"},
+    "eos_id": {"eos_id", "eosid", "eos", "eos_player_id"},
+    "plan": {"plan", "plan_name", "role", "tier", "subscription"},
+    "notes": {"notes", "note", "comment", "comments", "admin_notes"},
+}
+
+
+def _auto_detect_column_map(fieldnames: list[str]) -> dict[str, str]:
+    """Auto-detect which CSV columns map to which internal fields.
+
+    Returns a dict like {"Username": "discord_name", "Steam64ID": "steam64", ...}
+    mapping original column name -> our field name.
+    """
+    result: dict[str, str] = {}
+    for fn in fieldnames:
+        lower = fn.strip().lower().replace(" ", "_")
+        matched = False
+        for field, aliases in _AUTO_DETECT_MAP.items():
+            if lower in aliases:
+                result[fn] = field
+                matched = True
+                break
+        if not matched:
+            result[fn] = "skip"
+    return result
+
+
+def _parse_csv_headers(data: str) -> list[str]:
+    """Read just the header row from CSV data and return the column names."""
+    reader = csv.DictReader(io.StringIO(data))
+    return list(reader.fieldnames) if reader.fieldnames else []
+
+
+def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: set,
+                    column_map: dict[str, str] | None = None) -> tuple[list[dict], dict]:
     """Parse CSV data and return (rows, summary).
 
-    Flexible column name matching:
-    discord_name / name / player / playername
-    discord_id / discordid
-    steam64 / steamid / steam_id / steam64id
-    eos_id / eosid / eos
+    If column_map is provided, it maps original CSV column names to our fields:
+      {"Username": "discord_name", "Steam64ID": "steam64", "Plan": "plan", ...}
+    If column_map is None, auto-detect using flexible column name matching.
     """
     reader = csv.DictReader(io.StringIO(data))
     if not reader.fieldnames:
         return [], {"total": 0, "new": 0, "duplicate": 0, "invalid": 0}
 
-    # Normalise column names
-    col_map: dict[str, str] = {}
-    for fn in reader.fieldnames:
-        lower = fn.strip().lower().replace(" ", "_")
-        if lower in ("discord_name", "name", "player", "playername", "player_name", "username", "user_name", "user"):
-            col_map["discord_name"] = fn
-        elif lower in ("discord_id", "discordid", "discord_user_id"):
-            col_map["discord_id"] = fn
-        elif lower in ("steam64", "steamid", "steam_id", "steam64id", "steam64_id", "steam"):
-            col_map["steam64"] = fn
-        elif lower in ("eos_id", "eosid", "eos", "eos_player_id"):
-            col_map["eos_id"] = fn
-        elif lower in ("plan", "plan_name", "role", "tier", "subscription"):
-            col_map["plan"] = fn
+    # Build reverse map: our_field -> csv_column_name
+    if column_map is not None:
+        # column_map: {"CSV Col": "our_field", ...}
+        rev: dict[str, str] = {}
+        for csv_col, our_field in column_map.items():
+            if our_field != "skip" and csv_col in reader.fieldnames:
+                rev[our_field] = csv_col
+    else:
+        # Auto-detect (backward compat)
+        auto = _auto_detect_column_map(reader.fieldnames)
+        rev = {}
+        for csv_col, our_field in auto.items():
+            if our_field != "skip":
+                rev[our_field] = csv_col
 
     rows: list[dict] = []
     summary = {"total": 0, "new": 0, "duplicate": 0, "invalid": 0}
 
     for line in reader:
         summary["total"] += 1
-        discord_name = line.get(col_map.get("discord_name", ""), "").strip()
-        discord_id = line.get(col_map.get("discord_id", ""), "").strip()
-        raw_steam = line.get(col_map.get("steam64", ""), "").strip()
-        raw_eos = line.get(col_map.get("eos_id", ""), "").strip()
+        discord_name = line.get(rev.get("discord_name", ""), "").strip()
+        discord_id = line.get(rev.get("discord_id", ""), "").strip()
+        raw_steam = line.get(rev.get("steam64", ""), "").strip()
+        raw_eos = line.get(rev.get("eos_id", ""), "").strip()
+        plan = line.get(rev.get("plan", ""), "").strip()
+        notes = line.get(rev.get("notes", ""), "").strip()
 
         steam_ids = [s.strip() for s in raw_steam.split(";") if s.strip()] if raw_steam else []
         eos_ids = [e.strip() for e in raw_eos.split(";") if e.strip()] if raw_eos else []
@@ -1370,6 +1418,8 @@ def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: 
                 "discord_name": discord_name or "(unknown)",
                 "steam_ids": steam_ids,
                 "eos_ids": eos_ids,
+                "plan": plan,
+                "notes": notes,
                 "status": "invalid",
             })
             continue
@@ -1382,10 +1432,86 @@ def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: 
             "discord_id": discord_id,
             "steam_ids": steam_ids,
             "eos_ids": eos_ids,
+            "plan": plan,
+            "notes": notes,
             "status": status,
         })
 
     return rows, summary
+
+
+def _group_rows_by_user(rows: list[dict], default_slot_limit: int,
+                        existing_discord_ids: set[int]) -> list[dict]:
+    """Group parsed rows by Discord ID (or Discord Name if no ID).
+
+    Aggregates all Steam IDs and EOS IDs per user. Determines slot_limit
+    from the plan field using PLAN_SLOT_MAP.
+    """
+    groups: dict[str, dict] = {}  # key -> aggregated user dict
+
+    for row in rows:
+        if row.get("status") == "invalid":
+            continue
+
+        discord_id = row.get("discord_id", "").strip()
+        discord_name = row.get("discord_name", "(unknown)")
+
+        # Group key: prefer discord_id, fall back to discord_name
+        key = discord_id if discord_id else f"name:{discord_name}"
+
+        if key not in groups:
+            groups[key] = {
+                "discord_name": discord_name,
+                "discord_id": discord_id,
+                "plan": row.get("plan", ""),
+                "notes": row.get("notes", ""),
+                "steam_ids": [],
+                "eos_ids": [],
+            }
+        else:
+            # Update name if we didn't have one
+            if not groups[key]["discord_name"] or groups[key]["discord_name"] == "(unknown)":
+                groups[key]["discord_name"] = discord_name
+            # Use the first non-empty plan
+            if not groups[key]["plan"] and row.get("plan"):
+                groups[key]["plan"] = row["plan"]
+            if not groups[key]["notes"] and row.get("notes"):
+                groups[key]["notes"] = row["notes"]
+
+        # Aggregate IDs (deduplicate)
+        for sid in row.get("steam_ids", []):
+            if sid not in groups[key]["steam_ids"]:
+                groups[key]["steam_ids"].append(sid)
+        for eid in row.get("eos_ids", []):
+            if eid not in groups[key]["eos_ids"]:
+                groups[key]["eos_ids"].append(eid)
+
+    # Build final user list with slot_limit and status
+    users: list[dict] = []
+    for user in groups.values():
+        plan = user["plan"]
+        plan_lower = plan.strip().lower() if plan else ""
+        slot_limit = PLAN_SLOT_MAP.get(plan_lower, default_slot_limit)
+
+        # Determine status
+        try:
+            did = int(user["discord_id"]) if user["discord_id"] else 0
+        except (ValueError, TypeError):
+            did = 0
+        status = "existing" if did in existing_discord_ids else "new"
+
+        users.append({
+            "discord_name": user["discord_name"],
+            "discord_id": user["discord_id"],
+            "plan": plan,
+            "slot_limit": slot_limit,
+            "steam_ids": user["steam_ids"],
+            "eos_ids": user["eos_ids"],
+            "notes": user["notes"],
+            "status": status,
+        })
+
+    return users
 
 
 def _parse_squad_cfg_data(data: str, existing_steam_ids: set) -> tuple[list[dict], dict]:
@@ -1454,8 +1580,50 @@ async def _get_existing_steam_ids(db, guild_id: int, wl_id: int) -> set:
 
 
 @require_admin
+async def admin_import_headers(request: web.Request) -> web.Response:
+    """Step 1: Upload/paste data and return the CSV column headers found.
+
+    Accepts multipart (file upload) or JSON (paste_data).
+    Returns {"headers": ["Col1", "Col2", ...], "auto_map": {"Col1": "discord_name", ...}}
+    """
+    session = await aiohttp_session.get_session(request)
+
+    content_type = request.content_type or ""
+    data = ""
+    if "multipart" in content_type:
+        reader = await request.multipart()
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name in ("data", "file", "paste_data"):
+                data = (await part.read(decode=True)).decode("utf-8", errors="replace")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid request body."}, status=400)
+        data = body.get("data", "") or body.get("paste_data", "")
+
+    if not data:
+        return web.json_response({"error": "No data provided."}, status=400)
+
+    headers = _parse_csv_headers(data)
+    if not headers:
+        return web.json_response({"error": "Could not detect any CSV columns."}, status=400)
+
+    auto_map = _auto_detect_column_map(headers)
+
+    return web.json_response({"headers": headers, "auto_map": auto_map})
+
+
+@require_admin
 async def admin_import_preview(request: web.Request) -> web.Response:
-    """Preview import data without committing changes."""
+    """Step 3: Preview import data grouped by user with column mapping.
+
+    Accepts the column_map dict along with data and whitelist type.
+    Returns grouped users with slot_limit derived from plan field.
+    """
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
@@ -1468,6 +1636,7 @@ async def admin_import_preview(request: web.Request) -> web.Response:
         data = ""
         fmt = "csv"
         wl_type = ""
+        column_map_raw = ""
         while True:
             part = await reader.next()
             if part is None:
@@ -1478,6 +1647,8 @@ async def admin_import_preview(request: web.Request) -> web.Response:
                 fmt = (await part.read(decode=True)).decode().strip()
             elif part.name in ("whitelist_type", "type"):
                 wl_type = (await part.read(decode=True)).decode().strip()
+            elif part.name == "column_map":
+                column_map_raw = (await part.read(decode=True)).decode().strip()
             elif part.name == "duplicate_handling":
                 pass  # Used in import, not preview
     else:
@@ -1488,6 +1659,9 @@ async def admin_import_preview(request: web.Request) -> web.Response:
         data = body.get("data", "") or body.get("paste_data", "")
         fmt = body.get("format", "csv")
         wl_type = body.get("whitelist_type", "") or body.get("type", "")
+        column_map_raw = ""
+        if "column_map" in body:
+            column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -1499,19 +1673,56 @@ async def admin_import_preview(request: web.Request) -> web.Response:
     if fmt not in ("csv", "squad_cfg"):
         return web.json_response({"error": "format must be 'csv' or 'squad_cfg'."}, status=400)
 
-    existing = await _get_existing_steam_ids(db, guild_id, wl_id)
+    # Parse column_map if provided
+    column_map: dict[str, str] | None = None
+    if column_map_raw:
+        try:
+            column_map = json.loads(column_map_raw)
+        except (json.JSONDecodeError, TypeError):
+            return web.json_response({"error": "Invalid column_map JSON."}, status=400)
+
+    existing_steam = await _get_existing_steam_ids(db, guild_id, wl_id)
 
     if fmt == "csv":
-        rows, summary = _parse_csv_data(data, guild_id, wl_type, existing)
+        rows, raw_summary = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
     else:
-        rows, summary = _parse_squad_cfg_data(data, existing)
+        rows, raw_summary = _parse_squad_cfg_data(data, existing_steam)
 
-    return web.json_response({"rows": rows, "summary": summary})
+    # Get existing discord_ids for this whitelist to determine new vs existing
+    existing_users_rows = await db.fetchall(
+        "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl_id),
+    )
+    existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
+
+    default_slot = wl["default_slot_limit"] or 1
+    users = _group_rows_by_user(rows, default_slot, existing_discord_ids)
+
+    # Build summary
+    total_users = len(users)
+    total_ids = sum(len(u["steam_ids"]) + len(u["eos_ids"]) for u in users)
+    new_count = sum(1 for u in users if u["status"] == "new")
+    existing_count = sum(1 for u in users if u["status"] == "existing")
+    invalid_count = raw_summary.get("invalid", 0)
+
+    summary = {
+        "total_users": total_users,
+        "total_ids": total_ids,
+        "new": new_count,
+        "existing": existing_count,
+        "invalid": invalid_count,
+    }
+
+    return web.json_response({"users": users, "summary": summary})
 
 
 @require_admin
 async def admin_import(request: web.Request) -> web.Response:
-    """Execute the import, inserting/updating records."""
+    """Step 4: Execute the import, creating proper whitelist_users and whitelist_identifiers records.
+
+    Accepts column_map and groups rows by user before importing.
+    Duplicate handling: skip, overwrite, merge.
+    """
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     actor_id = int(session["discord_id"])
@@ -1526,6 +1737,7 @@ async def admin_import(request: web.Request) -> web.Response:
         fmt = "csv"
         wl_type = ""
         dup_handling = "skip"
+        column_map_raw = ""
         while True:
             part = await reader.next()
             if part is None:
@@ -1538,6 +1750,8 @@ async def admin_import(request: web.Request) -> web.Response:
                 wl_type = (await part.read(decode=True)).decode().strip()
             elif part.name == "duplicate_handling":
                 dup_handling = (await part.read(decode=True)).decode().strip()
+            elif part.name == "column_map":
+                column_map_raw = (await part.read(decode=True)).decode().strip()
     else:
         try:
             body = await request.json()
@@ -1547,6 +1761,9 @@ async def admin_import(request: web.Request) -> web.Response:
         fmt = body.get("format", "csv")
         wl_type = body.get("whitelist_type", "") or body.get("type", "")
         dup_handling = body.get("duplicate_handling", "skip")
+        column_map_raw = ""
+        if "column_map" in body:
+            column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -1560,14 +1777,32 @@ async def admin_import(request: web.Request) -> web.Response:
     if dup_handling not in ("skip", "overwrite", "merge"):
         return web.json_response({"error": "duplicate_handling must be 'skip', 'overwrite', or 'merge'."}, status=400)
 
-    existing = await _get_existing_steam_ids(db, guild_id, wl_id)
+    # Parse column_map if provided
+    column_map: dict[str, str] | None = None
+    if column_map_raw:
+        try:
+            column_map = json.loads(column_map_raw)
+        except (json.JSONDecodeError, TypeError):
+            return web.json_response({"error": "Invalid column_map JSON."}, status=400)
+
+    existing_steam = await _get_existing_steam_ids(db, guild_id, wl_id)
 
     if fmt == "csv":
-        rows, _ = _parse_csv_data(data, guild_id, wl_type, existing)
+        rows, _ = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
     else:
-        rows, _ = _parse_squad_cfg_data(data, existing)
+        rows, _ = _parse_squad_cfg_data(data, existing_steam)
 
     default_slot = wl["default_slot_limit"] or 1
+
+    # Get existing discord_ids
+    existing_users_rows = await db.fetchall(
+        "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl_id),
+    )
+    existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
+
+    # Group rows by user
+    users = _group_rows_by_user(rows, default_slot, existing_discord_ids)
 
     added = 0
     updated = 0
@@ -1575,16 +1810,15 @@ async def admin_import(request: web.Request) -> web.Response:
     errors = 0
     id_counter = int(time.time() * 1000)
 
-    for row in rows:
-        if row["status"] == "invalid":
-            errors += 1
-            continue
+    for user in users:
+        steam_ids = user.get("steam_ids", [])
+        eos_ids = user.get("eos_ids", [])
+        discord_name = user.get("discord_name", "(unknown)")
+        plan = user.get("plan", "")
+        notes = user.get("notes", "")
+        slot_limit = user.get("slot_limit", default_slot)
 
-        steam_ids = row.get("steam_ids", [])
-        eos_ids = row.get("eos_ids", [])
-        discord_name = row.get("discord_name", "(unknown)")
-        raw_discord_id = row.get("discord_id", "")
-
+        raw_discord_id = user.get("discord_id", "")
         try:
             discord_id = int(raw_discord_id) if raw_discord_id else 0
         except (ValueError, TypeError):
@@ -1593,24 +1827,17 @@ async def admin_import(request: web.Request) -> web.Response:
             id_counter += 1
             discord_id = -abs(id_counter)
 
-        is_dup = row["status"] == "duplicate"
+        is_existing = user["status"] == "existing"
 
-        if is_dup:
+        # Pack plan metadata
+        plan_meta = _pack_plan_meta(plan=plan, notes=notes)
+
+        if is_existing:
             if dup_handling == "skip":
                 skipped += 1
                 continue
             elif dup_handling == "overwrite":
-                # Find existing user by steam id
-                for sid in steam_ids:
-                    existing_user = await db.fetchone(
-                        "SELECT discord_id FROM whitelist_identifiers "
-                        "WHERE guild_id=%s AND whitelist_id=%s AND id_type='steam64' AND id_value=%s",
-                        (guild_id, wl_id, sid),
-                    )
-                    if existing_user:
-                        discord_id = existing_user[0]
-                        break
-                # Replace identifiers
+                # Replace identifiers entirely
                 identifiers = []
                 for sid in steam_ids:
                     identifiers.append(("steam64", str(sid), False, "import"))
@@ -1619,21 +1846,11 @@ async def admin_import(request: web.Request) -> web.Response:
                 await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
                 await db.upsert_user_record(
                     guild_id, discord_id, wl_id, discord_name, "active",
-                    default_slot, "", slot_limit_override=None,
+                    slot_limit, plan_meta, slot_limit_override=None,
                 )
                 updated += 1
             elif dup_handling == "merge":
-                # Find existing user, add new IDs without removing old ones
-                for sid in steam_ids:
-                    existing_user = await db.fetchone(
-                        "SELECT discord_id FROM whitelist_identifiers "
-                        "WHERE guild_id=%s AND whitelist_id=%s AND id_type='steam64' AND id_value=%s",
-                        (guild_id, wl_id, sid),
-                    )
-                    if existing_user:
-                        discord_id = existing_user[0]
-                        break
-                # Get current identifiers
+                # Add new IDs without removing old ones
                 current_ids = await db.get_identifiers(guild_id, discord_id, wl_id)
                 current_set = {(r[0], r[1]) for r in current_ids}
                 identifiers = [(r[0], r[1], False, "import") for r in current_ids]
@@ -1654,7 +1871,7 @@ async def admin_import(request: web.Request) -> web.Response:
                 identifiers.append(("eosid", str(eid), False, "import"))
             await db.upsert_user_record(
                 guild_id, discord_id, wl_id, discord_name, "active",
-                default_slot, "", slot_limit_override=None,
+                slot_limit, plan_meta, slot_limit_override=None,
             )
             await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
             added += 1
@@ -1872,6 +2089,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/resync", admin_resync)
     app.router.add_post("/api/admin/report", admin_report)
     # Admin Import / Export
+    app.router.add_post("/api/admin/import/headers", admin_import_headers)
     app.router.add_post("/api/admin/import/preview", admin_import_preview)
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_get("/api/admin/export", admin_export)
