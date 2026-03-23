@@ -833,19 +833,31 @@ class EditGroupPermsView(discord.ui.View):
 class GroupManagementView(discord.ui.View):
     on_error = _view_on_error
 
-    def __init__(self, bot: "WhitelistBot"):
+    def __init__(self, bot: "WhitelistBot", *, hub_view: "MainSetupView" = None):
         super().__init__(timeout=300)
         self.bot = bot
+        self.hub_view = hub_view
 
     async def _build_embed(self) -> discord.Embed:
         groups = await self.bot.db.get_squad_groups()
-        e = discord.Embed(title="Squad Group Management", color=discord.Color.dark_gold())
-        if not groups:
-            e.description = "No groups configured."
-        else:
+        lines = []
+        if groups:
             for name, perms, is_default in groups:
-                default_tag = " (default)" if is_default else ""
-                e.add_field(name=f"{name}{default_tag}", value=f"`{perms}`", inline=False)
+                tag = " *(default)*" if is_default else ""
+                lines.append(f"**{name}**{tag}\n`{perms}`")
+        # Show which types are assigned to which groups
+        assignments = []
+        for wt in ("subscription", "clan"):
+            cfg = await self.bot.db.get_type_config(wt)
+            if cfg:
+                assignments.append(f"{wt.title()} \u2192 `{cfg.get('squad_group', 'Whitelist')}`")
+        e = discord.Embed(
+            title="\U0001f396\ufe0f Squad Group Management",
+            description="\n\n".join(lines) if lines else "No groups configured.",
+            color=discord.Color.dark_gold(),
+        )
+        if assignments:
+            e.add_field(name="Type Assignments", value="\n".join(assignments), inline=False)
         e.set_footer(text="Groups define the permission set in RemoteAdminList output")
         return e
 
@@ -900,10 +912,63 @@ class GroupManagementView(discord.ui.View):
         view.add_item(select)
         await interaction.response.send_message("Select a group to delete:", view=view, ephemeral=True)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=1, emoji="\U0001f504")
+    @discord.ui.button(label="Assign to Type", style=discord.ButtonStyle.gray, row=1)
+    async def assign_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        groups = await self.bot.db.get_squad_groups()
+        if not groups:
+            await interaction.response.send_message("Create a group first.", ephemeral=True)
+            return
+        # Build type selector
+        type_options = []
+        for wt in ("subscription", "clan"):
+            cfg = await self.bot.db.get_type_config(wt)
+            if cfg and cfg["enabled"]:
+                current = cfg.get("squad_group", "Whitelist")
+                type_options.append(discord.SelectOption(label=wt.title(), value=wt, description=f"Currently: {current}"))
+        if not type_options:
+            await interaction.response.send_message("No enabled whitelist types to assign.", ephemeral=True)
+            return
+        group_options = [
+            discord.SelectOption(label=name, value=name, description=f"Perms: {perms[:80]}")
+            for name, perms, _ in groups
+        ]
+        view = discord.ui.View(timeout=120)
+        type_select = discord.ui.Select(placeholder="Select whitelist type", options=type_options, row=0)
+        group_select = discord.ui.Select(placeholder="Select group to assign", options=group_options, row=1)
+        chosen = {}
+
+        async def _on_type(sel_interaction: discord.Interaction):
+            chosen["type"] = sel_interaction.data["values"][0]
+            await sel_interaction.response.defer()
+
+        async def _on_group(sel_interaction: discord.Interaction):
+            wt = chosen.get("type")
+            if not wt:
+                await sel_interaction.response.send_message("Select a whitelist type first.", ephemeral=True)
+                return
+            gname = sel_interaction.data["values"][0]
+            await self.bot.db.set_type_config(wt, squad_group=gname)
+            await self.bot.db.audit("setup_type", sel_interaction.user.id, None, f"type={wt} squad_group={gname}", wt)
+            await sel_interaction.response.send_message(f"**{wt.title()}** now uses group **{gname}**.", ephemeral=True)
+
+        type_select.callback = _on_type
+        group_select.callback = _on_group
+        view.add_item(type_select)
+        view.add_item(group_select)
+        await interaction.response.send_message("Assign a group to a whitelist type:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=2, emoji="\U0001f504")
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = await self._build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=2, emoji="\U0001f519")
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.hub_view:
+            embed = await self.hub_view._build_hub_embed(interaction.guild)
+            await interaction.response.edit_message(embed=embed, view=self.hub_view)
+        else:
+            await interaction.response.defer()
 
 
 # ─── Setup: Main Hub ─────────────────────────────────────────────────────────
@@ -923,137 +988,88 @@ class MainSetupView(discord.ui.View):
         mod_role_id = int((await self.bot.db.get_setting("mod_role_id", "")) or 0)
         mod_role_text = f"<@&{mod_role_id}>" if mod_role_id else "`Not set`"
 
-        e = discord.Embed(
-            title="Setup Hub",
-            description="Use the buttons below to configure each section.\nSettings update instantly when you make a selection.",
-            color=discord.Color.blurple(),
-        )
-        e.add_field(name="Mod Role", value=mod_role_text, inline=True)
-        e.add_field(name="Output Mode", value=f"`{output_mode}`", inline=True)
-        e.add_field(name="Combined File", value=f"`{combined_fn}`", inline=True)
-        e.add_field(name="Retention", value=f"`{retention}` days", inline=True)
-        e.add_field(name="Reports", value=f"`{frequency}`", inline=True)
         # Web server status
         if self.bot.web and self.bot.web.runner:
             proto = "https" if SSL_CERT_PATH else "http"
-            e.add_field(name="Web", value=f"`{proto}://...:{WEB_PORT}`", inline=True)
+            web_text = f"`{proto}://...:{WEB_PORT}`"
         else:
-            e.add_field(name="Web", value="`Off`", inline=True)
+            web_text = "`Off`"
 
-        # Squad groups summary
-        groups = await self.bot.db.get_squad_groups()
-        if groups:
-            group_text = ", ".join(f"`{n}` ({p})" for n, p, _ in groups)
-            e.add_field(name="Squad Groups", value=group_text, inline=False)
+        desc_lines = [
+            f"\u2699\ufe0f **Global Settings**",
+            f"\u2003Mod Role: {mod_role_text}",
+            f"\u2003Output: `{output_mode}` \u2192 `{combined_fn}`",
+            f"\u2003Reports: `{frequency}` \u2502 Retention: `{retention}` days \u2502 Web: {web_text}",
+            "",
+        ]
 
         for wt in ("subscription", "clan"):
             cfg = await self.bot.db.get_type_config(wt)
             if not cfg:
                 continue
-            status = "Enabled" if cfg["enabled"] else "Disabled"
+            icon = "\u2705" if cfg["enabled"] else "\u274c"
             panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
             log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
-            gh = "On" if cfg["github_enabled"] else "Off"
+            gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
             mappings = await self.bot.db.get_role_mappings(wt)
-            role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
-            e.add_field(
-                name=f"{wt.title()}",
-                value=(
-                    f"**Status:** `{status}`\n"
-                    f"**Panel:** {panel_ch}\n"
-                    f"**Log:** {log_ch}\n"
-                    f"**GitHub:** `{gh}` | `{cfg['github_filename']}`\n"
-                    f"**Default Slots:** `{cfg['default_slot_limit']}` | **Stack:** `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
-                    f"**Squad Group:** `{cfg.get('squad_group', 'Whitelist')}`\n"
-                    f"**Role Mappings:**\n" + "\n".join(role_lines)
-                ),
-                inline=False,
-            )
+            active_roles = [f"<@&{rid}>=`{sl}`" for rid, _, sl, active in mappings if active]
+            roles_text = ", ".join(active_roles) if active_roles else "`None`"
+            desc_lines.append(f"\U0001f4e6 **{wt.title()}** \u2014 {icon} Enabled")
+            desc_lines.append(f"\u2003Panel: {panel_ch} \u2502 Log: {log_ch} \u2502 GitHub: {gh_icon} `{cfg['github_filename']}`")
+            desc_lines.append(f"\u2003Slots: `{cfg['default_slot_limit']}` \u2502 Stack: `{'Yes' if cfg['stack_roles'] else 'No'}` \u2502 Group: `{cfg.get('squad_group', 'Whitelist')}`")
+            desc_lines.append(f"\u2003Roles: {roles_text}")
+            desc_lines.append("")
+
+        # Squad groups summary
+        groups = await self.bot.db.get_squad_groups()
+        if groups:
+            group_parts = [f"`{n}` ({p})" for n, p, _ in groups]
+            desc_lines.append(f"\U0001f396\ufe0f **Groups:** {', '.join(group_parts)}")
+        else:
+            desc_lines.append(f"\U0001f396\ufe0f **Groups:** `None configured`")
+
+        e = discord.Embed(
+            title="\U0001f4cb Setup Hub",
+            description="\n".join(desc_lines),
+            color=discord.Color.blurple(),
+        )
+        e.set_footer(text="Select a section below to configure.")
         return e
 
     # ── Row 0: Section navigation ──
 
-    @discord.ui.button(label="Global Settings", style=discord.ButtonStyle.blurple, row=0)
+    @discord.ui.button(label="Global", style=discord.ButtonStyle.blurple, row=0, emoji="\u2699\ufe0f")
     async def global_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            embed=discord.Embed(title="Global Settings", description="Use the dropdowns below to configure global options.", color=discord.Color.blurple()),
-            view=GlobalSettingsView(self.bot),
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Subscription", style=discord.ButtonStyle.gray, row=0)
-    async def subscription_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = await self.bot.db.get_type_config("subscription")
-        await interaction.response.send_message(
-            embed=await TypeSettingsView.build_embed(self.bot, "subscription", cfg, interaction.guild),
-            view=TypeSettingsView(self.bot, "subscription"),
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Clan", style=discord.ButtonStyle.gray, row=0)
-    async def clan_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = await self.bot.db.get_type_config("clan")
-        await interaction.response.send_message(
-            embed=await TypeSettingsView.build_embed(self.bot, "clan", cfg, interaction.guild),
-            view=TypeSettingsView(self.bot, "clan"),
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Groups", style=discord.ButtonStyle.green, row=0)
-    async def groups_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = GroupManagementView(self.bot)
+        view = GlobalSettingsView(self.bot, hub_view=self)
         embed = await view._build_embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
-    # ── Row 1: Mod role select ──
+    @discord.ui.button(label="Subscription", style=discord.ButtonStyle.gray, row=0, emoji="\U0001f4e6")
+    async def subscription_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = TypeSettingsView(self.bot, "subscription", hub_view=self)
+        embed = await view._build_embed(interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=view)
 
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Set Moderator Role",
-        row=1,
-    )
-    async def mod_role_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
-        role = select.values[0]
-        await self.bot.db.set_setting("mod_role_id", str(role.id))
-        await self.bot.db.audit("setup_mod_role", interaction.user.id, None, f"mod_role_id={role.id}")
-        await interaction.response.send_message(f"Moderator role set to {role.mention}.", ephemeral=True)
+    @discord.ui.button(label="Clan", style=discord.ButtonStyle.gray, row=0, emoji="\U0001f4e6")
+    async def clan_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = TypeSettingsView(self.bot, "clan", hub_view=self)
+        embed = await view._build_embed(interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=view)
 
-    # ── Row 2: Role mapping removal ──
+    @discord.ui.button(label="Groups", style=discord.ButtonStyle.green, row=0, emoji="\U0001f396\ufe0f")
+    async def groups_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = GroupManagementView(self.bot, hub_view=self)
+        embed = await view._build_embed()
+        await interaction.response.edit_message(embed=embed, view=view)
 
-    @discord.ui.button(label="Remove Sub Role Mapping", style=discord.ButtonStyle.red, row=2)
-    async def remove_sub_rolemap(self, interaction: discord.Interaction, button: discord.ui.Button):
-        mappings = await self.bot.db.get_role_mappings("subscription")
-        active = [m for m in mappings if m[3]]
-        if not active:
-            await interaction.response.send_message("No subscription role mappings to remove.", ephemeral=True)
-            return
-        await interaction.response.send_message(
-            "Select a subscription role mapping to remove:",
-            view=RemoveRoleMappingView(self.bot, "subscription", mappings),
-            ephemeral=True,
-        )
+    # ── Row 1: Utility buttons ──
 
-    @discord.ui.button(label="Remove Clan Role Mapping", style=discord.ButtonStyle.red, row=2)
-    async def remove_clan_rolemap(self, interaction: discord.Interaction, button: discord.ui.Button):
-        mappings = await self.bot.db.get_role_mappings("clan")
-        active = [m for m in mappings if m[3]]
-        if not active:
-            await interaction.response.send_message("No clan role mappings to remove.", ephemeral=True)
-            return
-        await interaction.response.send_message(
-            "Select a clan role mapping to remove:",
-            view=RemoveRoleMappingView(self.bot, "clan", mappings),
-            ephemeral=True,
-        )
-
-    # ── Row 3: Utility buttons ──
-
-    @discord.ui.button(label="Refresh", emoji="\U0001f504", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(label="Refresh", emoji="\U0001f504", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = await self._build_hub_embed(interaction.guild)
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.red, row=3)
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.red, row=1)
     async def done_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Setup closed.", view=None, embed=None)
 
@@ -1063,9 +1079,30 @@ class MainSetupView(discord.ui.View):
 class GlobalSettingsView(discord.ui.View):
     on_error = _view_on_error
 
-    def __init__(self, bot: "WhitelistBot"):
+    def __init__(self, bot: "WhitelistBot", *, hub_view: "MainSetupView" = None):
         super().__init__(timeout=300)
         self.bot = bot
+        self.hub_view = hub_view
+
+    async def _build_embed(self) -> discord.Embed:
+        output_mode = await self.bot.db.get_setting("output_mode", "combined")
+        combined_fn = await self.bot.db.get_setting("combined_filename", WHITELIST_FILENAME)
+        retention = await self.bot.db.get_setting("retention_days", "90")
+        frequency = await self.bot.db.get_setting("report_frequency", "weekly")
+        mod_role_id = int((await self.bot.db.get_setting("mod_role_id", "")) or 0)
+        mod_role_text = f"<@&{mod_role_id}>" if mod_role_id else "`Not set`"
+        e = discord.Embed(
+            title="\u2699\ufe0f Global Settings",
+            description=(
+                f"**Mod Role:** {mod_role_text}\n"
+                f"**Output Mode:** `{output_mode}` \u2192 `{combined_fn}`\n"
+                f"**Report Frequency:** `{frequency}`\n"
+                f"**Retention Period:** `{retention}` days\n\n"
+                "Use the dropdowns below to change settings."
+            ),
+            color=discord.Color.blurple(),
+        )
+        return e
 
     @discord.ui.select(
         placeholder="Output Mode",
@@ -1080,7 +1117,8 @@ class GlobalSettingsView(discord.ui.View):
         mode = select.values[0]
         await self.bot.db.set_setting("output_mode", mode)
         await self.bot.db.audit("setup_global", interaction.user.id, None, f"output_mode={mode}")
-        await interaction.response.send_message(f"Output mode set to **{mode}**.", ephemeral=True)
+        embed = await self._build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.select(
         placeholder="Report Frequency",
@@ -1095,7 +1133,8 @@ class GlobalSettingsView(discord.ui.View):
         freq = select.values[0]
         await self.bot.db.set_setting("report_frequency", freq)
         await self.bot.db.audit("setup_global", interaction.user.id, None, f"report_frequency={freq}")
-        await interaction.response.send_message(f"Report frequency set to **{freq}**.", ephemeral=True)
+        embed = await self._build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.select(
         placeholder="Retention Period",
@@ -1112,55 +1151,79 @@ class GlobalSettingsView(discord.ui.View):
         days = select.values[0]
         await self.bot.db.set_setting("retention_days", days)
         await self.bot.db.audit("setup_global", interaction.user.id, None, f"retention_days={days}")
-        await interaction.response.send_message(f"Retention set to **{days}** days.", ephemeral=True)
+        embed = await self._build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Edit Combined Filename", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="Set Moderator Role",
+        row=3,
+    )
+    async def mod_role_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        role = select.values[0]
+        await self.bot.db.set_setting("mod_role_id", str(role.id))
+        await self.bot.db.audit("setup_mod_role", interaction.user.id, None, f"mod_role_id={role.id}")
+        embed = await self._build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Edit Combined Filename", style=discord.ButtonStyle.secondary, row=4)
     async def filename_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         current = await self.bot.db.get_setting("combined_filename", WHITELIST_FILENAME)
         await interaction.response.send_modal(FilenameModal(self.bot, "combined_filename", current, "Combined Filename"))
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=4, emoji="\U0001f519")
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.hub_view:
+            embed = await self.hub_view._build_hub_embed(interaction.guild)
+            await interaction.response.edit_message(embed=embed, view=self.hub_view)
+        else:
+            await interaction.response.defer()
 
 
 # ─── Setup: Type Settings (subscription / clan) ──────────────────────────────
 
 class TypeSettingsView(discord.ui.View):
-    """Per-type settings: toggles on row 0, channels on rows 1-2, roles on row 3, slots on row 4."""
+    """Per-type settings: toggles on row 0, channels on rows 1-2, actions on row 3, slots on row 4."""
     on_error = _view_on_error
 
-    def __init__(self, bot: "WhitelistBot", whitelist_type: str):
+    def __init__(self, bot: "WhitelistBot", whitelist_type: str, *, hub_view: "MainSetupView" = None):
         super().__init__(timeout=300)
         self.bot = bot
         self.whitelist_type = whitelist_type
+        self.hub_view = hub_view
 
-    @staticmethod
-    async def build_embed(bot, whitelist_type: str, cfg: dict, guild: discord.Guild) -> discord.Embed:
-        status = "Enabled" if cfg["enabled"] else "Disabled"
+    async def _build_embed(self, guild: discord.Guild = None) -> discord.Embed:
+        cfg = await self.bot.db.get_type_config(self.whitelist_type)
+        if not cfg:
+            return discord.Embed(title=f"{self.whitelist_type.title()} Settings", description="Type not found.", color=discord.Color.red())
+        icon = "\u2705" if cfg["enabled"] else "\u274c"
+        gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
         panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
         log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
-        gh = "On" if cfg["github_enabled"] else "Off"
-        mappings = await bot.db.get_role_mappings(whitelist_type)
-        role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
+        mappings = await self.bot.db.get_role_mappings(self.whitelist_type)
+        active_roles = [f"<@&{rid}> \u2192 `{sl}` slots" for rid, _, sl, active in mappings if active]
+        roles_text = "\n".join(active_roles) if active_roles else "`No role mappings configured`"
         e = discord.Embed(
-            title=f"{whitelist_type.title()} Settings",
-            description="Use the buttons and dropdowns below to configure this whitelist type.",
+            title=f"\U0001f4e6 {self.whitelist_type.title()} Settings",
+            description=(
+                f"**Status:** {icon} {'Enabled' if cfg['enabled'] else 'Disabled'}\n"
+                f"**GitHub:** {gh_icon} `{cfg['github_filename']}`\n"
+                f"**Panel Channel:** {panel_ch}\n"
+                f"**Log Channel:** {log_ch}\n"
+                f"**Default Slots:** `{cfg['default_slot_limit']}` \u2502 **Stack Roles:** `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
+                f"**Squad Group:** `{cfg.get('squad_group', 'Whitelist')}`\n\n"
+                f"**Role Mappings:**\n{roles_text}"
+            ),
             color=discord.Color.green() if cfg["enabled"] else discord.Color.greyple(),
         )
-        e.add_field(name="Status", value=f"`{status}`", inline=True)
-        e.add_field(name="GitHub", value=f"`{gh}` | `{cfg['github_filename']}`", inline=True)
-        e.add_field(name="Default Slots", value=f"`{cfg['default_slot_limit']}`", inline=True)
-        e.add_field(name="Stack Roles", value=f"`{'Yes' if cfg['stack_roles'] else 'No'}`", inline=True)
-        e.add_field(name="Squad Group", value=f"`{cfg.get('squad_group', 'Whitelist')}`", inline=True)
-        e.add_field(name="Panel Channel", value=panel_ch, inline=True)
-        e.add_field(name="Log Channel", value=log_ch, inline=True)
-        e.add_field(name="Role Mappings", value="\n".join(role_lines), inline=False)
-        e.set_footer(text="Tip: Use Refresh to see updated values after changes")
+        e.set_footer(text="Changes apply instantly. Use Back to return to the hub.")
         return e
 
     async def _refresh(self, interaction: discord.Interaction):
-        cfg = await self.bot.db.get_type_config(self.whitelist_type)
-        embed = await self.build_embed(self.bot, self.whitelist_type, cfg, interaction.guild)
+        embed = await self._build_embed(interaction.guild)
         await interaction.response.edit_message(embed=embed, view=self)
 
-    # ── Row 0: Toggle buttons ──
+    # ── Row 0: Toggle buttons + filename ──
 
     @discord.ui.button(label="Toggle Enabled", style=discord.ButtonStyle.green, row=0)
     async def toggle_enabled(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1178,7 +1241,7 @@ class TypeSettingsView(discord.ui.View):
         await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} github_enabled={bool(new_val)}", self.whitelist_type)
         await self._refresh(interaction)
 
-    @discord.ui.button(label="Toggle Stack Roles", style=discord.ButtonStyle.gray, row=0)
+    @discord.ui.button(label="Toggle Stack", style=discord.ButtonStyle.gray, row=0)
     async def toggle_stack(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = await self.bot.db.get_type_config(self.whitelist_type)
         new_val = 0 if cfg["stack_roles"] else 1
@@ -1186,13 +1249,10 @@ class TypeSettingsView(discord.ui.View):
         await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} stack_roles={bool(new_val)}", self.whitelist_type)
         await self._refresh(interaction)
 
-    @discord.ui.button(label="More Options", style=discord.ButtonStyle.secondary, row=0, emoji="\u2699\ufe0f")
-    async def more_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "Additional options:",
-            view=TypeExtraOptionsView(self.bot, self.whitelist_type),
-            ephemeral=True,
-        )
+    @discord.ui.button(label="Edit Filename", style=discord.ButtonStyle.secondary, row=0)
+    async def filename_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = await self.bot.db.get_type_config(self.whitelist_type)
+        await interaction.response.send_modal(TypeFilenameModal(self.bot, self.whitelist_type, cfg["github_filename"]))
 
     # ── Row 1: Panel channel select ──
 
@@ -1222,16 +1282,42 @@ class TypeSettingsView(discord.ui.View):
         await self.bot.db.audit("setup_channels", interaction.user.id, None, f"type={self.whitelist_type} log={channel.id}", self.whitelist_type)
         await self._refresh(interaction)
 
-    # ── Row 3: Add role mapping ──
+    # ── Row 3: Role mapping + panel + back ──
 
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Add Role Mapping (select a role)",
-        row=3,
-    )
-    async def role_map_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
-        role = select.values[0]
-        await interaction.response.send_modal(SlotLimitModal(self.bot, self.whitelist_type, role.id, role.name))
+    @discord.ui.button(label="Add Role", style=discord.ButtonStyle.green, row=3)
+    async def add_role_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = AddRoleMappingView(self.bot, self.whitelist_type)
+        await interaction.response.send_message("Select a role to map:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="Remove Role", style=discord.ButtonStyle.red, row=3)
+    async def remove_role_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        mappings = await self.bot.db.get_role_mappings(self.whitelist_type)
+        active = [m for m in mappings if m[3]]
+        if not active:
+            await interaction.response.send_message(f"No {self.whitelist_type} role mappings to remove.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Select a {self.whitelist_type} role mapping to remove:",
+            view=RemoveRoleMappingView(self.bot, self.whitelist_type, mappings),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Post Panel", style=discord.ButtonStyle.blurple, row=3)
+    async def panel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        posted = await self.bot.post_or_refresh_panel(interaction, self.whitelist_type)
+        if posted:
+            await interaction.followup.send(f"Panel refreshed in <#{posted.channel.id}>.", ephemeral=True)
+        else:
+            await interaction.followup.send("Set a panel channel first.", ephemeral=True)
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=3, emoji="\U0001f519")
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.hub_view:
+            embed = await self.hub_view._build_hub_embed(interaction.guild)
+            await interaction.response.edit_message(embed=embed, view=self.hub_view)
+        else:
+            await interaction.response.defer()
 
     # ── Row 4: Default slot limit ──
 
@@ -1255,58 +1341,23 @@ class TypeSettingsView(discord.ui.View):
         await self._refresh(interaction)
 
 
-class TypeExtraOptionsView(discord.ui.View):
-    """Extra options that don't fit in the main TypeSettingsView (squad group, filename, refresh)."""
+class AddRoleMappingView(discord.ui.View):
+    """Ephemeral view with a RoleSelect for adding role mappings."""
     on_error = _view_on_error
 
     def __init__(self, bot: "WhitelistBot", whitelist_type: str):
-        super().__init__(timeout=180)
+        super().__init__(timeout=120)
         self.bot = bot
         self.whitelist_type = whitelist_type
 
-    @discord.ui.button(label="Edit GitHub Filename", style=discord.ButtonStyle.gray, row=0)
-    async def filename_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = await self.bot.db.get_type_config(self.whitelist_type)
-        await interaction.response.send_modal(TypeFilenameModal(self.bot, self.whitelist_type, cfg["github_filename"]))
-
-    @discord.ui.button(label="Set Squad Group", style=discord.ButtonStyle.blurple, row=0)
-    async def group_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        groups = await self.bot.db.get_squad_groups()
-        if not groups:
-            await interaction.response.send_message("No groups configured. Create one in the setup hub first.", ephemeral=True)
-            return
-        cfg = await self.bot.db.get_type_config(self.whitelist_type)
-        current_group = cfg.get("squad_group", "Whitelist") if cfg else "Whitelist"
-        options = [
-            discord.SelectOption(
-                label=name,
-                value=name,
-                description=f"Perms: {perms[:80]}",
-                default=(name == current_group),
-            )
-            for name, perms, _ in groups
-        ]
-        view = discord.ui.View(timeout=120)
-        select = discord.ui.Select(placeholder="Select Squad group for this type", options=options)
-
-        async def _on_group_select(sel_interaction: discord.Interaction):
-            gname = sel_interaction.data["values"][0]
-            await self.bot.db.set_type_config(self.whitelist_type, squad_group=gname)
-            await self.bot.db.audit("setup_type", sel_interaction.user.id, None, f"type={self.whitelist_type} squad_group={gname}", self.whitelist_type)
-            await sel_interaction.response.send_message(f"{self.whitelist_type.title()} now uses group **{gname}**.", ephemeral=True)
-
-        select.callback = _on_group_select
-        view.add_item(select)
-        await interaction.response.send_message(f"Select the Squad group for **{self.whitelist_type}**:", view=view, ephemeral=True)
-
-    @discord.ui.button(label="Post / Refresh Panel", style=discord.ButtonStyle.green, row=0)
-    async def panel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        posted = await self.bot.post_or_refresh_panel(interaction, self.whitelist_type)
-        if posted:
-            await interaction.followup.send(f"Panel refreshed in <#{posted.channel.id}>.", ephemeral=True)
-        else:
-            await interaction.followup.send("Set a panel channel first.", ephemeral=True)
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="Select a role to map",
+        row=0,
+    )
+    async def role_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        role = select.values[0]
+        await interaction.response.send_modal(SlotLimitModal(self.bot, self.whitelist_type, role.id, role.name))
 
 
 class RemoveRoleMappingView(discord.ui.View):
