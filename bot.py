@@ -2,14 +2,17 @@
 # bot.py
 import os
 import re
+import ssl
 import json
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, List, Tuple
 
 import aiomysql
 import discord
+from aiohttp import web
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -40,8 +43,40 @@ WHITELIST_FILENAME = os.getenv("WHITELIST_FILENAME", "PhantomCoWhitelist.txt")
 
 DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
 
+WEB_ENABLED = os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}
+WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
+WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
+WEB_BASE_PATH = os.getenv("WEB_BASE_PATH", "/").rstrip("/")
+SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
+SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
+WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
+
 STEAM64_RE = re.compile(r"^7656119\d{10}$")
 EOSID_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+
+SQUAD_PERMISSIONS = {
+    "startvote": "Start a vote (not currently used)",
+    "changemap": "Change the map",
+    "pause": "Pause server gameplay",
+    "cheat": "Use server cheat commands",
+    "private": "Password protect server",
+    "balance": "Group ignores team balance",
+    "chat": "Admin chat and server broadcast",
+    "kick": "Kick players",
+    "ban": "Ban players",
+    "config": "Change server config",
+    "cameraman": "Admin spectate mode",
+    "immune": "Cannot be kicked or banned",
+    "manageserver": "Shutdown server",
+    "featuretest": "Dev team testing features",
+    "reserve": "Reserve slot",
+    "demos": "Record server-side demos",
+    "clientdemos": "Record client-side demos",
+    "debug": "Show admin stats and debug info",
+    "teamchange": "No timer limits on team change",
+    "forceteamchange": "Force team change command",
+    "canseeadminchat": "View admin chat and TK notifications",
+}
 
 
 def utcnow() -> datetime:
@@ -214,9 +249,54 @@ class Database:
                 created_at DATETIME NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """,
+            """
+            CREATE TABLE IF NOT EXISTS squad_permissions (
+                permission VARCHAR(50) PRIMARY KEY,
+                description VARCHAR(255) NOT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS squad_groups (
+                group_name VARCHAR(100) PRIMARY KEY,
+                permissions TEXT NOT NULL,
+                is_default TINYINT(1) NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
         ]
         for stmt in stmts:
             await self.execute(stmt)
+
+        # Add squad_group column to whitelist_types if it doesn't exist
+        try:
+            await self.execute(
+                "ALTER TABLE whitelist_types ADD COLUMN squad_group VARCHAR(100) NOT NULL DEFAULT 'Whitelist'"
+            )
+        except Exception:
+            pass  # Column already exists
+
+        # Seed Squad permissions
+        for perm, desc in SQUAD_PERMISSIONS.items():
+            await self.execute(
+                """
+                INSERT INTO squad_permissions (permission, description, is_active)
+                VALUES (%s, %s, 1)
+                ON DUPLICATE KEY UPDATE description=VALUES(description)
+                """,
+                (perm, desc),
+            )
+
+        # Seed default Whitelist group
+        await self.execute(
+            """
+            INSERT INTO squad_groups (group_name, permissions, is_default, created_at, updated_at)
+            VALUES ('Whitelist', 'reserve', 1, %s, %s)
+            ON DUPLICATE KEY UPDATE updated_at=updated_at
+            """,
+            (utcnow(), utcnow()),
+        )
 
         for key, value in DEFAULT_SETTINGS.items():
             await self.execute(
@@ -270,7 +350,7 @@ class Database:
         row = await self.fetchone(
             """
             SELECT enabled, panel_channel_id, panel_message_id, log_channel_id, github_enabled,
-                   github_filename, input_mode, stack_roles, default_slot_limit
+                   github_filename, input_mode, stack_roles, default_slot_limit, squad_group
             FROM whitelist_types
             WHERE whitelist_type=%s
             """,
@@ -288,13 +368,14 @@ class Database:
             "input_mode": row[6],
             "stack_roles": bool(row[7]),
             "default_slot_limit": int(row[8]),
+            "squad_group": row[9] or "Whitelist",
         }
 
     async def set_type_config(self, whitelist_type: str, **kwargs):
         allowed = {
             "enabled", "panel_channel_id", "panel_message_id", "log_channel_id",
             "github_enabled", "github_filename", "input_mode", "stack_roles",
-            "default_slot_limit"
+            "default_slot_limit", "squad_group"
         }
         parts = []
         params = []
@@ -456,6 +537,37 @@ class Database:
                 raise
         return len(rows)
 
+    # ── Squad Groups & Permissions ──
+
+    async def get_squad_groups(self) -> List[tuple]:
+        return await self.fetchall(
+            "SELECT group_name, permissions, is_default FROM squad_groups ORDER BY is_default DESC, group_name"
+        )
+
+    async def get_squad_group(self, group_name: str) -> Optional[tuple]:
+        return await self.fetchone(
+            "SELECT group_name, permissions, is_default FROM squad_groups WHERE group_name=%s",
+            (group_name,),
+        )
+
+    async def upsert_squad_group(self, group_name: str, permissions: str, is_default: bool = False):
+        await self.execute(
+            """
+            INSERT INTO squad_groups (group_name, permissions, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE permissions=VALUES(permissions), is_default=VALUES(is_default), updated_at=VALUES(updated_at)
+            """,
+            (group_name, permissions, 1 if is_default else 0, utcnow(), utcnow()),
+        )
+
+    async def delete_squad_group(self, group_name: str):
+        await self.execute("DELETE FROM squad_groups WHERE group_name=%s AND is_default=0", (group_name,))
+
+    async def get_squad_permissions(self, active_only: bool = True) -> List[tuple]:
+        if active_only:
+            return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=1 ORDER BY permission")
+        return await self.fetchall("SELECT permission, description, is_active FROM squad_permissions ORDER BY permission")
+
 
 class GithubPublisher:
     def __init__(self):
@@ -482,6 +594,55 @@ class GithubPublisher:
         except GithubException:
             log.exception("GitHub API error updating %s", filename)
             raise
+
+
+class WebServer:
+    def __init__(self, bot: "WhitelistBot"):
+        self.bot = bot
+        self.app = web.Application()
+        self.app.router.add_get(f"{WEB_BASE_PATH}/{{filename}}", self._handle_file)
+        self.app.router.add_get(f"{WEB_BASE_PATH}/", self._handle_index)
+        self.runner: Optional[web.AppRunner] = None
+        self._cache: dict[str, str] = {}
+
+    async def start(self):
+        ssl_ctx = None
+        if SSL_CERT_PATH and SSL_KEY_PATH:
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_ctx.load_cert_chain(SSL_CERT_PATH, SSL_KEY_PATH)
+            log.info("Web server SSL enabled: cert=%s key=%s", SSL_CERT_PATH, SSL_KEY_PATH)
+        self.runner = web.AppRunner(self.app)
+        await self.runner.setup()
+        site = web.TCPSite(self.runner, WEB_HOST, WEB_PORT, ssl_context=ssl_ctx)
+        await site.start()
+        proto = "https" if ssl_ctx else "http"
+        log.info("Web server started on %s://%s:%s%s/", proto, WEB_HOST, WEB_PORT, WEB_BASE_PATH)
+
+    async def stop(self):
+        if self.runner:
+            await self.runner.cleanup()
+
+    def update_cache(self, outputs: dict[str, str]):
+        self._cache = dict(outputs)
+        if WEB_DISK_PATH:
+            disk = Path(WEB_DISK_PATH)
+            disk.mkdir(parents=True, exist_ok=True)
+            for filename, content in outputs.items():
+                (disk / filename).write_text(content, encoding="utf-8")
+
+    async def _handle_file(self, request: web.Request) -> web.Response:
+        filename = request.match_info["filename"]
+        content = self._cache.get(filename)
+        if content is None:
+            raise web.HTTPNotFound(text=f"File not found: {filename}")
+        return web.Response(text=content, content_type="text/plain", charset="utf-8")
+
+    async def _handle_index(self, request: web.Request) -> web.Response:
+        files = sorted(self._cache.keys())
+        if not files:
+            return web.Response(text="No whitelist files available.", content_type="text/plain")
+        lines = ["Available whitelist files:", ""] + [f"  {f}" for f in files]
+        return web.Response(text="\n".join(lines), content_type="text/plain", charset="utf-8")
 
 
 async def _modal_on_error(modal, interaction: discord.Interaction, error: Exception):
@@ -610,6 +771,141 @@ class SlotLimitModal(discord.ui.Modal):
         await interaction.response.send_message(f"Mapped **{self.role_name}** to **{slot_limit}** slot(s) for {self.whitelist_type}.", ephemeral=True)
 
 
+# ─── Setup: Group Management ──────────────────────────────────────────────────
+
+class CreateGroupModal(discord.ui.Modal, title="Create Squad Group"):
+    on_error = _modal_on_error
+
+    def __init__(self, bot: "WhitelistBot"):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.group_name = discord.ui.TextInput(label="Group Name", placeholder="e.g. Whitelist, Staff, VIP", max_length=100, required=True)
+        self.add_item(self.group_name)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        name = self.group_name.value.strip()
+        if not name or not name.replace("_", "").replace("-", "").isalnum():
+            await interaction.response.send_message("Group name must be alphanumeric (dashes/underscores OK).", ephemeral=True)
+            return
+        existing = await self.bot.db.get_squad_group(name)
+        if existing:
+            await interaction.response.send_message(f"Group **{name}** already exists.", ephemeral=True)
+            return
+        await self.bot.db.upsert_squad_group(name, "reserve")
+        await self.bot.db.audit("group_create", interaction.user.id, None, f"group={name}")
+        await interaction.response.send_message(f"Created group **{name}** with default `reserve` permission. Use **Edit Permissions** to change.", ephemeral=True)
+
+
+class EditGroupPermsView(discord.ui.View):
+    """Dynamic view showing permission checkboxes for a specific group."""
+    on_error = _view_on_error
+
+    def __init__(self, bot: "WhitelistBot", group_name: str, current_perms: str):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.group_name = group_name
+        current_set = {p.strip() for p in current_perms.split(",") if p.strip()}
+        # Build options from all known permissions (max 25 in a select)
+        options = []
+        for perm, desc in SQUAD_PERMISSIONS.items():
+            options.append(discord.SelectOption(
+                label=perm,
+                value=perm,
+                description=desc[:100],
+                default=perm in current_set,
+            ))
+        select = discord.ui.Select(
+            placeholder="Select permissions for this group",
+            options=options,
+            min_values=1,
+            max_values=len(options),
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        perms = ",".join(sorted(interaction.data["values"]))
+        await self.bot.db.upsert_squad_group(self.group_name, perms)
+        await self.bot.db.audit("group_edit_perms", interaction.user.id, None, f"group={self.group_name} perms={perms}")
+        await interaction.response.send_message(f"**{self.group_name}** permissions updated to: `{perms}`", ephemeral=True)
+
+
+class GroupManagementView(discord.ui.View):
+    on_error = _view_on_error
+
+    def __init__(self, bot: "WhitelistBot"):
+        super().__init__(timeout=300)
+        self.bot = bot
+
+    async def _build_embed(self) -> discord.Embed:
+        groups = await self.bot.db.get_squad_groups()
+        e = discord.Embed(title="Squad Group Management", color=discord.Color.dark_gold())
+        if not groups:
+            e.description = "No groups configured."
+        else:
+            for name, perms, is_default in groups:
+                default_tag = " (default)" if is_default else ""
+                e.add_field(name=f"{name}{default_tag}", value=f"`{perms}`", inline=False)
+        e.set_footer(text="Groups define the permission set in RemoteAdminList output")
+        return e
+
+    @discord.ui.button(label="Create Group", style=discord.ButtonStyle.green, row=0)
+    async def create_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CreateGroupModal(self.bot))
+
+    @discord.ui.button(label="Edit Permissions", style=discord.ButtonStyle.blurple, row=0)
+    async def edit_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        groups = await self.bot.db.get_squad_groups()
+        if not groups:
+            await interaction.response.send_message("No groups to edit.", ephemeral=True)
+            return
+        options = [discord.SelectOption(label=name, value=name, description=perms[:100]) for name, perms, _ in groups]
+        view = discord.ui.View(timeout=120)
+        select = discord.ui.Select(placeholder="Select group to edit", options=options)
+
+        async def _on_group_select(sel_interaction: discord.Interaction):
+            gname = sel_interaction.data["values"][0]
+            group = await self.bot.db.get_squad_group(gname)
+            if not group:
+                await sel_interaction.response.send_message("Group not found.", ephemeral=True)
+                return
+            await sel_interaction.response.send_message(
+                f"Select permissions for **{gname}**:",
+                view=EditGroupPermsView(self.bot, gname, group[1]),
+                ephemeral=True,
+            )
+
+        select.callback = _on_group_select
+        view.add_item(select)
+        await interaction.response.send_message("Select a group to edit:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="Delete Group", style=discord.ButtonStyle.red, row=0)
+    async def delete_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        groups = await self.bot.db.get_squad_groups()
+        deletable = [(name, perms) for name, perms, is_default in groups if not is_default]
+        if not deletable:
+            await interaction.response.send_message("No deletable groups (default groups cannot be removed).", ephemeral=True)
+            return
+        options = [discord.SelectOption(label=name, value=name, description=perms[:100]) for name, perms in deletable]
+        view = discord.ui.View(timeout=120)
+        select = discord.ui.Select(placeholder="Select group to delete", options=options)
+
+        async def _on_delete_select(sel_interaction: discord.Interaction):
+            gname = sel_interaction.data["values"][0]
+            await self.bot.db.delete_squad_group(gname)
+            await self.bot.db.audit("group_delete", sel_interaction.user.id, None, f"group={gname}")
+            await sel_interaction.response.send_message(f"Deleted group **{gname}**.", ephemeral=True)
+
+        select.callback = _on_delete_select
+        view.add_item(select)
+        await interaction.response.send_message("Select a group to delete:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=1, emoji="\U0001f504")
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = await self._build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
 # ─── Setup: Main Hub ─────────────────────────────────────────────────────────
 
 class MainSetupView(discord.ui.View):
@@ -637,7 +933,18 @@ class MainSetupView(discord.ui.View):
         e.add_field(name="Combined File", value=f"`{combined_fn}`", inline=True)
         e.add_field(name="Retention", value=f"`{retention}` days", inline=True)
         e.add_field(name="Reports", value=f"`{frequency}`", inline=True)
-        e.add_field(name="\u200b", value="\u200b", inline=True)
+        # Web server status
+        if self.bot.web and self.bot.web.runner:
+            proto = "https" if SSL_CERT_PATH else "http"
+            e.add_field(name="Web", value=f"`{proto}://...:{WEB_PORT}`", inline=True)
+        else:
+            e.add_field(name="Web", value="`Off`", inline=True)
+
+        # Squad groups summary
+        groups = await self.bot.db.get_squad_groups()
+        if groups:
+            group_text = ", ".join(f"`{n}` ({p})" for n, p, _ in groups)
+            e.add_field(name="Squad Groups", value=group_text, inline=False)
 
         for wt in ("subscription", "clan"):
             cfg = await self.bot.db.get_type_config(wt)
@@ -656,18 +963,20 @@ class MainSetupView(discord.ui.View):
                     f"**Panel:** {panel_ch}\n"
                     f"**Log:** {log_ch}\n"
                     f"**GitHub:** `{gh}` | `{cfg['github_filename']}`\n"
-                    f"**Default Slots:** `{cfg['default_slot_limit']}`\n"
-                    f"**Stack Roles:** `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
+                    f"**Default Slots:** `{cfg['default_slot_limit']}` | **Stack:** `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
+                    f"**Squad Group:** `{cfg.get('squad_group', 'Whitelist')}`\n"
                     f"**Role Mappings:**\n" + "\n".join(role_lines)
                 ),
                 inline=False,
             )
         return e
 
+    # ── Row 0: Section navigation ──
+
     @discord.ui.button(label="Global Settings", style=discord.ButtonStyle.blurple, row=0)
     async def global_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            embed=discord.Embed(title="Global Settings", description="Use the dropdowns and buttons below.", color=discord.Color.blurple()),
+            embed=discord.Embed(title="Global Settings", description="Use the dropdowns below to configure global options.", color=discord.Color.blurple()),
             view=GlobalSettingsView(self.bot),
             ephemeral=True,
         )
@@ -690,12 +999,61 @@ class MainSetupView(discord.ui.View):
             ephemeral=True,
         )
 
-    @discord.ui.button(label="Refresh", emoji="\U0001f504", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Groups", style=discord.ButtonStyle.green, row=0)
+    async def groups_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = GroupManagementView(self.bot)
+        embed = await view._build_embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    # ── Row 1: Mod role select ──
+
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect,
+        placeholder="Set Moderator Role",
+        row=1,
+    )
+    async def mod_role_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
+        role = select.values[0]
+        await self.bot.db.set_setting("mod_role_id", str(role.id))
+        await self.bot.db.audit("setup_mod_role", interaction.user.id, None, f"mod_role_id={role.id}")
+        await interaction.response.send_message(f"Moderator role set to {role.mention}.", ephemeral=True)
+
+    # ── Row 2: Role mapping removal ──
+
+    @discord.ui.button(label="Remove Sub Role Mapping", style=discord.ButtonStyle.red, row=2)
+    async def remove_sub_rolemap(self, interaction: discord.Interaction, button: discord.ui.Button):
+        mappings = await self.bot.db.get_role_mappings("subscription")
+        active = [m for m in mappings if m[3]]
+        if not active:
+            await interaction.response.send_message("No subscription role mappings to remove.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            "Select a subscription role mapping to remove:",
+            view=RemoveRoleMappingView(self.bot, "subscription", mappings),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Remove Clan Role Mapping", style=discord.ButtonStyle.red, row=2)
+    async def remove_clan_rolemap(self, interaction: discord.Interaction, button: discord.ui.Button):
+        mappings = await self.bot.db.get_role_mappings("clan")
+        active = [m for m in mappings if m[3]]
+        if not active:
+            await interaction.response.send_message("No clan role mappings to remove.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            "Select a clan role mapping to remove:",
+            view=RemoveRoleMappingView(self.bot, "clan", mappings),
+            ephemeral=True,
+        )
+
+    # ── Row 3: Utility buttons ──
+
+    @discord.ui.button(label="Refresh", emoji="\U0001f504", style=discord.ButtonStyle.secondary, row=3)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = await self._build_hub_embed(interaction.guild)
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.red, row=1)
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.red, row=3)
     async def done_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Setup closed.", view=None, embed=None)
 
@@ -765,6 +1123,7 @@ class GlobalSettingsView(discord.ui.View):
 # ─── Setup: Type Settings (subscription / clan) ──────────────────────────────
 
 class TypeSettingsView(discord.ui.View):
+    """Per-type settings: toggles on row 0, channels on rows 1-2, roles on row 3, slots on row 4."""
     on_error = _view_on_error
 
     def __init__(self, bot: "WhitelistBot", whitelist_type: str):
@@ -780,42 +1139,62 @@ class TypeSettingsView(discord.ui.View):
         gh = "On" if cfg["github_enabled"] else "Off"
         mappings = await bot.db.get_role_mappings(whitelist_type)
         role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
-        e = discord.Embed(title=f"{whitelist_type.title()} Settings", color=discord.Color.green() if cfg["enabled"] else discord.Color.greyple())
+        e = discord.Embed(
+            title=f"{whitelist_type.title()} Settings",
+            description="Use the buttons and dropdowns below to configure this whitelist type.",
+            color=discord.Color.green() if cfg["enabled"] else discord.Color.greyple(),
+        )
         e.add_field(name="Status", value=f"`{status}`", inline=True)
         e.add_field(name="GitHub", value=f"`{gh}` | `{cfg['github_filename']}`", inline=True)
         e.add_field(name="Default Slots", value=f"`{cfg['default_slot_limit']}`", inline=True)
         e.add_field(name="Stack Roles", value=f"`{'Yes' if cfg['stack_roles'] else 'No'}`", inline=True)
+        e.add_field(name="Squad Group", value=f"`{cfg.get('squad_group', 'Whitelist')}`", inline=True)
         e.add_field(name="Panel Channel", value=panel_ch, inline=True)
         e.add_field(name="Log Channel", value=log_ch, inline=True)
         e.add_field(name="Role Mappings", value="\n".join(role_lines), inline=False)
+        e.set_footer(text="Tip: Use Refresh to see updated values after changes")
         return e
+
+    async def _refresh(self, interaction: discord.Interaction):
+        cfg = await self.bot.db.get_type_config(self.whitelist_type)
+        embed = await self.build_embed(self.bot, self.whitelist_type, cfg, interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    # ── Row 0: Toggle buttons ──
 
     @discord.ui.button(label="Toggle Enabled", style=discord.ButtonStyle.green, row=0)
     async def toggle_enabled(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = await self.bot.db.get_type_config(self.whitelist_type)
         new_val = 0 if cfg["enabled"] else 1
         await self.bot.db.set_type_config(self.whitelist_type, enabled=new_val)
-        state = "enabled" if new_val else "disabled"
-        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} enabled={state}", self.whitelist_type)
-        await interaction.response.send_message(f"{self.whitelist_type.title()} is now **{state}**.", ephemeral=True)
+        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} enabled={bool(new_val)}", self.whitelist_type)
+        await self._refresh(interaction)
 
     @discord.ui.button(label="Toggle GitHub", style=discord.ButtonStyle.gray, row=0)
     async def toggle_github(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = await self.bot.db.get_type_config(self.whitelist_type)
         new_val = 0 if cfg["github_enabled"] else 1
         await self.bot.db.set_type_config(self.whitelist_type, github_enabled=new_val)
-        state = "enabled" if new_val else "disabled"
-        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} github_enabled={state}", self.whitelist_type)
-        await interaction.response.send_message(f"GitHub publishing **{state}** for {self.whitelist_type}.", ephemeral=True)
+        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} github_enabled={bool(new_val)}", self.whitelist_type)
+        await self._refresh(interaction)
 
     @discord.ui.button(label="Toggle Stack Roles", style=discord.ButtonStyle.gray, row=0)
     async def toggle_stack(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = await self.bot.db.get_type_config(self.whitelist_type)
         new_val = 0 if cfg["stack_roles"] else 1
         await self.bot.db.set_type_config(self.whitelist_type, stack_roles=new_val)
-        state = "on" if new_val else "off"
-        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} stack_roles={state}", self.whitelist_type)
-        await interaction.response.send_message(f"Role stacking **{state}** for {self.whitelist_type}.", ephemeral=True)
+        await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} stack_roles={bool(new_val)}", self.whitelist_type)
+        await self._refresh(interaction)
+
+    @discord.ui.button(label="More Options", style=discord.ButtonStyle.secondary, row=0, emoji="\u2699\ufe0f")
+    async def more_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Additional options:",
+            view=TypeExtraOptionsView(self.bot, self.whitelist_type),
+            ephemeral=True,
+        )
+
+    # ── Row 1: Panel channel select ──
 
     @discord.ui.select(
         cls=discord.ui.ChannelSelect,
@@ -827,7 +1206,9 @@ class TypeSettingsView(discord.ui.View):
         channel = select.values[0]
         await self.bot.db.set_type_config(self.whitelist_type, panel_channel_id=channel.id)
         await self.bot.db.audit("setup_channels", interaction.user.id, None, f"type={self.whitelist_type} panel={channel.id}", self.whitelist_type)
-        await interaction.response.send_message(f"Panel channel set to {channel.mention}.", ephemeral=True)
+        await self._refresh(interaction)
+
+    # ── Row 2: Log channel select ──
 
     @discord.ui.select(
         cls=discord.ui.ChannelSelect,
@@ -839,16 +1220,20 @@ class TypeSettingsView(discord.ui.View):
         channel = select.values[0]
         await self.bot.db.set_type_config(self.whitelist_type, log_channel_id=channel.id)
         await self.bot.db.audit("setup_channels", interaction.user.id, None, f"type={self.whitelist_type} log={channel.id}", self.whitelist_type)
-        await interaction.response.send_message(f"Log channel set to {channel.mention}.", ephemeral=True)
+        await self._refresh(interaction)
+
+    # ── Row 3: Add role mapping ──
 
     @discord.ui.select(
         cls=discord.ui.RoleSelect,
-        placeholder="Add Role Mapping",
+        placeholder="Add Role Mapping (select a role)",
         row=3,
     )
     async def role_map_select(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         role = select.values[0]
         await interaction.response.send_modal(SlotLimitModal(self.bot, self.whitelist_type, role.id, role.name))
+
+    # ── Row 4: Default slot limit ──
 
     @discord.ui.select(
         placeholder="Default Slot Limit",
@@ -867,7 +1252,86 @@ class TypeSettingsView(discord.ui.View):
         slots = int(select.values[0])
         await self.bot.db.set_type_config(self.whitelist_type, default_slot_limit=slots)
         await self.bot.db.audit("setup_type", interaction.user.id, None, f"type={self.whitelist_type} default_slot_limit={slots}", self.whitelist_type)
-        await interaction.response.send_message(f"Default slot limit set to **{slots}** for {self.whitelist_type}.", ephemeral=True)
+        await self._refresh(interaction)
+
+
+class TypeExtraOptionsView(discord.ui.View):
+    """Extra options that don't fit in the main TypeSettingsView (squad group, filename, refresh)."""
+    on_error = _view_on_error
+
+    def __init__(self, bot: "WhitelistBot", whitelist_type: str):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+
+    @discord.ui.button(label="Edit GitHub Filename", style=discord.ButtonStyle.gray, row=0)
+    async def filename_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = await self.bot.db.get_type_config(self.whitelist_type)
+        await interaction.response.send_modal(TypeFilenameModal(self.bot, self.whitelist_type, cfg["github_filename"]))
+
+    @discord.ui.button(label="Set Squad Group", style=discord.ButtonStyle.blurple, row=0)
+    async def group_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        groups = await self.bot.db.get_squad_groups()
+        if not groups:
+            await interaction.response.send_message("No groups configured. Create one in the setup hub first.", ephemeral=True)
+            return
+        cfg = await self.bot.db.get_type_config(self.whitelist_type)
+        current_group = cfg.get("squad_group", "Whitelist") if cfg else "Whitelist"
+        options = [
+            discord.SelectOption(
+                label=name,
+                value=name,
+                description=f"Perms: {perms[:80]}",
+                default=(name == current_group),
+            )
+            for name, perms, _ in groups
+        ]
+        view = discord.ui.View(timeout=120)
+        select = discord.ui.Select(placeholder="Select Squad group for this type", options=options)
+
+        async def _on_group_select(sel_interaction: discord.Interaction):
+            gname = sel_interaction.data["values"][0]
+            await self.bot.db.set_type_config(self.whitelist_type, squad_group=gname)
+            await self.bot.db.audit("setup_type", sel_interaction.user.id, None, f"type={self.whitelist_type} squad_group={gname}", self.whitelist_type)
+            await sel_interaction.response.send_message(f"{self.whitelist_type.title()} now uses group **{gname}**.", ephemeral=True)
+
+        select.callback = _on_group_select
+        view.add_item(select)
+        await interaction.response.send_message(f"Select the Squad group for **{self.whitelist_type}**:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="Post / Refresh Panel", style=discord.ButtonStyle.green, row=0)
+    async def panel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        posted = await self.bot.post_or_refresh_panel(interaction, self.whitelist_type)
+        if posted:
+            await interaction.followup.send(f"Panel refreshed in <#{posted.channel.id}>.", ephemeral=True)
+        else:
+            await interaction.followup.send("Set a panel channel first.", ephemeral=True)
+
+
+class RemoveRoleMappingView(discord.ui.View):
+    """Dynamically built view showing mapped roles as select options for removal."""
+    on_error = _view_on_error
+
+    def __init__(self, bot: "WhitelistBot", whitelist_type: str, mappings: List[tuple]):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+        options = [
+            discord.SelectOption(label=f"{role_name} ({slot_limit} slots)", value=str(role_id))
+            for role_id, role_name, slot_limit, is_active in mappings if is_active
+        ]
+        if not options:
+            return
+        select = discord.ui.Select(placeholder="Select role mapping to remove", options=options)
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        role_id = int(interaction.data["values"][0])
+        await self.bot.db.remove_role_mapping(self.whitelist_type, role_id)
+        await self.bot.db.audit("setup_rolemap_remove", interaction.user.id, None, f"type={self.whitelist_type} role_id={role_id}", self.whitelist_type)
+        await interaction.response.send_message(f"Removed role mapping for <@&{role_id}> from {self.whitelist_type}.", ephemeral=True)
 
 
 class WhitelistPanelView(discord.ui.View):
@@ -912,8 +1376,12 @@ class ModToolsView(discord.ui.View):
 
     @discord.ui.button(label="Post / Refresh Panel", style=discord.ButtonStyle.blurple)
     async def panel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.bot.post_or_refresh_panel(interaction, self.whitelist_type, interaction.channel)
-        await interaction.response.send_message("Panel refreshed.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        posted = await self.bot.post_or_refresh_panel(interaction, self.whitelist_type, interaction.channel)
+        if posted:
+            await interaction.followup.send(f"Panel refreshed in <#{posted.channel.id}>.", ephemeral=True)
+        else:
+            await interaction.followup.send("Could not refresh panel.", ephemeral=True)
 
     @discord.ui.button(label="Resync GitHub", style=discord.ButtonStyle.green)
     async def resync_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -935,6 +1403,7 @@ class WhitelistBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
         self.github = GithubPublisher()
+        self.web = WebServer(self) if WEB_ENABLED else None
         self.panel_views = {}
         self.write_lock = asyncio.Lock()
         self._sync_pending = False
@@ -944,6 +1413,14 @@ class WhitelistBot(commands.Bot):
         await self.db.connect()
         await self.db.init_schema()
         self.github.connect()
+        if self.web:
+            await self.web.start()
+            # Prime the web cache with current content
+            try:
+                outputs = await self.get_output_contents()
+                self.web.update_cache(outputs)
+            except Exception:
+                log.debug("Could not prime web cache on startup")
         for whitelist_type in ("subscription", "clan"):
             self.panel_views[whitelist_type] = WhitelistPanelView(self, whitelist_type)
             self.add_view(self.panel_views[whitelist_type])
@@ -968,6 +1445,11 @@ class WhitelistBot(commands.Bot):
                 await self.post_or_refresh_panel(None, wt)
             except Exception:
                 log.debug("Could not refresh %s panel on startup", wt)
+
+    async def close(self):
+        if self.web:
+            await self.web.stop()
+        await super().close()
 
     async def user_is_mod(self, user: discord.abc.User) -> bool:
         if not isinstance(user, discord.Member):
@@ -1000,30 +1482,37 @@ class WhitelistBot(commands.Bot):
 
     async def build_status_embed(self, guild: Optional[discord.Guild]) -> discord.Embed:
         embed = discord.Embed(title="Whitelist Bot Status", color=discord.Color.blurple(), timestamp=datetime.now(timezone.utc))
-        embed.add_field(name="Output mode", value=await self.db.get_setting("output_mode", "combined"), inline=True)
-        embed.add_field(name="Combined file", value=await self.db.get_setting("combined_filename", WHITELIST_FILENAME), inline=True)
-        embed.add_field(name="Retention", value=f"{await self.db.get_setting('retention_days', '90')} days", inline=True)
-        mappings = await self.db.get_role_mappings()
-        by_type = {"subscription": [], "clan": []}
-        for row in mappings:
-            wt, role_id, role_name, slot_limit, is_active = row
-            if is_active:
-                by_type[wt].append(f"{role_name} ({role_id}) → {slot_limit}")
+        mod_role_id = int((await self.db.get_setting("mod_role_id", "")) or 0)
+        embed.add_field(name="Mod Role", value=f"<@&{mod_role_id}>" if mod_role_id else "`Not set`", inline=True)
+        embed.add_field(name="Output Mode", value=f"`{await self.db.get_setting('output_mode', 'combined')}`", inline=True)
+        embed.add_field(name="Retention", value=f"`{await self.db.get_setting('retention_days', '90')}` days", inline=True)
+        if self.web and self.web.runner:
+            proto = "https" if SSL_CERT_PATH else "http"
+            embed.add_field(name="Web Server", value=f"`{proto}://{WEB_HOST}:{WEB_PORT}{WEB_BASE_PATH}/`", inline=True)
+        groups = await self.db.get_squad_groups()
+        if groups:
+            group_text = " | ".join(f"`{n}`: {p}" for n, p, _ in groups)
+            embed.add_field(name="Squad Groups", value=group_text, inline=False)
         for wt in ("subscription", "clan"):
             cfg = await self.db.get_type_config(wt)
-            channel_name = "Not set"
-            if guild and cfg["panel_channel_id"]:
-                ch = guild.get_channel(int(cfg["panel_channel_id"]))
-                if ch:
-                    channel_name = ch.mention
-            log_channel_name = "Not set"
-            if guild and cfg["log_channel_id"]:
-                ch = guild.get_channel(int(cfg["log_channel_id"]))
-                if ch:
-                    log_channel_name = ch.mention
+            if not cfg:
+                continue
+            status = "Enabled" if cfg["enabled"] else "Disabled"
+            panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
+            log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
+            gh = "On" if cfg["github_enabled"] else "Off"
+            mappings = await self.db.get_role_mappings(wt)
+            role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
             embed.add_field(
-                name=f"{wt.title()}",
-                value=f"Enabled: `{cfg['enabled']}`\nPanel: {channel_name}\nLog: {log_channel_name}\nGitHub: `{cfg['github_enabled']}` → `{cfg['github_filename']}`\nInput: `{cfg['input_mode']}`\nDefault slots: `{cfg['default_slot_limit']}`\nRoles:\n" + ("\n".join(by_type[wt]) if by_type[wt] else "None"),
+                name=wt.title(),
+                value=(
+                    f"**Status:** `{status}`\n"
+                    f"**Panel:** {panel_ch} | **Log:** {log_ch}\n"
+                    f"**GitHub:** `{gh}` | `{cfg['github_filename']}`\n"
+                    f"**Slots:** `{cfg['default_slot_limit']}` default | Stack: `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
+                    f"**Squad Group:** `{cfg.get('squad_group', 'Whitelist')}`\n"
+                    f"**Roles:** " + ", ".join(role_lines)
+                ),
                 inline=False,
             )
         return embed
@@ -1146,40 +1635,68 @@ class WhitelistBot(commands.Bot):
         rows = await self.db.get_active_export_rows()
         mode = await self.db.get_setting("output_mode", "combined")
         dedupe_output = to_bool(await self.db.get_setting("duplicate_output_dedupe", "true"))
+
+        # Load group configs per type and all squad groups
+        type_cfgs = {}
+        for wt in ("subscription", "clan"):
+            cfg = await self.db.get_type_config(wt)
+            if cfg:
+                type_cfgs[wt] = cfg
+
+        squad_groups = await self.db.get_squad_groups()
+        group_perms = {name: perms for name, perms, _ in squad_groups}
+
+        def build_group_headers(used_groups: set) -> List[str]:
+            lines = []
+            for gname in sorted(used_groups):
+                perms = group_perms.get(gname, "reserve")
+                lines.append(f"Group={gname}:{perms}")
+            lines.extend(["", ""])
+            return lines
+
+        def build_line(id_type: str, id_value: str, name: str, group_name: str) -> str:
+            suffix = " [EOS]" if id_type == "eosid" else ""
+            return f"Admin={id_value}:{group_name} // {name}{suffix}"
+
         outputs = {}
-
-        def build_line(id_type: str, id_value: str, name: str) -> str:
-            if id_type == "steam64":
-                return f"Admin={id_value}:Whitelist // {name}"
-            return f"Admin={id_value}:Whitelist // {name} [EOS]"
-
-        combined_lines = ["Group=Whitelist:reserve", "", ""]
+        combined_lines = []
         combined_seen = set()
-        type_lines = {wt: ["Group=Whitelist:reserve", "", ""] for wt in ("subscription", "clan")}
+        combined_groups = set()
+        type_lines = {wt: [] for wt in ("subscription", "clan")}
         type_seen = {wt: set() for wt in ("subscription", "clan")}
+        type_groups = {wt: set() for wt in ("subscription", "clan")}
 
         for whitelist_type, _, discord_name, id_type, id_value in rows:
-            line = build_line(id_type, id_value, discord_name)
+            group_name = type_cfgs.get(whitelist_type, {}).get("squad_group", "Whitelist")
+            line = build_line(id_type, id_value, discord_name, group_name)
             key = f"{id_type}:{id_value}" if dedupe_output else line
+
             if mode in {"combined", "hybrid"} and key not in combined_seen:
                 combined_lines.append(line)
                 combined_seen.add(key)
+                combined_groups.add(group_name)
             if mode in {"separate", "hybrid"}:
-                if key not in type_seen[whitelist_type]:
-                    type_lines[whitelist_type].append(line)
-                    type_seen[whitelist_type].add(key)
+                if key not in type_seen.get(whitelist_type, set()):
+                    type_lines.setdefault(whitelist_type, []).append(line)
+                    type_seen.setdefault(whitelist_type, set()).add(key)
+                    type_groups.setdefault(whitelist_type, set()).add(group_name)
 
         if mode in {"combined", "hybrid"}:
-            outputs[await self.db.get_setting("combined_filename", WHITELIST_FILENAME)] = "\n".join(combined_lines)
+            content = build_group_headers(combined_groups) + combined_lines
+            outputs[await self.db.get_setting("combined_filename", WHITELIST_FILENAME)] = "\n".join(content)
         if mode in {"separate", "hybrid"}:
-            for whitelist_type in ("subscription", "clan"):
-                cfg = await self.db.get_type_config(whitelist_type)
-                if cfg["github_enabled"]:
-                    outputs[cfg["github_filename"]] = "\n".join(type_lines[whitelist_type])
+            for wt in ("subscription", "clan"):
+                cfg = type_cfgs.get(wt)
+                if cfg and cfg["github_enabled"]:
+                    content = build_group_headers(type_groups.get(wt, set())) + type_lines.get(wt, [])
+                    outputs[cfg["github_filename"]] = "\n".join(content)
         return outputs
 
     async def sync_github_outputs(self) -> int:
         outputs = await self.get_output_contents()
+        # Update web server cache and optional disk write
+        if self.web:
+            self.web.update_cache(outputs)
         changed = 0
         for filename, content in outputs.items():
             try:
@@ -1334,16 +1851,51 @@ async def ping(interaction: discord.Interaction):
         db_ok = True
     except Exception:
         db_ok = False
-    await interaction.response.send_message(f"Pong.\nLatency: `{round(bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{bool(bot.github.repo)}`", ephemeral=True)
+    web_status = "Off"
+    if bot.web and bot.web.runner:
+        proto = "https" if SSL_CERT_PATH else "http"
+        web_status = f"{proto}://{WEB_HOST}:{WEB_PORT}{WEB_BASE_PATH}/"
+    await interaction.response.send_message(
+        f"Pong.\nLatency: `{round(bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{bool(bot.github.repo)}`\nWeb: `{web_status}`",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="help", description="Show help")
 async def help_cmd(interaction: discord.Interaction):
     embed = discord.Embed(title="Whitelist Bot Help", color=discord.Color.blurple())
-    embed.add_field(name="User", value="/whitelist\n/my_whitelist\n/status\n/ping", inline=False)
-    embed.add_field(name="Setup / Admin", value="/setup\n/setup_channels\n/setup_rolemap_remove\n/setup_mod_role\n/setup_status\n/whitelist_panel\n/resync_whitelist", inline=False)
-    embed.add_field(name="Moderator", value="/mod_view\n/mod_set\n/mod_remove\n/mod_override\n/report_now", inline=False)
-    embed.add_field(name="IDs", value="Steam64 and EOSID supported. Duplicate output is deduped before GitHub publishing.", inline=False)
+    embed.add_field(
+        name="User Commands",
+        value=(
+            "`/whitelist` — Submit or update your whitelist IDs\n"
+            "`/my_whitelist` — View your saved IDs and slots\n"
+            "`/status` — View bot configuration\n"
+            "`/ping` — Check bot health"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Admin Commands",
+        value=(
+            "`/setup` — Interactive setup wizard (channels, roles, groups, settings)\n"
+            "`/setup_mod_role` — Set the moderator role (first-time bootstrap)\n"
+            "`/whitelist_panel` — Post or refresh a whitelist panel\n"
+            "`/resync_whitelist` — Force GitHub + web sync"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Moderator Commands",
+        value=(
+            "`/mod_view` — View a user's whitelist\n"
+            "`/mod_set` — Replace a user's IDs\n"
+            "`/mod_remove` — Remove user from active output\n"
+            "`/mod_override` — Set or clear a slot override\n"
+            "`/report_now` — Generate an ad-hoc report"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Steam64 and EOSID supported. Output published to GitHub + web server. Deduped before publishing.")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -1372,38 +1924,6 @@ async def setup_mod_role(interaction: discord.Interaction, role: discord.Role):
     await bot.db.audit("setup_mod_role", interaction.user.id, None, f"mod_role_id={role.id}")
     await interaction.response.send_message(f"Moderator role set to {role.mention}.", ephemeral=True)
 
-
-@bot.tree.command(name="setup_channels", description="Set panel and log channel for a whitelist type")
-@app_commands.autocomplete(whitelist_type=setup_autocomplete)
-async def setup_channels(interaction: discord.Interaction, whitelist_type: str, panel_channel: discord.TextChannel, log_channel: discord.TextChannel):
-    if not await bot.require_mod(interaction):
-        return
-    whitelist_type = whitelist_type.lower()
-    if whitelist_type not in {"subscription", "clan"}:
-        await interaction.response.send_message("Invalid whitelist type.", ephemeral=True)
-        return
-    await bot.db.set_type_config(whitelist_type, panel_channel_id=panel_channel.id, log_channel_id=log_channel.id)
-    await bot.db.audit("setup_channels", interaction.user.id, None, f"type={whitelist_type} panel={panel_channel.id} log={log_channel.id}", whitelist_type)
-    await interaction.response.send_message(f"Updated {whitelist_type} channels.\nPanel: {panel_channel.mention}\nLog: {log_channel.mention}", ephemeral=True)
-
-
-@bot.tree.command(name="setup_rolemap_remove", description="Remove a role mapping")
-@app_commands.autocomplete(whitelist_type=setup_autocomplete)
-async def setup_rolemap_remove(interaction: discord.Interaction, whitelist_type: str, role: discord.Role):
-    if not await bot.require_mod(interaction):
-        return
-    whitelist_type = whitelist_type.lower()
-    await bot.db.remove_role_mapping(whitelist_type, role.id)
-    await bot.db.audit("setup_rolemap_remove", interaction.user.id, None, f"type={whitelist_type} role={role.id}", whitelist_type)
-    await interaction.response.send_message(f"Removed mapping for {role.mention} from {whitelist_type}.", ephemeral=True)
-
-
-@bot.tree.command(name="setup_status", description="Show setup status")
-async def setup_status(interaction: discord.Interaction):
-    if not await bot.require_mod(interaction):
-        return
-    embed = await bot.build_status_embed(interaction.guild)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="whitelist", description="Submit or update your whitelist IDs")
@@ -1440,8 +1960,14 @@ async def whitelist_panel(interaction: discord.Interaction, whitelist_type: str)
     if not await bot.require_mod(interaction):
         return
     whitelist_type = whitelist_type.lower()
+    if whitelist_type not in {"subscription", "clan"}:
+        await interaction.response.send_message("Invalid whitelist type.", ephemeral=True)
+        return
     posted = await bot.post_or_refresh_panel(interaction, whitelist_type, interaction.channel)
-    await interaction.response.send_message(f"Panel ready: https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}/{posted.id}", ephemeral=True)
+    if posted:
+        await interaction.response.send_message(f"Panel ready: https://discord.com/channels/{interaction.guild.id}/{posted.channel.id}/{posted.id}", ephemeral=True)
+    else:
+        await interaction.response.send_message("Could not post panel. Check bot permissions.", ephemeral=True)
 
 
 @bot.tree.command(name="resync_whitelist", description="Force GitHub whitelist sync")
