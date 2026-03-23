@@ -284,7 +284,7 @@
 
         {# ── Header ─────────────────────────────────────────────── #}
         <div class="wl-card-header">
-            <h3>{{ wl_type | capitalize }} Whitelist</h3>
+            <h3>{{ data.name | default(wl_type | capitalize) }}</h3>
             {% if not data.enabled %}
                 <span class="badge badge-muted">Disabled</span>
             {% elif status == 'active' %}

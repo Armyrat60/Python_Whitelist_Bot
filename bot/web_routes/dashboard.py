@@ -40,25 +40,38 @@ async def dashboard(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     discord_id = int(session["discord_id"])
 
+    # Fetch dynamic whitelists for this guild
+    whitelists = await bot.db.get_whitelists(guild_id)
+    if not whitelists:
+        # Seed defaults if none exist
+        await bot.db.seed_guild_defaults(guild_id)
+        whitelists = await bot.db.get_whitelists(guild_id)
+
     whitelist_data = {}
-    for wl_type in WHITELIST_TYPES:
-        type_config = await bot.db.get_type_config(guild_id, wl_type)
-        user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
-        identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_type)
+    whitelist_names = []
+    for wl in whitelists:
+        wl_id = wl["id"]
+        wl_slug = wl["slug"]
+        whitelist_names.append(wl_slug)
+
+        user_record = await bot.db.get_user_record(guild_id, discord_id, wl_id)
+        identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_id)
 
         steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
         eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
 
-        whitelist_data[wl_type] = {
-            "config": type_config,
-            "enabled": type_config["enabled"] if type_config else False,
+        whitelist_data[wl_slug] = {
+            "config": wl,
+            "enabled": wl["enabled"],
+            "name": wl["name"],
+            "whitelist_id": wl_id,
             "user_record": None,
             "steam_ids": steam_ids,
             "eos_ids": eos_ids,
         }
 
         if user_record:
-            whitelist_data[wl_type]["user_record"] = {
+            whitelist_data[wl_slug]["user_record"] = {
                 "discord_name": user_record[0],
                 "status": user_record[1],
                 "slot_limit_override": user_record[2],
@@ -71,7 +84,7 @@ async def dashboard(request: web.Request) -> web.Response:
     context = {
         "session": dict(session),
         "whitelist_data": whitelist_data,
-        "whitelist_types": WHITELIST_TYPES,
+        "whitelist_types": whitelist_names,
         "guilds": guilds,
         "active_guild": active_guild,
         "active_guild_id": active_guild_id,

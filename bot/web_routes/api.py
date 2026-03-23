@@ -18,6 +18,27 @@ from bot.utils import utcnow
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+async def _resolve_whitelist(db, guild_id: int, slug_or_type: str) -> dict | None:
+    """Resolve a whitelist slug (or legacy type name) to a whitelist dict.
+
+    Returns the whitelist dict with 'id', 'name', 'slug', etc. or None.
+    This bridges old code using type strings with the new whitelist_id system.
+    """
+    wl = await db.get_whitelist_by_slug(guild_id, slug_or_type)
+    return wl
+
+
+async def _resolve_whitelist_id(db, guild_id: int, slug_or_type: str) -> int | None:
+    """Resolve a whitelist slug to its integer ID, or None if not found."""
+    wl = await _resolve_whitelist(db, guild_id, slug_or_type)
+    return wl["id"] if wl else None
+
+
+async def _get_whitelist_slugs(db, guild_id: int) -> list[str]:
+    """Get all whitelist slugs for a guild (replaces WHITELIST_TYPES)."""
+    whitelists = await db.get_whitelists(guild_id)
+    return [wl["slug"] for wl in whitelists]
+
 async def _get_active_guild_id(request: web.Request) -> int | None:
     """Return the active guild_id from the session, or None."""
     session = await aiohttp_session.get_session(request)
@@ -168,15 +189,17 @@ async def get_my_whitelist(request: web.Request) -> web.Response:
     """Return the user's identifiers for a given whitelist type."""
     session = await aiohttp_session.get_session(request)
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
     guild_id = int(session["active_guild_id"])
     discord_id = int(session["discord_id"])
 
-    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
-    identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_type)
+    wl_id = await _resolve_whitelist_id(bot.db, guild_id, wl_type)
+    if wl_id is None:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_id)
+    identifiers = await bot.db.get_identifiers(guild_id, discord_id, wl_id)
 
     steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
     eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
@@ -203,18 +226,20 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
     """Submit/update the user's identifiers for a given whitelist type."""
     session = await aiohttp_session.get_session(request)
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
     guild_id = int(session["active_guild_id"])
     discord_id = int(session["discord_id"])
     username = session.get("username", "Unknown")
 
-    # Check type is enabled
-    type_config = await bot.db.get_type_config(guild_id, wl_type)
-    if not type_config or not type_config["enabled"]:
+    # Resolve whitelist by slug
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
+    if not wl["enabled"]:
         return web.json_response({"error": "This whitelist type is not enabled."}, status=400)
+    type_config = wl  # wl dict has all the config fields
 
     try:
         body = await request.json()
@@ -239,7 +264,7 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         return web.json_response({"error": "Validation failed.", "details": errors}, status=400)
 
     # Check slot limits
-    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_type)
+    user_record = await bot.db.get_user_record(guild_id, discord_id, wl_id)
     slot_limit = type_config["default_slot_limit"]
     if user_record and user_record[3]:  # effective_slot_limit
         slot_limit = user_record[3]
@@ -265,12 +290,12 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         identifiers.append(("eosid", str(eid), False, "web_dashboard"))
 
     # Save to DB
-    await bot.db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+    await bot.db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
 
     # Ensure user record exists
     if not user_record:
         await bot.db.upsert_user_record(
-            guild_id, discord_id, wl_type, username, "active",
+            guild_id, discord_id, wl_id, username, "active",
             slot_limit, "web", None,
         )
 
@@ -278,7 +303,7 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
     await bot.db.audit(
         guild_id, "web_update_ids", discord_id, discord_id,
         f"Updated {wl_type} IDs via web: {len(steam_ids)} steam, {len(eos_ids)} eos",
-        wl_type,
+        wl_id,
     )
 
     # Trigger sync
