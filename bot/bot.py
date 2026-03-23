@@ -36,7 +36,11 @@ class WhitelistBot(commands.Bot):
         await self.db.connect()
         await self.db.init_schema()
         if self.github:
-            self.github.connect()
+            try:
+                self.github.connect()
+            except Exception:
+                log.warning("GitHub connection failed (bad credentials?) — disabling GitHub publishing")
+                self.github = None
         else:
             log.info("GitHub publishing disabled (no GITHUB_TOKEN configured)")
         if self.web:
