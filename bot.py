@@ -962,6 +962,12 @@ class WhitelistBot(commands.Bot):
     async def on_ready(self):
         log.info("Connected as %s (%s)", self.user, self.user.id)
         await self.log_startup_summary()
+        # Refresh existing panels so buttons are live after restart
+        for wt in ("subscription", "clan"):
+            try:
+                await self.post_or_refresh_panel(None, wt)
+            except Exception:
+                log.debug("Could not refresh %s panel on startup", wt)
 
     async def user_is_mod(self, user: discord.abc.User) -> bool:
         if not isinstance(user, discord.Member):
