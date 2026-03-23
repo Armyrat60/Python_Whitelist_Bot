@@ -702,6 +702,15 @@ function getDropdownValue(id) {
     return dd ? (dd.getAttribute('data-selected-value') || '') : '';
 }
 
+function getDropdownLabel(id) {
+    var dd = document.querySelector('.searchable-dropdown[data-dropdown-id="' + id + '"]');
+    if (!dd) return '';
+    var selectedValue = dd.getAttribute('data-selected-value') || '';
+    if (!selectedValue) return '';
+    var item = dd.querySelector('.searchable-dropdown-item.selected');
+    return item ? item.textContent.trim() : '';
+}
+
 /* ── Tooltip builder ──────────────────────────────────────────────────── */
 function buildTooltip(text) {
     return '<span class="info-tip"><span class="info-tip-icon">i</span><span class="info-tip-text">' + escapeHtml(text) + '</span></span>';
@@ -800,9 +809,13 @@ function renderTypeCards() {
             html += '<tr><td colspan="3" class="text-center text-muted">No role mappings configured.</td></tr>';
         } else {
             roleMappings.forEach(function(rm) {
-                var roleName = rm.role_name || rm.role_id || 'Unknown';
+                var roleName = rm.role_name || 'Unknown';
+                var roleDisplay = roleName;
+                if (rm.role_id && rm.role_id !== roleName) {
+                    roleDisplay += ' <span style="color:var(--text-muted); font-size:0.8em;">(' + rm.role_id + ')</span>';
+                }
                 html += '<tr>';
-                html += '<td>' + escapeHtml(String(roleName)) + '</td>';
+                html += '<td>' + roleDisplay + '</td>';
                 html += '<td>' + (rm.slot_limit || 1) + '</td>';
                 html += '<td><button class="btn btn-sm btn-danger" onclick="removeRoleMapping(\'' + type + '\', \'' + escapeHtml(String(rm.role_id)) + '\')">Remove</button></td>';
                 html += '</tr>';
@@ -891,6 +904,7 @@ function saveTypeSettings(type) {
 /* ── Role mapping actions ─────────────────────────────────────────────── */
 function addRoleMapping(type) {
     var roleId = getDropdownValue('add-role-select-' + type);
+    var roleName = getDropdownLabel('add-role-select-' + type);
     var slotLimit = parseInt(document.getElementById('add-role-slots-' + type).value, 10) || 1;
     if (!roleId) {
         showFlash('Please select a role.', 'error');
@@ -899,7 +913,7 @@ function addRoleMapping(type) {
     fetch('/api/admin/roles/' + encodeURIComponent(type), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ role_id: roleId, slot_limit: slotLimit })
+        body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
     })
     .then(function(r) {
         if (!r.ok) throw new Error('Failed');
