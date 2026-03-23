@@ -18,27 +18,15 @@ async def index(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template("login.html", request, context)
 
 
-async def dashboard(request: web.Request) -> web.Response:
-    """Render the user dashboard with whitelist data for all types."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    # If no active guild, redirect to guild selector or show message
+async def _get_whitelist_data(request, session):
+    """Fetch whitelist data for the logged-in user. Returns (whitelist_data, whitelist_names) or None if no guild."""
     active_guild_id = session.get("active_guild_id")
     guilds = session.get("guilds", [])
 
     if not active_guild_id or not guilds:
-        context = {
-            "session": dict(session),
-            "guilds": guilds,
-            "no_guilds": True,
-        }
-        return aiohttp_jinja2.render_template("dashboard.html", request, context)
+        return None, None
 
     guild_id = int(active_guild_id)
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
     bot = request.app["bot"]
     discord_id = int(session["discord_id"])
 
@@ -98,15 +86,73 @@ async def dashboard(request: web.Request) -> web.Response:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
+    return whitelist_data, whitelist_names
+
+
+async def dashboard(request: web.Request) -> web.Response:
+    """Render the new unified dashboard with user summary and admin sections."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        raise web.HTTPFound("/login")
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+
+    if not active_guild_id or not guilds:
+        context = {
+            "session": dict(session),
+            "guilds": guilds,
+            "no_guilds": True,
+        }
+        return aiohttp_jinja2.render_template("dashboard_new.html", request, context)
+
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    # Fetch user whitelist data for summary cards
+    whitelist_data, whitelist_names = await _get_whitelist_data(request, session)
+
     context = {
         "session": dict(session),
-        "whitelist_data": whitelist_data,
-        "whitelist_types": whitelist_names,
+        "whitelist_data": whitelist_data or {},
+        "whitelist_types": whitelist_names or [],
         "guilds": guilds,
         "active_guild": active_guild,
         "active_guild_id": active_guild_id,
     }
-    return aiohttp_jinja2.render_template("dashboard.html", request, context)
+    return aiohttp_jinja2.render_template("dashboard_new.html", request, context)
+
+
+async def my_whitelist(request: web.Request) -> web.Response:
+    """Render the user whitelist management page with chip editing."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        raise web.HTTPFound("/login")
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+
+    if not active_guild_id or not guilds:
+        context = {
+            "session": dict(session),
+            "guilds": guilds,
+            "no_guilds": True,
+        }
+        return aiohttp_jinja2.render_template("my_whitelist.html", request, context)
+
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    # Fetch user whitelist data
+    whitelist_data, whitelist_names = await _get_whitelist_data(request, session)
+
+    context = {
+        "session": dict(session),
+        "whitelist_data": whitelist_data or {},
+        "whitelist_types": whitelist_names or [],
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
+    return aiohttp_jinja2.render_template("my_whitelist.html", request, context)
 
 
 async def _get_admin_context(request: web.Request):
@@ -135,28 +181,6 @@ async def _get_admin_context(request: web.Request):
         "active_guild_id": active_guild_id,
     }
     return context
-
-
-async def admin_page(request: web.Request) -> web.Response:
-    """Render the admin dashboard."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    active_guild_id = session.get("active_guild_id")
-    guilds = session.get("guilds", [])
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
-    if not active_guild or not active_guild.get("is_mod"):
-        raise web.HTTPForbidden(text="Access denied.")
-
-    context = {
-        "session": dict(session),
-        "guilds": guilds,
-        "active_guild": active_guild,
-        "active_guild_id": active_guild_id,
-    }
-    return aiohttp_jinja2.render_template("admin.html", request, context)
 
 
 async def admin_users_page(request: web.Request) -> web.Response:
@@ -192,7 +216,7 @@ async def admin_whitelists_page(request: web.Request) -> web.Response:
 def setup_routes(app: web.Application):
     app.router.add_get("/", index)
     app.router.add_get("/dashboard", dashboard)
-    app.router.add_get("/admin", admin_page)
+    app.router.add_get("/my-whitelist", my_whitelist)
     app.router.add_get("/admin/setup", admin_setup_page)
     app.router.add_get("/admin/whitelists", admin_whitelists_page)
     app.router.add_get("/admin/users", admin_users_page)

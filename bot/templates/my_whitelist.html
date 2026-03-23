@@ -1,0 +1,748 @@
+{% extends "base.html" %}
+
+{% block title %}My Whitelist - Squad Whitelister{% endblock %}
+
+{% block content %}
+<style>
+/* ── Dashboard-specific styles ────────────────────────────────────────────── */
+.dash-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+@media (min-width: 640px) {
+    .dash-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+    .dash-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Card overrides */
+.wl-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.wl-card:hover {
+    border-color: var(--border-light);
+}
+.wl-card-disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
+.wl-card-disabled .wl-card-body {
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Header */
+.wl-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.wl-card-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Status badges */
+.badge-warning {
+    background: rgba(254, 231, 92, 0.15);
+    color: var(--yellow);
+}
+.badge-expired {
+    background: rgba(237, 66, 69, 0.15);
+    color: var(--red);
+}
+
+/* Card body */
+.wl-card-body {
+    padding: 16px 18px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Info rows */
+.wl-info {
+    margin-bottom: 16px;
+}
+.wl-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+.wl-info-row:last-child {
+    border-bottom: none;
+}
+.wl-info-label {
+    color: var(--text-muted);
+}
+.wl-info-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ID sections */
+.wl-ids-section {
+    margin-bottom: 14px;
+}
+.wl-ids-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.wl-ids-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.wl-slot-counter {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+.wl-slot-counter.wl-slots-full {
+    color: var(--red);
+}
+
+/* Chips container */
+.wl-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 28px;
+}
+.wl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    font-size: 0.8rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: var(--text-secondary);
+    transition: background var(--transition), border-color var(--transition);
+    animation: chipIn 0.2s ease;
+}
+@keyframes chipIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+.wl-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0;
+    transition: background var(--transition), color var(--transition);
+}
+.wl-chip-remove:hover {
+    background: var(--red-dark);
+    color: #fff;
+}
+
+/* Add ID input row */
+.wl-add-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.wl-add-input {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    outline: none;
+    transition: border-color var(--transition);
+}
+.wl-add-input:focus {
+    border-color: var(--accent);
+}
+.wl-add-input.wl-input-error {
+    border-color: var(--red);
+}
+.wl-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: background var(--transition);
+    flex-shrink: 0;
+}
+.wl-add-btn:hover {
+    background: var(--accent-hover);
+}
+.wl-add-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Validation message */
+.wl-validation-msg {
+    font-size: 0.75rem;
+    color: var(--red);
+    margin-top: 4px;
+    min-height: 1em;
+}
+
+/* Empty state */
+.wl-empty {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding: 4px 0;
+}
+
+/* Save button */
+.wl-card-footer {
+    padding: 0 18px 16px 18px;
+    margin-top: auto;
+}
+.wl-save-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background: var(--green-dark);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition), opacity var(--transition);
+}
+.wl-save-btn:hover:not(:disabled) {
+    background: #2d9b54;
+}
+.wl-save-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.wl-save-btn.wl-saving {
+    opacity: 0.6;
+    cursor: wait;
+}
+</style>
+
+<div class="page-header">
+    <h1>My Whitelist</h1>
+    <p class="text-muted">Manage your Steam and EOS IDs across your whitelists.</p>
+</div>
+
+<div class="dash-grid">
+    {% for wl_type in whitelist_types %}
+    {% set data = whitelist_data[wl_type] %}
+    {% set rec = data.user_record %}
+    {% set cfg = data.config %}
+    {% set slot_limit = rec.effective_slot_limit if rec and rec.effective_slot_limit else (cfg.default_slot_limit if cfg and cfg.default_slot_limit else 1) %}
+    {% set status = rec.status if rec else 'inactive' %}
+
+    <div class="wl-card {% if not data.enabled %}wl-card-disabled{% endif %}"
+         id="card-{{ wl_type }}"
+         data-type="{{ wl_type }}"
+         data-slot-limit="{{ slot_limit }}"
+         data-steam-ids="{{ data.steam_ids | tojson }}"
+         data-eos-ids="{{ data.eos_ids | tojson }}"
+         data-enabled="{{ data.enabled | tojson }}">
+
+        {# ── Header ─────────────────────────────────────────────── #}
+        <div class="wl-card-header">
+            <h3>{{ data.name | default(wl_type | capitalize) }}</h3>
+            {% if not data.enabled %}
+                <span class="badge badge-muted">Disabled</span>
+            {% elif status == 'active' %}
+                {% if rec and rec.expires_at %}
+                    {# Check expiring soon: within 7 days #}
+                    <span class="badge badge-success" data-expires="{{ rec.expires_at }}">Active</span>
+                {% else %}
+                    <span class="badge badge-success">Active</span>
+                {% endif %}
+            {% elif status == 'expired' %}
+                <span class="badge badge-expired">Expired</span>
+            {% else %}
+                <span class="badge badge-muted">Inactive</span>
+            {% endif %}
+        </div>
+
+        {% if not data.enabled %}
+        {# ── Disabled body ──────────────────────────────────────── #}
+        <div class="wl-card-body">
+            <p class="text-muted">This whitelist type is not currently available.</p>
+        </div>
+
+        {% else %}
+        {# ── Active body ────────────────────────────────────────── #}
+        <div class="wl-card-body">
+
+            {# Info section #}
+            <div class="wl-info">
+                {% if rec and rec.last_plan_name %}
+                <div class="wl-info-row">
+                    <span class="wl-info-label">Plan / Role</span>
+                    <span class="wl-info-value">{{ rec.last_plan_name }}</span>
+                </div>
+                {% endif %}
+                <div class="wl-info-row">
+                    <span class="wl-info-label">Slot limit</span>
+                    <span class="wl-info-value">{{ slot_limit }} slot{{ 's' if slot_limit != 1 else '' }} available</span>
+                </div>
+                <div class="wl-info-row">
+                    <span class="wl-info-label">Expiration</span>
+                    <span class="wl-info-value">
+                        {% if rec and rec.expires_at %}
+                            {{ rec.expires_at }}
+                        {% else %}
+                            No expiration
+                        {% endif %}
+                    </span>
+                </div>
+                {% if rec and rec.updated_at %}
+                <div class="wl-info-row">
+                    <span class="wl-info-label">Last updated</span>
+                    <span class="wl-info-value">{{ rec.updated_at }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ── Steam64 IDs ──────────────────────────────────── #}
+            <div class="wl-ids-section" data-id-kind="steam" data-card-type="{{ wl_type }}">
+                <div class="wl-ids-header">
+                    <span class="wl-ids-title">Steam64 IDs</span>
+                    <span class="wl-slot-counter" data-counter="steam-{{ wl_type }}">
+                        {{ data.steam_ids | length }} of {{ slot_limit }} used
+                    </span>
+                </div>
+                <div class="wl-chips" data-chips="steam-{{ wl_type }}">
+                    {% for sid in data.steam_ids %}
+                    <span class="wl-chip" data-value="{{ sid }}">
+                        {{ sid }}
+                        <button type="button" class="wl-chip-remove" aria-label="Remove">&times;</button>
+                    </span>
+                    {% endfor %}
+                    {% if not data.steam_ids %}
+                    <span class="wl-empty">No Steam IDs configured.</span>
+                    {% endif %}
+                </div>
+                <div class="wl-add-row">
+                    <input type="text"
+                           class="wl-add-input"
+                           data-input="steam-{{ wl_type }}"
+                           placeholder="76561198012345678"
+                           maxlength="17"
+                           autocomplete="off">
+                    <button type="button" class="wl-add-btn" data-add="steam-{{ wl_type }}" title="Add Steam ID">+</button>
+                </div>
+                <div class="wl-validation-msg" data-vmsg="steam-{{ wl_type }}"></div>
+            </div>
+
+            {# ── EOS IDs ──────────────────────────────────────── #}
+            <div class="wl-ids-section" data-id-kind="eos" data-card-type="{{ wl_type }}">
+                <div class="wl-ids-header">
+                    <span class="wl-ids-title">EOS IDs</span>
+                    <span class="wl-slot-counter" data-counter="eos-{{ wl_type }}">
+                        {{ data.eos_ids | length }} of {{ slot_limit }} used
+                    </span>
+                </div>
+                <div class="wl-chips" data-chips="eos-{{ wl_type }}">
+                    {% for eid in data.eos_ids %}
+                    <span class="wl-chip" data-value="{{ eid }}">
+                        {{ eid }}
+                        <button type="button" class="wl-chip-remove" aria-label="Remove">&times;</button>
+                    </span>
+                    {% endfor %}
+                    {% if not data.eos_ids %}
+                    <span class="wl-empty">No EOS IDs configured.</span>
+                    {% endif %}
+                </div>
+                <div class="wl-add-row">
+                    <input type="text"
+                           class="wl-add-input"
+                           data-input="eos-{{ wl_type }}"
+                           placeholder="0123456789abcdef0123456789abcdef"
+                           maxlength="32"
+                           autocomplete="off">
+                    <button type="button" class="wl-add-btn" data-add="eos-{{ wl_type }}" title="Add EOS ID">+</button>
+                </div>
+                <div class="wl-validation-msg" data-vmsg="eos-{{ wl_type }}"></div>
+            </div>
+        </div>
+
+        {# ── Save footer ────────────────────────────────────────── #}
+        <div class="wl-card-footer">
+            <button type="button"
+                    class="wl-save-btn"
+                    data-save="{{ wl_type }}"
+                    disabled>Save Changes</button>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    /* ── Regex patterns ──────────────────────────────────────────── */
+    var STEAM_RE = /^7656119\d{10}$/;
+    var EOS_RE   = /^[0-9a-fA-F]{32}$/;
+
+    /* ── Per-card state ──────────────────────────────────────────── */
+    var cards = {};
+
+    document.querySelectorAll('.wl-card[data-enabled="true"]').forEach(function(cardEl) {
+        var type = cardEl.dataset.type;
+        var originalSteam, originalEos;
+        try { originalSteam = JSON.parse(cardEl.dataset.steamIds); } catch(e) { originalSteam = []; }
+        try { originalEos   = JSON.parse(cardEl.dataset.eosIds); }   catch(e) { originalEos = []; }
+
+        cards[type] = {
+            el: cardEl,
+            slotLimit: parseInt(cardEl.dataset.slotLimit, 10) || 1,
+            originalSteam: originalSteam.slice(),
+            originalEos: originalEos.slice(),
+            currentSteam: originalSteam.slice(),
+            currentEos: originalEos.slice()
+        };
+    });
+
+    /* ── Helpers ──────────────────────────────────────────────────── */
+
+    function getChipsContainer(kind, type) {
+        return document.querySelector('[data-chips="' + kind + '-' + type + '"]');
+    }
+
+    function getCounter(kind, type) {
+        return document.querySelector('[data-counter="' + kind + '-' + type + '"]');
+    }
+
+    function getInput(kind, type) {
+        return document.querySelector('[data-input="' + kind + '-' + type + '"]');
+    }
+
+    function getVmsg(kind, type) {
+        return document.querySelector('[data-vmsg="' + kind + '-' + type + '"]');
+    }
+
+    function getSaveBtn(type) {
+        return document.querySelector('[data-save="' + type + '"]');
+    }
+
+    function arraysEqual(a, b) {
+        if (a.length !== b.length) return false;
+        for (var i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) return false;
+        }
+        return true;
+    }
+
+    /* Check if the card state has changed from original */
+    function hasChanges(type) {
+        var c = cards[type];
+        if (!c) return false;
+        return !arraysEqual(c.currentSteam, c.originalSteam) ||
+               !arraysEqual(c.currentEos, c.originalEos);
+    }
+
+    /* Update save button enabled/disabled */
+    function updateSaveBtn(type) {
+        var btn = getSaveBtn(type);
+        if (!btn) return;
+        btn.disabled = !hasChanges(type);
+    }
+
+    /* Update counter text */
+    function updateCounter(kind, type) {
+        var c = cards[type];
+        if (!c) return;
+        var counter = getCounter(kind, type);
+        if (!counter) return;
+        var list = kind === 'steam' ? c.currentSteam : c.currentEos;
+        var count = list.length;
+        var limit = c.slotLimit;
+        counter.textContent = count + ' of ' + limit + ' used';
+        if (count >= limit) {
+            counter.classList.add('wl-slots-full');
+        } else {
+            counter.classList.remove('wl-slots-full');
+        }
+    }
+
+    /* Render chips for a kind+type */
+    function renderChips(kind, type) {
+        var c = cards[type];
+        if (!c) return;
+        var container = getChipsContainer(kind, type);
+        if (!container) return;
+        var list = kind === 'steam' ? c.currentSteam : c.currentEos;
+
+        container.innerHTML = '';
+        if (list.length === 0) {
+            var empty = document.createElement('span');
+            empty.className = 'wl-empty';
+            empty.textContent = kind === 'steam' ? 'No Steam IDs configured.' : 'No EOS IDs configured.';
+            container.appendChild(empty);
+        } else {
+            list.forEach(function(id) {
+                var chip = document.createElement('span');
+                chip.className = 'wl-chip';
+                chip.setAttribute('data-value', id);
+                chip.textContent = id;
+
+                var removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'wl-chip-remove';
+                removeBtn.setAttribute('aria-label', 'Remove');
+                removeBtn.innerHTML = '&times;';
+                removeBtn.addEventListener('click', function() {
+                    removeId(kind, type, id);
+                });
+                chip.appendChild(removeBtn);
+                container.appendChild(chip);
+            });
+        }
+
+        updateCounter(kind, type);
+        updateSaveBtn(type);
+    }
+
+    /* Add an ID */
+    function addId(kind, type, value) {
+        var c = cards[type];
+        if (!c) return false;
+        var list = kind === 'steam' ? c.currentSteam : c.currentEos;
+        var re = kind === 'steam' ? STEAM_RE : EOS_RE;
+
+        var v = value.trim();
+        if (kind === 'eos') v = v.toLowerCase();
+
+        // Validate format
+        if (!re.test(v)) {
+            showValidation(kind, type, kind === 'steam'
+                ? 'Must match 7656119XXXXXXXXXX (17 digits)'
+                : 'Must be exactly 32 hex characters');
+            return false;
+        }
+
+        // Check duplicates
+        if (list.indexOf(v) !== -1) {
+            showValidation(kind, type, 'This ID is already added.');
+            return false;
+        }
+
+        // Check slot limit
+        if (list.length >= c.slotLimit) {
+            showValidation(kind, type, 'Slot limit reached (' + c.slotLimit + ').');
+            return false;
+        }
+
+        list.push(v);
+        clearValidation(kind, type);
+        renderChips(kind, type);
+        return true;
+    }
+
+    /* Remove an ID */
+    function removeId(kind, type, value) {
+        var c = cards[type];
+        if (!c) return;
+        var list = kind === 'steam' ? c.currentSteam : c.currentEos;
+        var idx = list.indexOf(value);
+        if (idx !== -1) {
+            list.splice(idx, 1);
+            renderChips(kind, type);
+        }
+    }
+
+    /* Validation display */
+    function showValidation(kind, type, msg) {
+        var vmsg = getVmsg(kind, type);
+        var input = getInput(kind, type);
+        if (vmsg) vmsg.textContent = msg;
+        if (input) input.classList.add('wl-input-error');
+    }
+
+    function clearValidation(kind, type) {
+        var vmsg = getVmsg(kind, type);
+        var input = getInput(kind, type);
+        if (vmsg) vmsg.textContent = '';
+        if (input) input.classList.remove('wl-input-error');
+    }
+
+    /* ── Wire up chip remove buttons on initial render ────────── */
+    document.querySelectorAll('.wl-chip-remove').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var chip = this.parentElement;
+            var section = chip.closest('.wl-ids-section');
+            if (!chip || !section) return;
+            var kind = section.dataset.idKind;
+            var type = section.dataset.cardType;
+            var value = chip.dataset.value;
+            removeId(kind, type, value);
+        });
+    });
+
+    /* ── Wire up Add buttons ─────────────────────────────────── */
+    document.querySelectorAll('.wl-add-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var key = this.dataset.add; // e.g. "steam-subscription"
+            var parts = key.split('-');
+            var kind = parts[0];
+            var type = parts.slice(1).join('-');
+            var input = getInput(kind, type);
+            if (!input) return;
+            if (addId(kind, type, input.value)) {
+                input.value = '';
+            }
+        });
+    });
+
+    /* ── Wire up Enter key on inputs ─────────────────────────── */
+    document.querySelectorAll('.wl-add-input').forEach(function(input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var key = this.dataset.input;
+                var parts = key.split('-');
+                var kind = parts[0];
+                var type = parts.slice(1).join('-');
+                var addBtn = document.querySelector('[data-add="' + key + '"]');
+                if (addBtn) addBtn.click();
+            }
+        });
+
+        /* Clear validation on typing */
+        input.addEventListener('input', function() {
+            var key = this.dataset.input;
+            var parts = key.split('-');
+            var kind = parts[0];
+            var type = parts.slice(1).join('-');
+            clearValidation(kind, type);
+        });
+    });
+
+    /* ── Wire up Save buttons ────────────────────────────────── */
+    document.querySelectorAll('.wl-save-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var type = this.dataset.save;
+            var c = cards[type];
+            if (!c || !hasChanges(type)) return;
+
+            var saveBtn = this;
+            saveBtn.disabled = true;
+            saveBtn.classList.add('wl-saving');
+            saveBtn.textContent = 'Saving...';
+
+            fetch('/api/my-whitelist/' + type, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    steam_ids: c.currentSteam,
+                    eos_ids: c.currentEos
+                })
+            })
+            .then(function(resp) {
+                return resp.json().then(function(data) {
+                    return { ok: resp.ok, data: data };
+                });
+            })
+            .then(function(result) {
+                if (result.ok) {
+                    showFlash('Whitelist updated successfully!', 'success');
+                    /* Update original state so save button disables */
+                    c.originalSteam = c.currentSteam.slice();
+                    c.originalEos = c.currentEos.slice();
+                    updateSaveBtn(type);
+
+                    /* Update status badge if returned */
+                    if (result.data.status) {
+                        var header = c.el.querySelector('.wl-card-header .badge');
+                        if (header) {
+                            header.className = 'badge';
+                            if (result.data.status === 'active') {
+                                header.classList.add('badge-success');
+                                header.textContent = 'Active';
+                            } else if (result.data.status === 'expired') {
+                                header.classList.add('badge-expired');
+                                header.textContent = 'Expired';
+                            } else {
+                                header.classList.add('badge-muted');
+                                header.textContent = result.data.status.charAt(0).toUpperCase() + result.data.status.slice(1);
+                            }
+                        }
+                    }
+                } else {
+                    var msg = result.data.error || 'Failed to save.';
+                    if (result.data.details) {
+                        msg += ' ' + result.data.details.join(', ');
+                    }
+                    showFlash(msg, 'error');
+                }
+            })
+            .catch(function() {
+                showFlash('Network error. Please try again.', 'error');
+            })
+            .finally(function() {
+                saveBtn.classList.remove('wl-saving');
+                saveBtn.textContent = 'Save Changes';
+                updateSaveBtn(type);
+            });
+        });
+    });
+
+    /* ── Expiring-soon badge color ───────────────────────────── */
+    document.querySelectorAll('.badge-success[data-expires]').forEach(function(badge) {
+        try {
+            var exp = new Date(badge.dataset.expires);
+            var now = new Date();
+            var daysLeft = (exp - now) / (1000 * 60 * 60 * 24);
+            if (daysLeft <= 0) {
+                badge.className = 'badge badge-expired';
+                badge.textContent = 'Expired';
+            } else if (daysLeft <= 7) {
+                badge.className = 'badge badge-warning';
+                badge.textContent = 'Expiring Soon';
+            }
+        } catch(e) { /* ignore parse errors */ }
+    });
+
+})();
+</script>
+{% endblock %}

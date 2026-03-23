@@ -182,6 +182,13 @@ code {
     flex-shrink: 0;
 }
 
+.sidebar-separator {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 8px 0;
+    list-style: none;
+}
+
 /* ── Main Content ────────────────────────────────────────────────────────── */
 .main-content {
     flex: 1;

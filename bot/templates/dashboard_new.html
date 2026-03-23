@@ -1,0 +1,716 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Squad Whitelister{% endblock %}
+
+{% block content %}
+<style>
+/* ── Dashboard Summary Cards ─────────────────────────────────────────────── */
+.wl-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+.wl-summary-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: border-color var(--transition);
+}
+.wl-summary-card:hover {
+    border-color: var(--border-light);
+}
+.wl-summary-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    min-width: 120px;
+}
+.wl-summary-badge {
+    flex-shrink: 0;
+}
+.wl-summary-detail {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+.wl-summary-detail span + span::before {
+    content: " \00b7 ";
+    margin: 0 4px;
+}
+.wl-summary-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.wl-summary-card-disabled {
+    opacity: 0.45;
+}
+
+/* ── Admin section separator ─────────────────────────────────────────────── */
+.admin-section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 32px 0 24px 0;
+}
+.admin-section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+}
+
+/* ── Stats Row enhancements ──────────────────────────────────────────────── */
+.stat-card .stat-icon {
+    margin-bottom: 8px;
+    color: var(--text-muted);
+}
+.stat-card .stat-icon svg {
+    opacity: 0.6;
+}
+
+/* ── Whitelist Files ─────────────────────────────────────────────────────── */
+.wl-file-item {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+.wl-file-item:last-child {
+    border-bottom: none;
+}
+.wl-file-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.wl-file-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+.wl-file-url-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.wl-file-url {
+    flex: 1;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wl-file-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+.copy-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all var(--transition);
+    white-space: nowrap;
+}
+.copy-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* ── Health Alerts ────────────────────────────────────────────────────────── */
+.health-list {
+    list-style: none;
+    padding: 0;
+}
+.health-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+.health-item:last-child {
+    border-bottom: none;
+}
+.health-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.health-icon-warn {
+    color: var(--yellow);
+}
+.health-icon-ok {
+    color: var(--green);
+}
+.health-icon-error {
+    color: var(--red);
+}
+.health-msg {
+    color: var(--text-secondary);
+}
+.health-ok-msg {
+    color: var(--text-muted);
+    padding: 16px 0;
+    text-align: center;
+    font-size: 0.85rem;
+}
+
+/* ── Quick Actions ────────────────────────────────────────────────────────── */
+.quick-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.quick-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    transition: all var(--transition);
+    text-decoration: none;
+}
+.quick-action-btn:hover {
+    background: var(--bg-primary);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.quick-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.quick-action-btn svg {
+    flex-shrink: 0;
+}
+
+/* ── Full-width card ──────────────────────────────────────────────────────── */
+.card-full {
+    grid-column: 1 / -1;
+}
+
+/* ── Loading spinner ─────────────────────────────────────────────────────── */
+.loading-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-light);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Badge for expired status ────────────────────────────────────────────── */
+.badge-warning {
+    background: rgba(254, 231, 92, 0.15);
+    color: var(--yellow);
+}
+.badge-expired {
+    background: rgba(237, 66, 69, 0.15);
+    color: var(--red);
+}
+</style>
+
+<div class="page-header">
+    <h1>Welcome, {{ session.username }}</h1>
+    <p class="text-muted">Your whitelist overview and quick access.</p>
+</div>
+
+{# ── No Guilds State ────────────────────────────────────────────────────── #}
+{% if no_guilds %}
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted">You are not a member of any guilds that use Squad Whitelister. Please contact your server admin or join a Discord server that has the bot installed.</p>
+    </div>
+</div>
+
+{% else %}
+
+{# ── Your Whitelists Summary ────────────────────────────────────────────── #}
+<h2 style="font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Your Whitelists</h2>
+
+{% if whitelist_data %}
+<div class="wl-summary-list">
+    {% for wl_type in whitelist_types %}
+    {% set data = whitelist_data[wl_type] %}
+    {% set rec = data.user_record %}
+    {% set cfg = data.config %}
+    {% set slot_limit = rec.effective_slot_limit if rec and rec.effective_slot_limit else (cfg.default_slot_limit if cfg and cfg.default_slot_limit else 1) %}
+    {% set status = rec.status if rec else 'inactive' %}
+    {% set total_ids = data.steam_ids | length + data.eos_ids | length %}
+
+    <div class="wl-summary-card {% if not data.enabled %}wl-summary-card-disabled{% endif %}">
+        <span class="wl-summary-name">{{ data.name | default(wl_type | capitalize) }}</span>
+
+        <span class="wl-summary-badge">
+            {% if not data.enabled %}
+                <span class="badge badge-muted">Disabled</span>
+            {% elif status == 'active' %}
+                {% if rec and rec.expires_at %}
+                    <span class="badge badge-success" data-expires="{{ rec.expires_at }}">Active</span>
+                {% else %}
+                    <span class="badge badge-success">Active</span>
+                {% endif %}
+            {% elif status == 'expired' %}
+                <span class="badge badge-expired">Expired</span>
+            {% else %}
+                <span class="badge badge-muted">Inactive</span>
+            {% endif %}
+        </span>
+
+        <span class="wl-summary-detail">
+            <span>{{ total_ids }} of {{ slot_limit }} slot{{ 's' if slot_limit != 1 else '' }} used</span>
+            {% if rec and rec.updated_at %}
+                <span>Updated {{ rec.updated_at }}</span>
+            {% endif %}
+        </span>
+
+        {% if data.enabled %}
+        <span class="wl-summary-actions">
+            <a href="/my-whitelist" class="btn btn-sm btn-outline">Manage IDs</a>
+        </span>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card" style="margin-bottom: 28px;">
+    <div class="card-body">
+        <p class="text-muted">No whitelists available yet. Contact your server admin to set up whitelist types.</p>
+    </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════════ #}
+{# ── Admin Section (mod only) ────────────────────────────────────────────── #}
+{# ══════════════════════════════════════════════════════════════════════════ #}
+{% if session.is_mod %}
+<hr class="admin-section-divider">
+<h2 class="admin-section-title">Admin Overview</h2>
+
+<!-- Stats Row -->
+<div class="stats-row" id="admin-stats">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        </div>
+        <div class="stat-value" id="stat-active-users">--</div>
+        <div class="stat-label">Total Active Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        </div>
+        <div class="stat-value" id="stat-steam-ids">--</div>
+        <div class="stat-label">Total Steam IDs</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <div class="stat-value" id="stat-eos-ids">--</div>
+        <div class="stat-label">Total EOS IDs</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+        </div>
+        <div class="stat-value" id="stat-audit-week">--</div>
+        <div class="stat-label">Actions This Week</div>
+    </div>
+</div>
+
+<!-- Main Cards Grid -->
+<div class="cards-grid">
+
+    <!-- Whitelist Files Card -->
+    <div class="card card-full">
+        <div class="card-header">
+            <h3 class="card-title">Whitelist Files</h3>
+            <span class="badge badge-sm badge-muted" id="wl-output-mode">--</span>
+        </div>
+        <div class="card-body" id="wl-files-container">
+            <p class="text-muted">Loading whitelist file info...</p>
+        </div>
+    </div>
+
+    <!-- Health Alerts Card -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Health Alerts</h3>
+            <span id="health-count-badge"></span>
+        </div>
+        <div class="card-body" id="health-container">
+            <p class="text-muted">Checking health...</p>
+        </div>
+    </div>
+
+    <!-- Recent Activity Card -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Recent Activity</h3>
+            <a href="/admin/audit" class="btn btn-sm btn-outline">View All</a>
+        </div>
+        <div class="card-body">
+            <div id="recent-activity">
+                <p class="text-muted">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions Card -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Quick Actions</h3>
+        </div>
+        <div class="card-body">
+            <div class="quick-actions-grid">
+                <button class="quick-action-btn" id="btn-resync" onclick="doResync()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    Resync Whitelist
+                </button>
+                <button class="quick-action-btn" id="btn-report" onclick="doReport()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Generate Report
+                </button>
+                <a class="quick-action-btn" href="/admin/setup">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                    Setup
+                </a>
+                <a class="quick-action-btn" href="/admin/users">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    Users
+                </a>
+                <a class="quick-action-btn" href="/admin/import-export" style="grid-column: 1 / -1;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Import / Export
+                </a>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAdminStats();
+    loadWhitelistFiles();
+    loadHealthAlerts();
+    loadRecentActivity();
+});
+
+/* ── Stats ────────────────────────────────────────────────────────────────── */
+
+function loadAdminStats() {
+    fetch('/api/admin/stats')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('stat-active-users').textContent =
+                data.total_active_users != null ? data.total_active_users : '--';
+            document.getElementById('stat-steam-ids').textContent =
+                data.total_steam_ids != null ? data.total_steam_ids : (data.total_identifiers || '--');
+            document.getElementById('stat-eos-ids').textContent =
+                data.total_eos_ids != null ? data.total_eos_ids : '--';
+            document.getElementById('stat-audit-week').textContent =
+                data.recent_audit_count != null ? data.recent_audit_count : '--';
+        })
+        .catch(function() {});
+}
+
+/* ── Whitelist Files ──────────────────────────────────────────────────────── */
+
+function loadWhitelistFiles() {
+    fetch('/api/admin/settings')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('wl-files-container');
+            var modeEl = document.getElementById('wl-output-mode');
+            var settings = data.settings || data;
+
+            // Show output mode badge
+            var outputMode = (settings.output_mode || 'separate');
+            modeEl.textContent = 'Mode: ' + outputMode;
+
+            var types = settings.whitelist_types || settings.types || [];
+            var fileUrls = settings.file_urls || {};
+            var html = '';
+
+            // Per-type files
+            if (types.length === 0 && !fileUrls) {
+                container.innerHTML = '<p class="text-muted">No whitelist types configured. <a href="/admin/setup">Go to Setup</a></p>';
+                return;
+            }
+
+            types.forEach(function(t) {
+                var typeName = t.name || t.type_name || t;
+                var enabled = t.enabled !== false;
+                var url = (fileUrls[typeName]) || buildPlaceholderUrl(typeName);
+                var lastSync = t.last_sync || t.last_synced || null;
+
+                html += '<div class="wl-file-item">';
+                html += '<div class="wl-file-header">';
+                html += '<span class="wl-file-name">' + escapeHtml(typeName) + '</span>';
+                html += enabled
+                    ? ' <span class="badge badge-sm badge-success">Enabled</span>'
+                    : ' <span class="badge badge-sm badge-muted">Disabled</span>';
+                html += '</div>';
+
+                html += '<div class="wl-file-url-row">';
+                html += '<span class="wl-file-url" title="' + escapeHtml(url) + '">' + escapeHtml(url) + '</span>';
+                html += '<button class="copy-btn" onclick="copyToClipboard(\'' + escapeHtml(url).replace(/'/g, "\\'") + '\')">Copy URL</button>';
+                html += '</div>';
+
+                html += '<div class="wl-file-meta">';
+                html += '<span>Format: Squad RemoteAdminList</span>';
+                if (lastSync) {
+                    html += '<span>Last sync: ' + escapeHtml(new Date(lastSync).toLocaleString()) + '</span>';
+                } else {
+                    html += '<span>Last sync: --</span>';
+                }
+                html += '</div>';
+                html += '</div>';
+            });
+
+            // Combined file URL (if output_mode is combined)
+            if (outputMode === 'combined') {
+                var combinedUrl = fileUrls['_combined'] || fileUrls['combined'] || buildPlaceholderUrl('combined');
+                html += '<div class="wl-file-item">';
+                html += '<div class="wl-file-header">';
+                html += '<span class="wl-file-name">Combined Whitelist</span>';
+                html += ' <span class="badge badge-sm badge-success">Active</span>';
+                html += '</div>';
+                html += '<div class="wl-file-url-row">';
+                html += '<span class="wl-file-url" title="' + escapeHtml(combinedUrl) + '">' + escapeHtml(combinedUrl) + '</span>';
+                html += '<button class="copy-btn" onclick="copyToClipboard(\'' + escapeHtml(combinedUrl).replace(/'/g, "\\'") + '\')">Copy URL</button>';
+                html += '</div>';
+                html += '<div class="wl-file-meta">';
+                html += '<span>Format: Squad RemoteAdminList</span>';
+                html += '<span>All enabled types merged</span>';
+                html += '</div>';
+                html += '</div>';
+            }
+
+            if (!html) {
+                html = '<p class="text-muted">No whitelist files available.</p>';
+            }
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('wl-files-container').innerHTML =
+                '<p class="text-muted">Failed to load whitelist file info.</p>';
+        });
+}
+
+function buildPlaceholderUrl(typeName) {
+    return window.location.origin + '/wl/' + encodeURIComponent(typeName) + '.cfg';
+}
+
+function copyToClipboard(text) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            showFlash('URL copied to clipboard.', 'success');
+        }).catch(function() {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        showFlash('URL copied to clipboard.', 'success');
+    } catch (e) {
+        showFlash('Failed to copy. Please copy manually.', 'error');
+    }
+    document.body.removeChild(ta);
+}
+
+/* ── Health Alerts ────────────────────────────────────────────────────────── */
+
+function loadHealthAlerts() {
+    fetch('/api/admin/health')
+        .then(function(r) {
+            if (!r.ok) throw new Error('Health endpoint not available');
+            return r.json();
+        })
+        .then(function(data) {
+            var container = document.getElementById('health-container');
+            var badge = document.getElementById('health-count-badge');
+            var warnings = data.warnings || data.alerts || [];
+
+            if (warnings.length === 0) {
+                container.innerHTML = '<div class="health-ok-msg">' +
+                    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--green)" stroke-width="2" style="vertical-align:middle;margin-right:6px;"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' +
+                    'All systems healthy. No warnings detected.</div>';
+                badge.innerHTML = '<span class="badge badge-sm badge-success">OK</span>';
+                return;
+            }
+
+            badge.innerHTML = '<span class="badge badge-sm badge-danger">' + warnings.length + ' warning' + (warnings.length !== 1 ? 's' : '') + '</span>';
+
+            var html = '<ul class="health-list">';
+            warnings.forEach(function(w) {
+                var msg = w.message || w.msg || w;
+                var level = w.level || 'warn';
+                var iconClass = level === 'error' ? 'health-icon-error' : 'health-icon-warn';
+                var iconSvg = level === 'error'
+                    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+                    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+                html += '<li class="health-item">';
+                html += '<span class="health-icon ' + iconClass + '">' + iconSvg + '</span>';
+                html += '<span class="health-msg">' + escapeHtml(typeof msg === 'string' ? msg : JSON.stringify(msg)) + '</span>';
+                html += '</li>';
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('health-container').innerHTML =
+                '<p class="text-muted">Health check endpoint not available. Expected: GET /api/admin/health</p>';
+            document.getElementById('health-count-badge').innerHTML =
+                '<span class="badge badge-sm badge-muted">N/A</span>';
+        });
+}
+
+/* ── Recent Activity ──────────────────────────────────────────────────────── */
+
+function loadRecentActivity() {
+    fetch('/api/admin/audit?per_page=10')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('recent-activity');
+            if (!data.entries || data.entries.length === 0) {
+                container.innerHTML = '<p class="text-muted">No recent activity.</p>';
+                return;
+            }
+            var html = '<ul class="activity-list">';
+            data.entries.forEach(function(entry) {
+                var time = entry.created_at ? new Date(entry.created_at).toLocaleString() : '';
+                html += '<li class="activity-item">';
+                html += '<span class="activity-action">' + escapeHtml(entry.action_type) + '</span>';
+                if (entry.performed_by_name || entry.discord_username) {
+                    html += ' <span class="text-muted text-sm">by ' + escapeHtml(entry.performed_by_name || entry.discord_username) + '</span>';
+                }
+                if (entry.whitelist_type) {
+                    html += ' <span class="badge badge-sm">' + escapeHtml(entry.whitelist_type) + '</span>';
+                }
+                html += '<span class="activity-time">' + escapeHtml(time) + '</span>';
+                if (entry.details) {
+                    html += '<p class="activity-details">' + escapeHtml(entry.details.substring(0, 120)) + '</p>';
+                }
+                html += '</li>';
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('recent-activity').innerHTML = '<p class="text-muted">Failed to load activity.</p>';
+        });
+}
+
+/* ── Quick Actions ────────────────────────────────────────────────────────── */
+
+function doResync() {
+    var btn = document.getElementById('btn-resync');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Syncing...';
+
+    fetch('/api/admin/resync', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(result) {
+            if (result.ok) {
+                showFlash(result.data.message || 'Whitelist resync triggered successfully.', 'success');
+                setTimeout(loadAdminStats, 2000);
+            } else {
+                showFlash(result.data.error || 'Failed to trigger resync.', 'error');
+            }
+        })
+        .catch(function() {
+            showFlash('Network error triggering resync.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Resync Whitelist';
+        });
+}
+
+function doReport() {
+    var btn = document.getElementById('btn-report');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Generating...';
+
+    fetch('/api/admin/report', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(result) {
+            if (result.ok) {
+                showFlash(result.data.message || 'Report generated successfully.', 'success');
+            } else {
+                showFlash(result.data.error || 'Failed to generate report.', 'error');
+            }
+        })
+        .catch(function() {
+            showFlash('Network error generating report.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Generate Report';
+        });
+}
+</script>
+
+{% endif %}{# end is_mod #}
+
+{# ── Expiring-soon badge color (for summary cards) ──────────────────────── #}
+<script>
+document.querySelectorAll('.badge-success[data-expires]').forEach(function(badge) {
+    try {
+        var exp = new Date(badge.dataset.expires);
+        var now = new Date();
+        var daysLeft = (exp - now) / (1000 * 60 * 60 * 24);
+        if (daysLeft <= 0) {
+            badge.className = 'badge badge-expired';
+            badge.textContent = 'Expired';
+        } else if (daysLeft <= 7) {
+            badge.className = 'badge badge-warning';
+            badge.textContent = 'Expiring Soon';
+        }
+    } catch(e) { /* ignore parse errors */ }
+});
+</script>
+
+{% endif %}{# end no_guilds else #}
+{% endblock %}
