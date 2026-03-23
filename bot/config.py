@@ -36,7 +36,7 @@ DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
-WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
+WEB_PORT = int(os.getenv("PORT", "") or os.getenv("WEB_PORT", "8080"))  # Railway injects PORT
 WEB_BASE_PATH = os.getenv("WEB_BASE_PATH", "/").rstrip("/")
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
