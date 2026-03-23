@@ -317,65 +317,9 @@ class WhitelistBot(commands.Bot):
         await self.send_log_embed(guild_id, whitelist_type, "Whitelist Updated", f"User: <@{interaction.user.id}>\nType: `{whitelist_type}`\nSlots: `{slots}`\nPlan: `{plan}`\nIDs: `{len(submitted)}`", discord.Color.green())
 
     async def get_output_contents(self, guild_id: int) -> dict:
-        rows = await self.db.get_active_export_rows(guild_id)
-        mode = await self.db.get_setting(guild_id, "output_mode", "combined")
-        dedupe_output = to_bool(await self.db.get_setting(guild_id, "duplicate_output_dedupe", "true"))
-
-        # Load group configs per type and all squad groups
-        type_cfgs = {}
-        for wt in WHITELIST_TYPES:
-            cfg = await self.db.get_type_config(guild_id, wt)
-            if cfg:
-                type_cfgs[wt] = cfg
-
-        squad_groups = await self.db.get_squad_groups(guild_id)
-        group_perms = {name: perms for name, perms, _ in squad_groups}
-
-        def build_group_headers(used_groups: set) -> List[str]:
-            lines = []
-            for gname in sorted(used_groups):
-                perms = group_perms.get(gname, "reserve")
-                lines.append(f"Group={gname}:{perms}")
-            lines.extend(["", ""])
-            return lines
-
-        def build_line(id_type: str, id_value: str, name: str, group_name: str) -> str:
-            suffix = " [EOS]" if id_type == "eosid" else ""
-            return f"Admin={id_value}:{group_name} // {name}{suffix}"
-
-        outputs = {}
-        combined_lines = []
-        combined_seen = set()
-        combined_groups = set()
-        type_lines = {wt: [] for wt in WHITELIST_TYPES}
-        type_seen = {wt: set() for wt in WHITELIST_TYPES}
-        type_groups = {wt: set() for wt in WHITELIST_TYPES}
-
-        for whitelist_type, _, discord_name, id_type, id_value in rows:
-            group_name = type_cfgs.get(whitelist_type, {}).get("squad_group", "Whitelist")
-            line = build_line(id_type, id_value, discord_name, group_name)
-            key = f"{id_type}:{id_value}" if dedupe_output else line
-
-            if mode in {"combined", "hybrid"} and key not in combined_seen:
-                combined_lines.append(line)
-                combined_seen.add(key)
-                combined_groups.add(group_name)
-            if mode in {"separate", "hybrid"}:
-                if key not in type_seen.get(whitelist_type, set()):
-                    type_lines.setdefault(whitelist_type, []).append(line)
-                    type_seen.setdefault(whitelist_type, set()).add(key)
-                    type_groups.setdefault(whitelist_type, set()).add(group_name)
-
-        if mode in {"combined", "hybrid"}:
-            content = build_group_headers(combined_groups) + combined_lines
-            outputs[await self.db.get_setting(guild_id, "combined_filename", WHITELIST_FILENAME)] = "\n".join(content)
-        if mode in {"separate", "hybrid"}:
-            for wt in WHITELIST_TYPES:
-                cfg = type_cfgs.get(wt)
-                if cfg and cfg["github_enabled"]:
-                    content = build_group_headers(type_groups.get(wt, set())) + type_lines.get(wt, [])
-                    outputs[cfg["github_filename"]] = "\n".join(content)
-        return outputs
+        """Generate whitelist output files using shared module."""
+        from bot.output import generate_output_files
+        return await generate_output_files(self.db, guild_id)
 
     async def sync_github_outputs(self, guild_id: int = None) -> int:
         if guild_id is None:
