@@ -15,11 +15,13 @@ log = logging.getLogger("WhitelistBot")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 GUILD_ID = int(os.getenv("GUILD_ID", "0") or 0)
 
+DB_ENGINE = os.getenv("DB_ENGINE", "mysql").strip().lower()  # "mysql" or "postgres"
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
+DB_PORT = int(os.getenv("DB_PORT", "5432" if DB_ENGINE == "postgres" else "3306"))
 DB_NAME = os.getenv("DB_NAME", "whitelist_bot")
-DB_USER = os.getenv("DB_USER", "root")
+DB_USER = os.getenv("DB_USER", "root" if DB_ENGINE == "mysql" else "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")  # Railway-style connection string
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO_OWNER = os.getenv("GITHUB_REPO_OWNER", "")
