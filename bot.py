@@ -1426,14 +1426,16 @@ class WhitelistBot(commands.Bot):
             self.add_view(self.panel_views[whitelist_type])
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
-            # Clear any stale global commands
-            self.tree.clear_commands(guild=None)
-            await self.tree.sync()
-            # Sync guild commands fresh
-            self.tree.clear_commands(guild=guild_obj)
+            # Copy current global commands to guild, then sync guild
+            # This replaces ALL guild commands with exactly what's in the global tree
             self.tree.copy_global_to(guild=guild_obj)
             synced = await self.tree.sync(guild=guild_obj)
             log.info("Synced %s guild app commands to guild %s", len(synced), GUILD_ID)
+            for cmd in synced:
+                log.info("  -> /%s", cmd.name)
+            # Clear global commands from Discord (we only want guild commands)
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
         else:
             synced = await self.tree.sync()
             log.info("Synced %s global app commands", len(synced))
