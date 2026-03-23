@@ -2145,6 +2145,118 @@ async def admin_verify_roles(request: web.Request) -> web.Response:
     return web.json_response({"results": results})
 
 
+MAX_WHITELISTS_PER_GUILD = 5
+
+
+@require_admin
+async def admin_create_whitelist(request: web.Request) -> web.Response:
+    """Create a new whitelist for the active guild (max 5)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    name = (body.get("name") or "").strip()
+    if not name or len(name) > 100:
+        return web.json_response({"error": "Name is required (max 100 chars)."}, status=400)
+
+    # Generate slug from name
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:50]
+    if not slug:
+        return web.json_response({"error": "Invalid name — must contain letters or numbers."}, status=400)
+
+    # Check limit
+    existing = await db.get_whitelists(guild_id)
+    if len(existing) >= MAX_WHITELISTS_PER_GUILD:
+        return web.json_response(
+            {"error": f"Maximum of {MAX_WHITELISTS_PER_GUILD} whitelists per community."},
+            status=400,
+        )
+
+    # Check slug uniqueness
+    for wl in existing:
+        if wl["slug"] == slug:
+            return web.json_response({"error": f"A whitelist with slug '{slug}' already exists."}, status=400)
+
+    output_filename = body.get("output_filename", f"{slug}_whitelist.txt").strip()
+    squad_group = body.get("squad_group", "Whitelist").strip()
+    default_slot_limit = int(body.get("default_slot_limit", 1))
+
+    wl_id = await db.create_whitelist(
+        guild_id,
+        name=name,
+        slug=slug,
+        enabled=False,
+        squad_group=squad_group,
+        output_filename=output_filename,
+        default_slot_limit=default_slot_limit,
+        stack_roles=False,
+        is_default=False,
+    )
+
+    log.info("Guild %s: admin created whitelist '%s' (id=%s, slug=%s)", guild_id, name, wl_id, slug)
+    return web.json_response({"ok": True, "id": wl_id, "slug": slug, "name": name})
+
+
+@require_admin
+async def admin_delete_whitelist(request: web.Request) -> web.Response:
+    """Delete a whitelist (cannot delete the default one)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    wl_slug = request.match_info["slug"]
+    wl = await db.get_whitelist_by_slug(guild_id, wl_slug)
+    if not wl:
+        return web.json_response({"error": "Whitelist not found."}, status=404)
+    if wl["is_default"]:
+        return web.json_response({"error": "Cannot delete the default whitelist."}, status=400)
+
+    wl_id = wl["id"]
+
+    # Delete related data
+    await db.execute("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
+    await db.execute("DELETE FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
+    await db.execute("DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
+    await db.delete_whitelist(wl_id)
+
+    log.info("Guild %s: admin deleted whitelist '%s' (id=%s)", guild_id, wl_slug, wl_id)
+    return web.json_response({"ok": True, "deleted": wl_slug})
+
+
+@require_admin
+async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
+    """Get the served URLs for all whitelists in this guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+
+    whitelists = await bot.db.get_whitelists(guild_id)
+    web_server = request.app.get("web_server")
+
+    urls = []
+    for wl in whitelists:
+        url = ""
+        if web_server and wl.get("output_filename"):
+            url = web_server.get_file_url(guild_id, wl["output_filename"])
+        urls.append({
+            "slug": wl["slug"],
+            "name": wl["name"],
+            "filename": wl.get("output_filename", ""),
+            "url": url,
+            "enabled": wl["enabled"],
+        })
+
+    return web.json_response({"urls": urls})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2172,6 +2284,10 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/admin/health", admin_health)
     app.router.add_post("/api/admin/resync", admin_resync)
     app.router.add_post("/api/admin/report", admin_report)
+    # Admin Whitelist CRUD
+    app.router.add_post("/api/admin/whitelists", admin_create_whitelist)
+    app.router.add_delete("/api/admin/whitelists/{slug}", admin_delete_whitelist)
+    app.router.add_get("/api/admin/whitelist-urls", admin_get_whitelist_urls)
     # Admin Import / Export
     app.router.add_post("/api/admin/import/headers", admin_import_headers)
     app.router.add_post("/api/admin/import/preview", admin_import_preview)

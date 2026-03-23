@@ -30,7 +30,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")  # Railway-style connection string
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO_OWNER = os.getenv("GITHUB_REPO_OWNER", "")
 GITHUB_REPO_NAME = os.getenv("GITHUB_REPO_NAME", "")
-WHITELIST_FILENAME = os.getenv("WHITELIST_FILENAME", "PhantomCoWhitelist.txt")
+WHITELIST_FILENAME = os.getenv("WHITELIST_FILENAME", "whitelist.txt")
 
 DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
 
@@ -86,40 +86,7 @@ DEFAULT_SETTINGS = {
     "auto_reactivate_on_role_return": "true",
 }
 
-DEFAULT_TYPES = {
-    "subscription": {
-        "enabled": "false",
-        "panel_channel_id": "",
-        "panel_message_id": "",
-        "log_channel_id": "",
-        "github_enabled": "true",
-        "github_filename": "SubscriptionWhitelist.txt",
-        "input_mode": "modal",
-        "stack_roles": "true",
-        "default_slot_limit": "1",
-    },
-    "clan": {
-        "enabled": "false",
-        "panel_channel_id": "",
-        "panel_message_id": "",
-        "log_channel_id": "",
-        "github_enabled": "true",
-        "github_filename": "ClanWhitelist.txt",
-        "input_mode": "modal",
-        "stack_roles": "false",
-        "default_slot_limit": "1",
-    },
-    "staff": {
-        "enabled": "false",
-        "panel_channel_id": "",
-        "panel_message_id": "",
-        "log_channel_id": "",
-        "github_enabled": "true",
-        "github_filename": "StaffWhitelist.txt",
-        "input_mode": "modal",
-        "stack_roles": "false",
-        "default_slot_limit": "1",
-    },
-}
-
-WHITELIST_TYPES = tuple(DEFAULT_TYPES.keys())  # ("subscription", "clan", "staff")
+# Legacy: hardcoded type definitions (used by Discord slash command cogs as fallback).
+# New code uses dynamic whitelists from the database instead.
+DEFAULT_TYPES = {}
+WHITELIST_TYPES = ()  # Empty — types are now dynamic from DB
