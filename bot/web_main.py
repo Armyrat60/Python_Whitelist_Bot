@@ -1,0 +1,221 @@
+"""Entry point for the standalone web service (no Discord bot).
+
+Uses a lightweight Discord REST client for guild/channel/role data
+instead of the full discord.py bot.
+"""
+import asyncio
+
+from aiohttp import web
+
+from bot.config import (
+    DISCORD_TOKEN, DATABASE_URL, DB_HOST, DB_NAME, DB_USER,
+    WEB_PORT, WEB_HOST, log,
+)
+from bot.database import Database
+from bot.web import WebServer
+
+
+class DiscordRESTClient:
+    """Lightweight Discord REST API client for the web service.
+
+    Provides guild, channel, and role data without a full bot connection.
+    This replaces bot.get_guild() / guild.channels / guild.roles in the
+    web routes when running standalone.
+    """
+
+    API_BASE = "https://discord.com/api/v10"
+
+    def __init__(self, token: str):
+        self.token = token
+        self._session = None
+        self._headers = {"Authorization": f"Bot {token}"}
+        self._guild_cache: dict = {}
+
+    async def _ensure_session(self):
+        if self._session is None or self._session.closed:
+            import aiohttp
+            self._session = aiohttp.ClientSession()
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    @property
+    def guilds(self):
+        """Return cached guilds as a list of lightweight guild objects."""
+        return list(self._guild_cache.values())
+
+    def get_guild(self, guild_id: int):
+        """Return a lightweight guild object from cache."""
+        return self._guild_cache.get(guild_id)
+
+    async def fetch_guilds(self):
+        """Fetch all guilds the bot is in."""
+        await self._ensure_session()
+        async with self._session.get(
+            f"{self.API_BASE}/users/@me/guilds",
+            headers=self._headers,
+        ) as resp:
+            if resp.status != 200:
+                log.warning("Failed to fetch guilds: %s", resp.status)
+                return []
+            data = await resp.json()
+            for g in data:
+                gid = int(g["id"])
+                self._guild_cache[gid] = _LightGuild(g)
+            return data
+
+    async def fetch_channels(self, guild_id: int) -> list:
+        """Fetch text channels for a guild."""
+        await self._ensure_session()
+        async with self._session.get(
+            f"{self.API_BASE}/guilds/{guild_id}/channels",
+            headers=self._headers,
+        ) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+            # Filter to text channels (type 0)
+            return [ch for ch in data if ch.get("type") == 0]
+
+    async def fetch_roles(self, guild_id: int) -> list:
+        """Fetch roles for a guild."""
+        await self._ensure_session()
+        async with self._session.get(
+            f"{self.API_BASE}/guilds/{guild_id}/roles",
+            headers=self._headers,
+        ) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+            # Exclude @everyone
+            return [r for r in data if r.get("name") != "@everyone"]
+
+    async def fetch_guild_member(self, guild_id: int, user_id: int) -> dict | None:
+        """Fetch a specific guild member."""
+        await self._ensure_session()
+        async with self._session.get(
+            f"{self.API_BASE}/guilds/{guild_id}/members/{user_id}",
+            headers=self._headers,
+        ) as resp:
+            if resp.status != 200:
+                return None
+            return await resp.json()
+
+
+class _LightGuild:
+    """Lightweight guild object mimicking discord.Guild for web routes."""
+
+    def __init__(self, data: dict):
+        self.id = int(data["id"])
+        self.name = data.get("name", "Unknown")
+        self.owner_id = int(data.get("owner_id", 0)) if data.get("owner_id") else 0
+        self._icon = data.get("icon")
+
+    @property
+    def icon(self):
+        if self._icon:
+            return _LightAsset(self.id, self._icon)
+        return None
+
+    @property
+    def channels(self):
+        return []  # Channels fetched via REST on demand
+
+    @property
+    def roles(self):
+        return []  # Roles fetched via REST on demand
+
+    def get_member(self, user_id):
+        return None  # Members fetched via REST on demand
+
+
+class _LightAsset:
+    def __init__(self, guild_id, icon_hash):
+        self.guild_id = guild_id
+        self.icon_hash = icon_hash
+
+    @property
+    def url(self):
+        return f"https://cdn.discordapp.com/icons/{self.guild_id}/{self.icon_hash}.png"
+
+    def __str__(self):
+        return self.url
+
+
+class WebOnlyApp:
+    """Mimics the bot interface that web routes expect, using REST API instead."""
+
+    def __init__(self, db: Database, discord_client: DiscordRESTClient):
+        self.db = db
+        self._discord = discord_client
+
+    @property
+    def guilds(self):
+        return self._discord.guilds
+
+    def get_guild(self, guild_id: int):
+        return self._discord.get_guild(guild_id)
+
+    async def get_channels(self, guild_id: int) -> list:
+        """Fetch channels via REST (used by admin API)."""
+        return await self._discord.fetch_channels(guild_id)
+
+    async def get_roles(self, guild_id: int) -> list:
+        """Fetch roles via REST (used by admin API)."""
+        return await self._discord.fetch_roles(guild_id)
+
+    def schedule_sync(self):
+        """No-op in web-only mode — bot handles sync."""
+        pass
+
+    def schedule_report(self):
+        """No-op in web-only mode — bot handles reports."""
+        pass
+
+
+async def start_web():
+    if not DISCORD_TOKEN:
+        raise RuntimeError("DISCORD_TOKEN is required (for Discord REST API access).")
+    if not DATABASE_URL and not all([DB_HOST, DB_NAME, DB_USER]):
+        raise RuntimeError("Database config required: set DATABASE_URL or DB_HOST/DB_NAME/DB_USER.")
+
+    db = Database()
+    await db.connect()
+    log.info("DB connected")
+
+    discord_client = DiscordRESTClient(DISCORD_TOKEN)
+    await discord_client.fetch_guilds()
+    log.info("Discord REST client initialized, %d guilds cached", len(discord_client.guilds))
+
+    app_obj = WebOnlyApp(db, discord_client)
+    web_server = WebServer(app_obj)
+
+    # Start the aiohttp web server directly (not via bot)
+    runner = web.AppRunner(web_server.app)
+    await runner.setup()
+    site = web.TCPSite(runner, WEB_HOST, WEB_PORT)
+    await site.start()
+    log.info("Web server started on http://%s:%s/", WEB_HOST, WEB_PORT)
+
+    # Keep running
+    try:
+        while True:
+            # Refresh guild cache every 5 minutes
+            await asyncio.sleep(300)
+            try:
+                await discord_client.fetch_guilds()
+            except Exception:
+                log.debug("Guild cache refresh failed")
+    finally:
+        await discord_client.close()
+        await runner.cleanup()
+
+
+def main():
+    log.info("Starting web service (standalone)...")
+    asyncio.run(start_web())
+
+
+if __name__ == "__main__":
+    main()

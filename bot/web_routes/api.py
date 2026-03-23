@@ -1079,11 +1079,29 @@ async def admin_delete_role(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_get_channels(request: web.Request) -> web.Response:
-    """Return list of text channels in the guild from Discord bot cache."""
+    """Return list of text channels in the guild.
+
+    Works with both the full Discord bot (gateway cache) and the
+    standalone web service (REST API).
+    """
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
 
+    # Standalone web service provides get_channels() via REST
+    if hasattr(bot, "get_channels"):
+        raw_channels = await bot.get_channels(guild_id)
+        channels = []
+        for ch in raw_channels:
+            channels.append({
+                "id": str(ch["id"]),
+                "name": ch.get("name", ""),
+                "category": None,  # REST doesn't group by category easily
+            })
+        channels.sort(key=lambda c: c["name"])
+        return web.json_response({"channels": channels})
+
+    # Full bot mode — use gateway cache
     import discord
     guild = bot.get_guild(guild_id)
     if not guild:
@@ -1104,11 +1122,30 @@ async def admin_get_channels(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_get_roles(request: web.Request) -> web.Response:
-    """Return list of roles in the guild from Discord bot cache."""
+    """Return list of roles in the guild.
+
+    Works with both the full Discord bot (gateway cache) and the
+    standalone web service (REST API).
+    """
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
 
+    # Standalone web service provides get_roles() via REST
+    if hasattr(bot, "get_roles"):
+        raw_roles = await bot.get_roles(guild_id)
+        roles = []
+        for r in raw_roles:
+            roles.append({
+                "id": str(r["id"]),
+                "name": r.get("name", ""),
+                "color": str(r.get("color", 0)),
+                "position": r.get("position", 0),
+            })
+        roles.sort(key=lambda r: -r["position"])
+        return web.json_response({"roles": roles})
+
+    # Full bot mode — use gateway cache
     guild = bot.get_guild(guild_id)
     if not guild:
         return web.json_response({"error": "Guild not found in bot cache."}, status=404)

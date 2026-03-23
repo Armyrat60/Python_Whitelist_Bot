@@ -1,15 +1,22 @@
-import asyncio
-from bot.bot import WhitelistBot
-from bot.config import DISCORD_TOKEN, DB_HOST, DB_NAME, DB_USER, DATABASE_URL
+"""Entry point router.
+
+Usage:
+  python -m bot          # Start the Discord bot (default, backward compatible)
+  python -m bot bot      # Start the Discord bot explicitly
+  python -m bot web      # Start the standalone web service
+"""
+import sys
 
 
 def main():
-    if not DISCORD_TOKEN:
-        raise RuntimeError("DISCORD_TOKEN is required. Check your .env file.")
-    if not DATABASE_URL and not all([DB_HOST, DB_NAME, DB_USER]):
-        raise RuntimeError("Database config required: set DATABASE_URL or DB_HOST/DB_NAME/DB_USER.")
-    bot = WhitelistBot()
-    bot.run(DISCORD_TOKEN)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "bot"
+
+    if mode == "web":
+        from bot.web_main import main as web_main
+        web_main()
+    else:
+        from bot.bot_main import main as bot_main
+        bot_main()
 
 
 if __name__ == "__main__":
