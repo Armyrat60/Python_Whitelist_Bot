@@ -27,7 +27,7 @@ class GeneralCog(commands.Cog):
         if self.bot.web and self.bot.web.runner:
             web_status = "Running"
         await interaction.response.send_message(
-            f"Pong.\nLatency: `{round(self.bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{bool(self.bot.github.repo)}`\nWeb: `{web_status}`",
+            f"Pong.\nLatency: `{round(self.bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{'On' if self.bot.github and self.bot.github.repo else 'Off'}`\nWeb: `{web_status}`",
             ephemeral=True,
         )
 

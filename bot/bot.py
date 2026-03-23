@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 
 from bot.config import (
     DISCORD_TOKEN, GUILD_ID, WHITELIST_FILENAME, WEB_ENABLED,
+    GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
     WHITELIST_TYPES, log,
 )
 from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identifier
@@ -24,7 +25,7 @@ class WhitelistBot(commands.Bot):
         intents.message_content = False
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
-        self.github = GithubPublisher()
+        self.github = GithubPublisher() if all([GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME]) else None
         self.web = WebServer(self) if WEB_ENABLED else None
         self.panel_views = {}
         self.write_lock = asyncio.Lock()
@@ -34,7 +35,10 @@ class WhitelistBot(commands.Bot):
     async def setup_hook(self):
         await self.db.connect()
         await self.db.init_schema()
-        self.github.connect()
+        if self.github:
+            self.github.connect()
+        else:
+            log.info("GitHub publishing disabled (no GITHUB_TOKEN configured)")
         if self.web:
             await self.web.start()
             # Prime the web cache with current content
@@ -335,14 +339,16 @@ class WhitelistBot(commands.Bot):
         # Update web server cache and optional disk write
         if self.web:
             self.web.update_cache(outputs)
+        # Publish to GitHub if configured
         changed = 0
-        for filename, content in outputs.items():
-            try:
-                updated = await asyncio.to_thread(self.github.update_file_if_needed, filename, content)
-                if updated:
-                    changed += 1
-            except Exception:
-                log.exception("Failed to sync %s to GitHub", filename)
+        if self.github:
+            for filename, content in outputs.items():
+                try:
+                    updated = await asyncio.to_thread(self.github.update_file_if_needed, filename, content)
+                    if updated:
+                        changed += 1
+                except Exception:
+                    log.exception("Failed to sync %s to GitHub", filename)
         return changed
 
     def schedule_github_sync(self):
