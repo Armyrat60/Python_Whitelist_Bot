@@ -987,14 +987,11 @@ async def admin_update_type(request: web.Request) -> web.Response:
         mapped_key = field_renames.get(key, key)
         if mapped_key not in allowed_columns:
             return web.json_response({"error": f"Unknown type config field: {key}"}, status=400)
-        # Coerce types
+        # Coerce types (boolean coercion handled by update_whitelist)
         bool_columns = {"enabled", "stack_roles"}
         int_columns = {"default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"}
         if mapped_key in bool_columns:
-            if db.engine == "postgres":
-                value = bool(value) if not isinstance(value, bool) else value
-            else:
-                value = int(bool(value))
+            value = bool(value) if not isinstance(value, bool) else value
         elif mapped_key in int_columns and value is not None:
             value = int(value) if str(value).strip() else None
         else:
@@ -1024,10 +1021,7 @@ async def admin_toggle_type(request: web.Request) -> web.Response:
     wl_id = wl["id"]
 
     new_enabled = not wl["enabled"]
-    if db.engine == "postgres":
-        await db.update_whitelist(wl_id, enabled=new_enabled)
-    else:
-        await db.update_whitelist(wl_id, enabled=int(new_enabled))
+    await db.update_whitelist(wl_id, enabled=new_enabled)
 
     log.info("Guild %s: admin toggled type %s -> %s", guild_id, wl_type, new_enabled)
     await _trigger_sync(request, guild_id)

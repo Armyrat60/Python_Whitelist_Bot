@@ -806,10 +806,14 @@ class Database:
             "log_channel_id", "squad_group", "output_filename", "default_slot_limit",
             "stack_roles", "is_default",
         }
+        bool_cols = {"enabled", "stack_roles", "is_default"}
         parts = []
         params = []
         for key, value in kwargs.items():
             if key in allowed:
+                # Coerce boolean columns to the right type per engine
+                if key in bool_cols:
+                    value = bool(value) if self.engine == "postgres" else int(bool(value))
                 parts.append(f"{key}=%s")
                 params.append(value)
         if not parts:
