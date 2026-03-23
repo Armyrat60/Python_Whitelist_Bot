@@ -435,11 +435,33 @@
 </div>
 
 <!-- ================================================================== -->
+<!-- Whitelist Management                                                 -->
+<!-- ================================================================== -->
+<div class="setup-section">
+    <h2 class="setup-section-header">Your Whitelists</h2>
+    <p class="setup-section-desc">Manage your whitelists &mdash; create new lists, view URLs, and configure each one. Maximum 5 per community.</p>
+
+    <div id="wl-management-container">
+        <div id="wl-cards-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; margin-bottom:16px;"></div>
+
+        <div id="wl-create-form" class="card" style="border:1px dashed var(--border-light); background:var(--bg-secondary);">
+            <div class="card-body" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+                <input type="text" class="form-input" id="wl-new-name" placeholder="New whitelist name..." maxlength="100" style="flex:1;">
+                <button class="btn btn-primary btn-sm" onclick="createWhitelist()">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Create
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================== -->
 <!-- Whitelist Types                                                      -->
 <!-- ================================================================== -->
 <div class="setup-section">
-    <h2 class="setup-section-header">Whitelist Types</h2>
-    <p class="setup-section-desc">Configure each whitelist type individually &mdash; channels, slot limits, role mappings, and more.</p>
+    <h2 class="setup-section-header">Whitelist Configuration</h2>
+    <p class="setup-section-desc">Configure each whitelist individually &mdash; channels, slot limits, role mappings, and more.</p>
     <div id="type-cards-container">
         <p class="text-muted">Loading...</p>
     </div>
@@ -464,9 +486,11 @@ document.addEventListener('DOMContentLoaded', function() {
     Promise.all([
         loadChannels(),
         loadRoles(),
-        loadSettings()
+        loadSettings(),
+        loadWhitelistUrls()
     ]).then(function() {
         renderTypeCards();
+        renderWhitelistManagement();
     }).catch(function() {
         showFlash('Failed to load setup data.', 'error');
     });
@@ -497,6 +521,159 @@ function loadRoles() {
     return fetch('/api/admin/roles')
         .then(function(r) { return r.json(); })
         .then(function(data) { roleOptions = data.roles || data || []; });
+}
+
+/* ── Whitelist Management ────────────────────────────────────────────── */
+let whitelistUrls = [];
+
+function loadWhitelistUrls() {
+    return fetch('/api/admin/whitelist-urls')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { whitelistUrls = data.urls || []; })
+        .catch(function() { whitelistUrls = []; });
+}
+
+function renderWhitelistManagement() {
+    var grid = document.getElementById('wl-cards-grid');
+    grid.innerHTML = '';
+
+    // Merge URL data with type_configs
+    var tc = settingsData.type_configs || {};
+    var slugs = Object.keys(tc);
+
+    if (slugs.length === 0 && whitelistUrls.length === 0) {
+        grid.innerHTML = '<p class="text-muted">No whitelists configured yet. Create one below.</p>';
+        return;
+    }
+
+    slugs.forEach(function(slug) {
+        var cfg = tc[slug] || {};
+        var urlInfo = whitelistUrls.find(function(u) { return u.slug === slug; }) || {};
+        var url = urlInfo.url || '';
+        var isDefault = cfg.is_default || false;
+        var isEnabled = cfg.enabled || false;
+
+        var statusColor = isEnabled ? 'var(--success)' : 'var(--text-muted)';
+        var statusText = isEnabled ? 'ENABLED' : 'DISABLED';
+
+        var card = document.createElement('div');
+        card.className = 'card';
+        card.style.cssText = 'border-left:3px solid ' + statusColor + ';';
+
+        var html = '<div class="card-body" style="padding:14px 16px;">';
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
+        html += '<h4 style="margin:0; font-size:0.95rem;">' + (cfg.name || slug) + '</h4>';
+        html += '<span style="font-size:0.7rem; font-weight:600; color:' + statusColor + '; text-transform:uppercase;">' + statusText + '</span>';
+        html += '</div>';
+
+        if (isDefault) {
+            html += '<span style="font-size:0.7rem; background:var(--accent); color:#fff; padding:2px 6px; border-radius:3px; margin-bottom:6px; display:inline-block;">DEFAULT</span> ';
+        }
+
+        html += '<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;">';
+        html += '<strong>Slug:</strong> ' + slug + ' &middot; <strong>File:</strong> ' + (cfg.output_filename || 'N/A');
+        html += '</div>';
+
+        if (url) {
+            html += '<div style="margin-bottom:8px;">';
+            html += '<label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:2px;">Whitelist URL</label>';
+            html += '<div style="display:flex; gap:6px; align-items:center;">';
+            html += '<input type="text" class="form-input" value="' + url + '" readonly style="font-size:0.8rem; flex:1; font-family:monospace;" id="url-' + slug + '">';
+            html += '<button class="btn btn-outline btn-sm" onclick="copyUrl(\'' + slug + '\')" title="Copy URL">';
+            html += '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+            html += '</button></div></div>';
+        }
+
+        // Stats placeholder
+        html += '<div style="font-size:0.78rem; color:var(--text-muted);">';
+        html += '<strong>Squad Group:</strong> ' + (cfg.squad_group || 'Whitelist');
+        html += ' &middot; <strong>Slots:</strong> ' + (cfg.default_slot_limit || 1);
+        html += '</div>';
+
+        // Delete button (not for default)
+        if (!isDefault) {
+            html += '<div style="margin-top:8px; text-align:right;">';
+            html += '<button class="btn btn-sm" style="color:var(--danger); border-color:var(--danger);" onclick="deleteWhitelist(\'' + slug + '\', \'' + (cfg.name || slug) + '\')">';
+            html += '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+            html += ' Delete</button></div>';
+        }
+
+        html += '</div>';
+        card.innerHTML = html;
+        grid.appendChild(card);
+    });
+
+    // Hide create form if at limit
+    var createForm = document.getElementById('wl-create-form');
+    if (slugs.length >= 5) {
+        createForm.style.display = 'none';
+    } else {
+        createForm.style.display = 'block';
+    }
+}
+
+function copyUrl(slug) {
+    var input = document.getElementById('url-' + slug);
+    if (input) {
+        input.select();
+        navigator.clipboard.writeText(input.value).then(function() {
+            showFlash('URL copied to clipboard!', 'success');
+        }).catch(function() {
+            document.execCommand('copy');
+            showFlash('URL copied!', 'success');
+        });
+    }
+}
+
+function createWhitelist() {
+    var nameInput = document.getElementById('wl-new-name');
+    var name = nameInput.value.trim();
+    if (!name) {
+        showFlash('Enter a name for the new whitelist.', 'error');
+        return;
+    }
+
+    fetch('/api/admin/whitelists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to create whitelist.', 'error');
+            return;
+        }
+        showFlash('Whitelist "' + name + '" created!', 'success');
+        nameInput.value = '';
+        // Reload everything
+        Promise.all([loadSettings(), loadWhitelistUrls()]).then(function() {
+            renderTypeCards();
+            renderWhitelistManagement();
+        });
+    })
+    .catch(function() { showFlash('Network error creating whitelist.', 'error'); });
+}
+
+function deleteWhitelist(slug, name) {
+    if (!confirm('Delete whitelist "' + name + '"? This will remove all users, role mappings, and identifiers in this list. This cannot be undone.')) {
+        return;
+    }
+
+    fetch('/api/admin/whitelists/' + slug, { method: 'DELETE' })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to delete whitelist.', 'error');
+            return;
+        }
+        showFlash('Whitelist "' + name + '" deleted.', 'success');
+        Promise.all([loadSettings(), loadWhitelistUrls()]).then(function() {
+            renderTypeCards();
+            renderWhitelistManagement();
+        });
+    })
+    .catch(function() { showFlash('Network error deleting whitelist.', 'error'); });
 }
 
 /* ── Global settings ──────────────────────────────────────────────────── */
