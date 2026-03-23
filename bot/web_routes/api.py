@@ -12,7 +12,7 @@ from typing import Callable
 import aiohttp_session
 from aiohttp import web
 
-from bot.config import WHITELIST_TYPES, DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, log
+from bot.config import DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, log
 from bot.utils import utcnow
 
 
@@ -308,7 +308,9 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
 
     # Trigger sync
     try:
-        if hasattr(bot, "schedule_sync"):
+        if hasattr(bot, "schedule_github_sync"):
+            bot.schedule_github_sync()
+        elif hasattr(bot, "schedule_sync"):
             bot.schedule_sync()
     except Exception:
         log.debug("Could not trigger sync after web update")
@@ -328,16 +330,19 @@ async def admin_stats(request: web.Request) -> web.Response:
     db = bot.db
 
     stats = {}
-    for wl_type in WHITELIST_TYPES:
+    whitelists = await db.get_whitelists(guild_id)
+    for wl in whitelists:
+        wl_id = wl["id"]
+        wl_slug = wl["slug"]
         active_row = await db.fetchone(
-            "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'",
-            (guild_id, wl_type),
+            "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'",
+            (guild_id, wl_id),
         )
         id_row = await db.fetchone(
-            "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s",
-            (guild_id, wl_type),
+            "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s",
+            (guild_id, wl_id),
         )
-        stats[wl_type] = {
+        stats[wl_slug] = {
             "active_users": active_row[0] if active_row else 0,
             "total_ids": id_row[0] if id_row else 0,
         }
@@ -380,11 +385,14 @@ async def admin_users(request: web.Request) -> web.Response:
     params: list = [guild_id]
 
     if search:
-        conditions.append("(u.discord_name LIKE %s OR CAST(u.discord_id AS CHAR) LIKE %s)")
+        cast_expr = "CAST(u.discord_id AS TEXT)" if db.engine == "postgres" else "CAST(u.discord_id AS CHAR)"
+        conditions.append(f"(u.discord_name LIKE %s OR {cast_expr} LIKE %s)")
         params.extend([f"%{search}%", f"%{search}%"])
-    if wl_type and wl_type in WHITELIST_TYPES:
-        conditions.append("u.whitelist_type=%s")
-        params.append(wl_type)
+    if wl_type:
+        wl_resolved = await _resolve_whitelist(bot.db, guild_id, wl_type)
+        if wl_resolved:
+            conditions.append("u.whitelist_id=%s")
+            params.append(wl_resolved["id"])
     if status:
         conditions.append("u.status=%s")
         params.append(status)
@@ -402,9 +410,10 @@ async def admin_users(request: web.Request) -> web.Response:
 
     rows = await db.fetchall(
         f"""
-        SELECT u.discord_id, u.discord_name, u.whitelist_type, u.status,
+        SELECT u.discord_id, u.discord_name, w.slug, u.status,
                u.effective_slot_limit, u.last_plan_name, u.updated_at
         FROM whitelist_users u
+        LEFT JOIN whitelists w ON w.id = u.whitelist_id
         {where}
         ORDER BY u.updated_at DESC
         LIMIT %s OFFSET %s
@@ -418,7 +427,7 @@ async def admin_users(request: web.Request) -> web.Response:
         users.append({
             "discord_id": str(row[0]),
             "discord_name": row[1],
-            "whitelist_type": row[2],
+            "whitelist_type": row[2] or "",
             "status": row[3],
             "effective_slot_limit": row[4],
             "last_plan_name": meta["plan"],
@@ -453,9 +462,11 @@ async def admin_audit(request: web.Request) -> web.Response:
     conditions = ["a.guild_id=%s"]
     params: list = [guild_id]
 
-    if wl_type and wl_type in WHITELIST_TYPES:
-        conditions.append("a.whitelist_type=%s")
-        params.append(wl_type)
+    if wl_type:
+        wl_resolved = await _resolve_whitelist_id(bot.db, guild_id, wl_type)
+        if wl_resolved is not None:
+            conditions.append("a.whitelist_id=%s")
+            params.append(wl_resolved)
     if action:
         conditions.append("a.action_type=%s")
         params.append(action)
@@ -473,9 +484,10 @@ async def admin_audit(request: web.Request) -> web.Response:
 
     rows = await db.fetchall(
         f"""
-        SELECT a.id, a.whitelist_type, a.action_type, a.actor_discord_id,
+        SELECT a.id, w.slug, a.action_type, a.actor_discord_id,
                a.target_discord_id, a.details, a.created_at
         FROM audit_log a
+        LEFT JOIN whitelists w ON w.id = a.whitelist_id
         {where}
         ORDER BY a.created_at DESC
         LIMIT %s OFFSET %s
@@ -487,7 +499,7 @@ async def admin_audit(request: web.Request) -> web.Response:
     for row in rows:
         entries.append({
             "id": row[0],
-            "whitelist_type": row[1],
+            "whitelist_type": row[1] or "",
             "action_type": row[2],
             "actor_discord_id": str(row[3]) if row[3] else None,
             "target_discord_id": str(row[4]) if row[4] else None,
@@ -528,8 +540,10 @@ async def admin_add_user(request: web.Request) -> web.Response:
 
     if not discord_name:
         return web.json_response({"error": "discord_name is required."}, status=400)
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(WHITELIST_TYPES)}"}, status=400)
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
     if not isinstance(steam_ids, list) or len(steam_ids) == 0:
         return web.json_response({"error": "At least one steam_id is required."}, status=400)
 
@@ -570,7 +584,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
         return web.json_response({"error": "Validation failed.", "details": errors}, status=400)
 
     # -- Check for existing user --
-    existing = await db.get_user_record(guild_id, discord_id, wl_type)
+    existing = await db.get_user_record(guild_id, discord_id, wl_id)
     if existing:
         return web.json_response(
             {"error": f"User {discord_id} already exists for whitelist type '{wl_type}'. Use PATCH to update."},
@@ -578,8 +592,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
         )
 
     # -- Determine effective slot limit --
-    type_config = await db.get_type_config(guild_id, wl_type)
-    default_slot = type_config["default_slot_limit"] if type_config else 1
+    default_slot = wl["default_slot_limit"] or 1
     effective_slot = slot_limit if slot_limit is not None else default_slot
 
     # -- Pack notes/expires_at into last_plan_name --
@@ -587,7 +600,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
 
     # -- Create user record --
     await db.upsert_user_record(
-        guild_id, discord_id, wl_type, discord_name, "active",
+        guild_id, discord_id, wl_id, discord_name, "active",
         effective_slot, plan_meta,
         slot_limit_override=slot_limit,
     )
@@ -598,7 +611,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
         identifiers.append(("steam64", str(sid), False, "admin_web"))
     for eid in eos_ids:
         identifiers.append(("eosid", str(eid), False, "admin_web"))
-    await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+    await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
 
     # -- Audit --
     detail_parts = [f"Admin added user '{discord_name}' (discord_id={discord_id}) to {wl_type}"]
@@ -609,7 +622,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
         detail_parts.append(f"notes={notes}")
     if expires_at:
         detail_parts.append(f"expires_at={expires_at}")
-    await db.audit(guild_id, "admin_add_user", actor_id, discord_id, "; ".join(detail_parts), wl_type)
+    await db.audit(guild_id, "admin_add_user", actor_id, discord_id, "; ".join(detail_parts), wl_id)
 
     log.info("Guild %s: admin %s added user %s (%s) to %s", guild_id, actor_id, discord_id, discord_name, wl_type)
 
@@ -637,11 +650,13 @@ async def admin_update_user(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid discord_id in URL."}, status=400)
 
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
         return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
 
     # -- Check user exists --
-    user_record = await db.get_user_record(guild_id, discord_id, wl_type)
+    user_record = await db.get_user_record(guild_id, discord_id, wl_id)
     if not user_record:
         return web.json_response({"error": "User not found."}, status=404)
 
@@ -679,8 +694,7 @@ async def admin_update_user(request: web.Request) -> web.Response:
         if val is None:
             new_slot_override = None
             # Reset effective to default
-            type_config = await db.get_type_config(guild_id, wl_type)
-            new_effective_slot = type_config["default_slot_limit"] if type_config else 1
+            new_effective_slot = wl["default_slot_limit"] or 1
             if new_slot_override != current_slot_override:
                 changes.append("slot_limit_override: cleared")
         else:
@@ -728,12 +742,12 @@ async def admin_update_user(request: web.Request) -> web.Response:
             identifiers.append(("steam64", str(sid), False, "admin_web"))
         for eid in eos_ids:
             identifiers.append(("eosid", str(eid), False, "admin_web"))
-        await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+        await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
         changes.append(f"identifiers replaced: {len(steam_ids)} steam, {len(eos_ids)} eos")
 
     # -- Update user record --
     await db.upsert_user_record(
-        guild_id, discord_id, wl_type, current_name, new_status,
+        guild_id, discord_id, wl_id, current_name, new_status,
         new_effective_slot, plan_meta,
         slot_limit_override=new_slot_override,
     )
@@ -743,7 +757,7 @@ async def admin_update_user(request: web.Request) -> web.Response:
         await db.audit(
             guild_id, "admin_update_user", actor_id, discord_id,
             f"Admin updated user {discord_id} in {wl_type}: {'; '.join(changes)}",
-            wl_type,
+            wl_id,
         )
 
     log.info("Guild %s: admin %s updated user %s/%s: %s", guild_id, actor_id, discord_id, wl_type, changes)
@@ -767,11 +781,13 @@ async def admin_delete_user(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid discord_id in URL."}, status=400)
 
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
         return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
 
     # -- Check user exists --
-    user_record = await db.get_user_record(guild_id, discord_id, wl_type)
+    user_record = await db.get_user_record(guild_id, discord_id, wl_id)
     if not user_record:
         return web.json_response({"error": "User not found."}, status=404)
 
@@ -779,21 +795,21 @@ async def admin_delete_user(request: web.Request) -> web.Response:
 
     # -- Delete identifiers --
     await db.execute(
-        "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_type=%s",
-        (guild_id, discord_id, wl_type),
+        "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+        (guild_id, discord_id, wl_id),
     )
 
     # -- Delete user record --
     await db.execute(
-        "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_type=%s",
-        (guild_id, discord_id, wl_type),
+        "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+        (guild_id, discord_id, wl_id),
     )
 
     # -- Audit --
     await db.audit(
         guild_id, "admin_delete_user", actor_id, discord_id,
         f"Admin removed user '{discord_name}' (discord_id={discord_id}) from {wl_type}",
-        wl_type,
+        wl_id,
     )
 
     log.info("Guild %s: admin %s deleted user %s (%s) from %s", guild_id, actor_id, discord_id, discord_name, wl_type)
@@ -816,22 +832,37 @@ async def admin_get_settings(request: web.Request) -> web.Response:
     for key, default in DEFAULT_SETTINGS.items():
         bot_settings[key] = await db.get_setting(guild_id, key, default)
 
-    # Whitelist type configs
+    # Whitelist type configs from whitelists table
+    whitelists = await db.get_whitelists(guild_id)
     type_configs = {}
-    for wl_type in WHITELIST_TYPES:
-        cfg = await db.get_type_config(guild_id, wl_type)
-        type_configs[wl_type] = cfg if cfg else {}
+    for wl in whitelists:
+        type_configs[wl["slug"]] = {
+            "id": wl["id"],
+            "name": wl["name"],
+            "slug": wl["slug"],
+            "enabled": wl["enabled"],
+            "panel_channel_id": wl["panel_channel_id"],
+            "panel_message_id": wl["panel_message_id"],
+            "log_channel_id": wl["log_channel_id"],
+            "output_filename": wl["output_filename"],
+            "default_slot_limit": wl["default_slot_limit"],
+            "stack_roles": wl["stack_roles"],
+            "squad_group": wl["squad_group"],
+            "is_default": wl["is_default"],
+        }
 
     # Role mappings per type
     role_mappings = {}
-    for wl_type in WHITELIST_TYPES:
+    for wl in whitelists:
+        wl_id = wl["id"]
+        wl_slug = wl["slug"]
         rows = await db.fetchall(
             "SELECT id, role_id, role_name, slot_limit, is_active "
-            "FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s "
+            "FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s "
             "ORDER BY role_name",
-            (guild_id, wl_type),
+            (guild_id, wl_id),
         )
-        role_mappings[wl_type] = [
+        role_mappings[wl_slug] = [
             {
                 "id": row[0],
                 "role_id": str(row[1]),
@@ -844,7 +875,7 @@ async def admin_get_settings(request: web.Request) -> web.Response:
 
     # Squad groups
     squad_rows = await db.fetchall(
-        "SELECT DISTINCT squad_group FROM whitelist_types "
+        "SELECT DISTINCT squad_group FROM whitelists "
         "WHERE guild_id=%s AND squad_group IS NOT NULL AND squad_group != ''",
         (guild_id,),
     )
@@ -893,11 +924,14 @@ async def admin_update_type(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
     db = bot.db
+
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
 
     try:
         body = await request.json()
@@ -907,66 +941,43 @@ async def admin_update_type(request: web.Request) -> web.Response:
     if not isinstance(body, dict) or not body:
         return web.json_response({"error": "Body must be a non-empty JSON object."}, status=400)
 
+    # Map old field names to new whitelists table columns
+    field_renames = {
+        "github_filename": "output_filename",
+    }
+    # Fields that no longer exist in the new schema (silently ignored)
+    dropped_fields = {"github_enabled", "input_mode"}
+
     allowed_columns = {
-        "enabled", "panel_channel_id", "log_channel_id", "github_enabled",
-        "github_filename", "input_mode", "stack_roles", "default_slot_limit",
-        "squad_group",
+        "name", "slug", "enabled", "panel_channel_id", "log_channel_id",
+        "output_filename", "stack_roles", "default_slot_limit",
+        "squad_group", "panel_message_id",
     }
 
-    # Validate keys
-    for key in body:
-        if key not in allowed_columns:
+    # Build the update kwargs
+    update_kwargs = {}
+    for key, value in body.items():
+        if key in dropped_fields:
+            continue
+        mapped_key = field_renames.get(key, key)
+        if mapped_key not in allowed_columns:
             return web.json_response({"error": f"Unknown type config field: {key}"}, status=400)
-
-    # Check if row exists
-    existing = await db.fetchone(
-        "SELECT guild_id FROM whitelist_types WHERE guild_id=%s AND whitelist_type=%s",
-        (guild_id, wl_type),
-    )
-
-    now = utcnow()
-
-    # Boolean columns need native types for PostgreSQL
-    bool_columns = {"enabled", "github_enabled", "stack_roles", "is_active"}
-    int_columns = {"default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"}
-
-    def _coerce(key, value):
-        if key in bool_columns:
+        # Coerce types
+        bool_columns = {"enabled", "stack_roles"}
+        int_columns = {"default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"}
+        if mapped_key in bool_columns:
             if db.engine == "postgres":
-                return bool(value) if not isinstance(value, bool) else value
-            return int(bool(value))
-        if key in int_columns and value is not None:
-            return int(value) if str(value).strip() else None
-        return str(value)
+                value = bool(value) if not isinstance(value, bool) else value
+            else:
+                value = int(bool(value))
+        elif mapped_key in int_columns and value is not None:
+            value = int(value) if str(value).strip() else None
+        else:
+            value = str(value) if value is not None else value
+        update_kwargs[mapped_key] = value
 
-    if existing:
-        # Build dynamic UPDATE
-        set_parts = []
-        params = []
-        for key, value in body.items():
-            set_parts.append(f"{key}=%s")
-            params.append(_coerce(key, value))
-        set_parts.append("updated_at=%s")
-        params.append(now)
-        params.extend([guild_id, wl_type])
-        await db.execute(
-            f"UPDATE whitelist_types SET {', '.join(set_parts)} "
-            f"WHERE guild_id=%s AND whitelist_type=%s",
-            tuple(params),
-        )
-    else:
-        # INSERT new row with provided values
-        columns = ["guild_id", "whitelist_type", "updated_at"]
-        placeholders = ["%s", "%s", "%s"]
-        params = [guild_id, wl_type, now]
-        for key, value in body.items():
-            columns.append(key)
-            placeholders.append("%s")
-            params.append(_coerce(key, value))
-        await db.execute(
-            f"INSERT INTO whitelist_types ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
-            tuple(params),
-        )
+    if update_kwargs:
+        await db.update_whitelist(wl_id, **update_kwargs)
 
     log.info("Guild %s: admin updated type config %s: %s", guild_id, wl_type, list(body.keys()))
     return web.json_response({"ok": True, "type": wl_type, "updated": list(body.keys())})
@@ -978,36 +989,20 @@ async def admin_toggle_type(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
     db = bot.db
 
-    # Get current state
-    cfg = await db.get_type_config(guild_id, wl_type)
-    current_enabled = cfg.get("enabled", False) if cfg else False
-    new_enabled = not current_enabled
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
 
-    now = utcnow()
-
-    existing = await db.fetchone(
-        "SELECT guild_id FROM whitelist_types WHERE guild_id=%s AND whitelist_type=%s",
-        (guild_id, wl_type),
-    )
-
-    if existing:
-        await db.execute(
-            "UPDATE whitelist_types SET enabled=%s, updated_at=%s "
-            "WHERE guild_id=%s AND whitelist_type=%s",
-            (new_enabled if db.engine == 'postgres' else int(new_enabled), now, guild_id, wl_type),
-        )
+    new_enabled = not wl["enabled"]
+    if db.engine == "postgres":
+        await db.update_whitelist(wl_id, enabled=new_enabled)
     else:
-        await db.execute(
-            "INSERT INTO whitelist_types (guild_id, whitelist_type, enabled, updated_at) "
-            "VALUES (%s, %s, %s, %s)",
-            (guild_id, wl_type, new_enabled if db.engine == 'postgres' else int(new_enabled), now),
-        )
+        await db.update_whitelist(wl_id, enabled=int(new_enabled))
 
     log.info("Guild %s: admin toggled type %s -> %s", guild_id, wl_type, new_enabled)
     return web.json_response({"ok": True, "type": wl_type, "enabled": new_enabled})
@@ -1019,11 +1014,14 @@ async def admin_add_role(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     wl_type = request.match_info["type"]
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
 
     bot = request.app["bot"]
     db = bot.db
+
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
 
     try:
         body = await request.json()
@@ -1049,17 +1047,18 @@ async def admin_add_role(request: web.Request) -> web.Response:
 
     # Check for duplicate
     dup = await db.fetchone(
-        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
-        (guild_id, wl_type, role_id),
+        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
+        (guild_id, wl_id, role_id),
     )
     if dup:
         return web.json_response({"error": "Role mapping already exists for this type."}, status=409)
 
     now = utcnow()
+    is_active_val = True if db.engine == "postgres" else 1
     await db.execute(
-        "INSERT INTO role_mappings (guild_id, whitelist_type, role_id, role_name, slot_limit, is_active, created_at) "
+        "INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (guild_id, wl_type, role_id, role_name, slot_limit, True, now),
+        (guild_id, wl_id, role_id, role_name, slot_limit, is_active_val, now),
     )
 
     log.info("Guild %s: admin added role %s (%s) to type %s with %d slots",
@@ -1080,22 +1079,24 @@ async def admin_delete_role(request: web.Request) -> web.Response:
     wl_type = request.match_info["type"]
     role_id = request.match_info["role_id"]
 
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": "Invalid whitelist type."}, status=400)
-
     bot = request.app["bot"]
     db = bot.db
 
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+    wl_id = wl["id"]
+
     existing = await db.fetchone(
-        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
-        (guild_id, wl_type, role_id),
+        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
+        (guild_id, wl_id, role_id),
     )
     if not existing:
         return web.json_response({"error": "Role mapping not found."}, status=404)
 
     await db.execute(
-        "DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
-        (guild_id, wl_type, role_id),
+        "DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
+        (guild_id, wl_id, role_id),
     )
 
     log.info("Guild %s: admin deleted role %s from type %s", guild_id, role_id, wl_type)
@@ -1203,42 +1204,47 @@ async def admin_health(request: web.Request) -> web.Response:
     alerts: list[dict] = []
 
     # Check each whitelist type for missing config
-    for wl_type in WHITELIST_TYPES:
-        cfg = await db.get_type_config(guild_id, wl_type)
-        if not cfg or not cfg.get("enabled"):
+    whitelists = await db.get_whitelists(guild_id)
+    for wl in whitelists:
+        if not wl["enabled"]:
             continue
-        if not cfg.get("panel_channel_id"):
+        wl_slug = wl["slug"]
+        wl_id = wl["id"]
+        if not wl.get("panel_channel_id"):
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_type} type is enabled but has no panel_channel_id configured",
+                "message": f"{wl_slug} type is enabled but has no panel_channel_id configured",
             })
-        if not cfg.get("log_channel_id"):
+        if not wl.get("log_channel_id"):
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_type} type is enabled but has no log_channel_id configured",
+                "message": f"{wl_slug} type is enabled but has no log_channel_id configured",
             })
         # Check role mappings
+        is_active_expr = "is_active=TRUE" if db.engine == "postgres" else "is_active=1"
         role_rows = await db.fetchall(
-            "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND is_active=TRUE",
-            (guild_id, wl_type),
+            f"SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND {is_active_expr}",
+            (guild_id, wl_id),
         )
         if not role_rows:
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_type} type has no role mappings configured",
+                "message": f"{wl_slug} type has no role mappings configured",
             })
 
-    # Duplicate Steam IDs across different whitelist types
+    # Duplicate Steam IDs across different whitelists
     dup_rows = await db.fetchall(
-        "SELECT i.id_value, GROUP_CONCAT(DISTINCT i.whitelist_type) AS types, COUNT(DISTINCT i.whitelist_type) AS cnt "
+        "SELECT i.id_value, GROUP_CONCAT(DISTINCT w.slug) AS types, COUNT(DISTINCT i.whitelist_id) AS cnt "
         "FROM whitelist_identifiers i "
+        "JOIN whitelists w ON w.id = i.whitelist_id "
         "WHERE i.guild_id=%s AND i.id_type='steam64' "
         "GROUP BY i.id_value HAVING cnt > 1"
         if db.engine != "postgres" else
-        "SELECT i.id_value, STRING_AGG(DISTINCT i.whitelist_type, ',') AS types, COUNT(DISTINCT i.whitelist_type) AS cnt "
+        "SELECT i.id_value, STRING_AGG(DISTINCT w.slug, ',') AS types, COUNT(DISTINCT i.whitelist_id) AS cnt "
         "FROM whitelist_identifiers i "
+        "JOIN whitelists w ON w.id = i.whitelist_id "
         "WHERE i.guild_id=%s AND i.id_type='steam64' "
-        "GROUP BY i.id_value HAVING COUNT(DISTINCT i.whitelist_type) > 1",
+        "GROUP BY i.id_value HAVING COUNT(DISTINCT i.whitelist_id) > 1",
         (guild_id,),
     )
     for row in (dup_rows or []):
@@ -1279,13 +1285,18 @@ async def admin_health(request: web.Request) -> web.Response:
 async def admin_resync(request: web.Request) -> web.Response:
     """Trigger whitelist file regeneration."""
     bot = request.app["bot"]
-    if hasattr(bot, "schedule_sync"):
+    if hasattr(bot, "schedule_github_sync"):
+        try:
+            bot.schedule_github_sync()
+        except Exception:
+            log.warning("schedule_github_sync call failed")
+    elif hasattr(bot, "schedule_sync"):
         try:
             bot.schedule_sync()
         except Exception:
             log.warning("schedule_sync call failed")
     else:
-        log.info("Resync requested but schedule_sync not available")
+        log.info("Resync requested but schedule_github_sync not available")
     return web.json_response({"ok": True, "message": "Whitelist sync triggered"})
 
 
@@ -1430,12 +1441,12 @@ def _parse_squad_cfg_data(data: str, existing_steam_ids: set) -> tuple[list[dict
     return rows, summary
 
 
-async def _get_existing_steam_ids(db, guild_id: int, wl_type: str) -> set:
-    """Return set of all steam64 IDs already in the guild+type."""
+async def _get_existing_steam_ids(db, guild_id: int, wl_id: int) -> set:
+    """Return set of all steam64 IDs already in the guild+whitelist."""
     rows = await db.fetchall(
         "SELECT id_value FROM whitelist_identifiers "
-        "WHERE guild_id=%s AND whitelist_type=%s AND id_type='steam64'",
-        (guild_id, wl_type),
+        "WHERE guild_id=%s AND whitelist_id=%s AND id_type='steam64'",
+        (guild_id, wl_id),
     )
     return {row[0] for row in (rows or [])}
 
@@ -1476,12 +1487,15 @@ async def admin_import_preview(request: web.Request) -> web.Response:
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(WHITELIST_TYPES)}"}, status=400)
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        valid_slugs = await _get_whitelist_slugs(bot.db, guild_id)
+        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(valid_slugs)}"}, status=400)
+    wl_id = wl["id"]
     if fmt not in ("csv", "squad_cfg"):
         return web.json_response({"error": "format must be 'csv' or 'squad_cfg'."}, status=400)
 
-    existing = await _get_existing_steam_ids(db, guild_id, wl_type)
+    existing = await _get_existing_steam_ids(db, guild_id, wl_id)
 
     if fmt == "csv":
         rows, summary = _parse_csv_data(data, guild_id, wl_type, existing)
@@ -1532,27 +1546,30 @@ async def admin_import(request: web.Request) -> web.Response:
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
-    if wl_type not in WHITELIST_TYPES:
-        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(WHITELIST_TYPES)}"}, status=400)
+    wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
+    if not wl:
+        valid_slugs = await _get_whitelist_slugs(bot.db, guild_id)
+        return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(valid_slugs)}"}, status=400)
+    wl_id = wl["id"]
     if fmt not in ("csv", "squad_cfg"):
         return web.json_response({"error": "format must be 'csv' or 'squad_cfg'."}, status=400)
     if dup_handling not in ("skip", "overwrite", "merge"):
         return web.json_response({"error": "duplicate_handling must be 'skip', 'overwrite', or 'merge'."}, status=400)
 
-    existing = await _get_existing_steam_ids(db, guild_id, wl_type)
+    existing = await _get_existing_steam_ids(db, guild_id, wl_id)
 
     if fmt == "csv":
         rows, _ = _parse_csv_data(data, guild_id, wl_type, existing)
     else:
         rows, _ = _parse_squad_cfg_data(data, existing)
 
-    type_config = await db.get_type_config(guild_id, wl_type)
-    default_slot = type_config["default_slot_limit"] if type_config else 1
+    default_slot = wl["default_slot_limit"] or 1
 
     added = 0
     updated = 0
     skipped = 0
     errors = 0
+    id_counter = int(time.time() * 1000)
 
     for row in rows:
         if row["status"] == "invalid":
@@ -1569,9 +1586,8 @@ async def admin_import(request: web.Request) -> web.Response:
         except (ValueError, TypeError):
             discord_id = 0
         if discord_id == 0:
-            discord_id = -abs(int(time.time() * 1000))
-            # Small sleep-free offset to avoid collisions in batch
-            time.sleep(0)  # yield, not actually sleeping
+            id_counter += 1
+            discord_id = -abs(id_counter)
 
         is_dup = row["status"] == "duplicate"
 
@@ -1584,8 +1600,8 @@ async def admin_import(request: web.Request) -> web.Response:
                 for sid in steam_ids:
                     existing_user = await db.fetchone(
                         "SELECT discord_id FROM whitelist_identifiers "
-                        "WHERE guild_id=%s AND whitelist_type=%s AND id_type='steam64' AND id_value=%s",
-                        (guild_id, wl_type, sid),
+                        "WHERE guild_id=%s AND whitelist_id=%s AND id_type='steam64' AND id_value=%s",
+                        (guild_id, wl_id, sid),
                     )
                     if existing_user:
                         discord_id = existing_user[0]
@@ -1596,9 +1612,9 @@ async def admin_import(request: web.Request) -> web.Response:
                     identifiers.append(("steam64", str(sid), False, "import"))
                 for eid in eos_ids:
                     identifiers.append(("eosid", str(eid), False, "import"))
-                await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+                await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
                 await db.upsert_user_record(
-                    guild_id, discord_id, wl_type, discord_name, "active",
+                    guild_id, discord_id, wl_id, discord_name, "active",
                     default_slot, "", slot_limit_override=None,
                 )
                 updated += 1
@@ -1607,14 +1623,14 @@ async def admin_import(request: web.Request) -> web.Response:
                 for sid in steam_ids:
                     existing_user = await db.fetchone(
                         "SELECT discord_id FROM whitelist_identifiers "
-                        "WHERE guild_id=%s AND whitelist_type=%s AND id_type='steam64' AND id_value=%s",
-                        (guild_id, wl_type, sid),
+                        "WHERE guild_id=%s AND whitelist_id=%s AND id_type='steam64' AND id_value=%s",
+                        (guild_id, wl_id, sid),
                     )
                     if existing_user:
                         discord_id = existing_user[0]
                         break
                 # Get current identifiers
-                current_ids = await db.get_identifiers(guild_id, discord_id, wl_type)
+                current_ids = await db.get_identifiers(guild_id, discord_id, wl_id)
                 current_set = {(r[0], r[1]) for r in current_ids}
                 identifiers = [(r[0], r[1], False, "import") for r in current_ids]
                 for sid in steam_ids:
@@ -1623,7 +1639,7 @@ async def admin_import(request: web.Request) -> web.Response:
                 for eid in eos_ids:
                     if ("eosid", str(eid)) not in current_set:
                         identifiers.append(("eosid", str(eid), False, "import"))
-                await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+                await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
                 updated += 1
         else:
             # New entry
@@ -1633,24 +1649,26 @@ async def admin_import(request: web.Request) -> web.Response:
             for eid in eos_ids:
                 identifiers.append(("eosid", str(eid), False, "import"))
             await db.upsert_user_record(
-                guild_id, discord_id, wl_type, discord_name, "active",
+                guild_id, discord_id, wl_id, discord_name, "active",
                 default_slot, "", slot_limit_override=None,
             )
-            await db.replace_identifiers(guild_id, discord_id, wl_type, identifiers)
+            await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
             added += 1
 
     # Audit
     await db.audit(
         guild_id, "admin_import", actor_id, None,
         f"Imported {fmt} into {wl_type}: added={added}, updated={updated}, skipped={skipped}, errors={errors}",
-        wl_type,
+        wl_id,
     )
     log.info("Guild %s: admin %s imported %s into %s (added=%d updated=%d skipped=%d errors=%d)",
              guild_id, actor_id, fmt, wl_type, added, updated, skipped, errors)
 
     # Trigger sync
     try:
-        if hasattr(bot, "schedule_sync"):
+        if hasattr(bot, "schedule_github_sync"):
+            bot.schedule_github_sync()
+        elif hasattr(bot, "schedule_sync"):
             bot.schedule_sync()
     except Exception:
         log.debug("Could not trigger sync after import")
@@ -1682,22 +1700,28 @@ async def admin_export(request: web.Request) -> web.Response:
     if filt not in ("active", "all", "expired"):
         return web.json_response({"error": "filter must be 'active', 'all', or 'expired'."}, status=400)
 
-    # Determine which types to query
+    # Determine which whitelists to query
+    whitelists = await db.get_whitelists(guild_id)
+    wl_by_slug = {wl["slug"]: wl for wl in whitelists}
+
     if wl_type == "combined":
-        types_to_query = list(WHITELIST_TYPES)
-    elif wl_type in WHITELIST_TYPES:
-        types_to_query = [wl_type]
+        wls_to_query = whitelists
+    elif wl_type in wl_by_slug:
+        wls_to_query = [wl_by_slug[wl_type]]
     else:
+        valid_slugs = list(wl_by_slug.keys())
         return web.json_response({
-            "error": f"Invalid type. Must be one of: {', '.join(WHITELIST_TYPES)}, combined",
+            "error": f"Invalid type. Must be one of: {', '.join(valid_slugs)}, combined",
         }, status=400)
 
     all_entries: list[dict] = []
 
-    for qt in types_to_query:
+    for wl in wls_to_query:
+        wl_id = wl["id"]
+        wl_slug = wl["slug"]
         # Build filter conditions
-        conditions = ["u.guild_id=%s", "u.whitelist_type=%s"]
-        params: list = [guild_id, qt]
+        conditions = ["u.guild_id=%s", "u.whitelist_id=%s"]
+        params: list = [guild_id, wl_id]
 
         if filt == "active":
             conditions.append("u.status='active'")
@@ -1708,7 +1732,7 @@ async def admin_export(request: web.Request) -> web.Response:
         where = " AND ".join(conditions)
 
         rows = await db.fetchall(
-            f"SELECT u.discord_id, u.discord_name, u.whitelist_type, u.status, "
+            f"SELECT u.discord_id, u.discord_name, u.status, "
             f"u.effective_slot_limit, u.last_plan_name, u.updated_at "
             f"FROM whitelist_users u WHERE {where} ORDER BY u.discord_name",
             tuple(params),
@@ -1716,19 +1740,19 @@ async def admin_export(request: web.Request) -> web.Response:
 
         for row in (rows or []):
             discord_id = row[0]
-            meta = _unpack_plan_meta(row[5])
+            meta = _unpack_plan_meta(row[4])
 
             # Fetch identifiers
             id_rows = await db.fetchall(
                 "SELECT id_type, id_value FROM whitelist_identifiers "
-                "WHERE guild_id=%s AND discord_id=%s AND whitelist_type=%s",
-                (guild_id, discord_id, qt),
+                "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (guild_id, discord_id, wl_id),
             )
             steam_ids = [r[1] for r in (id_rows or []) if r[0] == "steam64"]
             eos_ids = [r[1] for r in (id_rows or []) if r[0] == "eosid"]
 
             # Check if actually expired by expires_at
-            if filt == "expired" and row[3] == "active":
+            if filt == "expired" and row[2] == "active":
                 # Only include if expires_at is in the past
                 exp = meta.get("expires_at")
                 if not exp:
@@ -1743,15 +1767,15 @@ async def admin_export(request: web.Request) -> web.Response:
             all_entries.append({
                 "discord_id": str(discord_id),
                 "discord_name": row[1],
-                "whitelist_type": row[2],
-                "status": row[3],
-                "effective_slot_limit": row[4],
+                "whitelist_type": wl_slug,
+                "status": row[2],
+                "effective_slot_limit": row[3],
                 "plan": meta.get("plan"),
                 "notes": meta.get("notes"),
                 "expires_at": meta.get("expires_at"),
                 "steam_ids": steam_ids,
                 "eos_ids": eos_ids,
-                "updated_at": str(row[6]) if row[6] else "",
+                "updated_at": str(row[5]) if row[5] else "",
             })
 
     # Determine requested columns

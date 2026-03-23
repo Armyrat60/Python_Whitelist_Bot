@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from bot.config import (
     DISCORD_TOKEN, WHITELIST_FILENAME, WEB_ENABLED,
     GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
-    WHITELIST_TYPES, log,
+    log,
 )
 from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identifier
 from bot.database import Database
@@ -27,7 +27,7 @@ class WhitelistBot(commands.Bot):
         self.db = Database()
         self.github = GithubPublisher() if all([GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME]) else None
         self.web = WebServer(self) if WEB_ENABLED else None
-        self.panel_views = {}  # keyed by (guild_id, whitelist_type)
+        self.panel_views = {}  # keyed by (guild_id, whitelist_id)
         self.write_lock = asyncio.Lock()
         self._sync_pending = False
         self._sync_task: Optional[asyncio.Task] = None
@@ -39,7 +39,7 @@ class WhitelistBot(commands.Bot):
             try:
                 self.github.connect()
             except Exception:
-                log.warning("GitHub connection failed (bad credentials?) — disabling GitHub publishing")
+                log.warning("GitHub connection failed (bad credentials?) -- disabling GitHub publishing")
                 self.github = None
         else:
             log.info("GitHub publishing disabled (no GITHUB_TOKEN configured)")
@@ -67,10 +67,11 @@ class WhitelistBot(commands.Bot):
         # Register persistent views for whitelist panels per guild
         from bot.cogs.whitelist import WhitelistPanelView
         for guild in self.guilds:
-            for whitelist_type in WHITELIST_TYPES:
-                key = (guild.id, whitelist_type)
+            whitelists = await self.db.get_whitelists(guild.id)
+            for wl in whitelists:
+                key = (guild.id, wl["id"])
                 if key not in self.panel_views:
-                    view = WhitelistPanelView(self, whitelist_type)
+                    view = WhitelistPanelView(self, wl["slug"])
                     self.panel_views[key] = view
                     self.add_view(view)
         # Prime the web cache with current content for all guilds
@@ -84,21 +85,23 @@ class WhitelistBot(commands.Bot):
         await self.log_startup_summary()
         # Refresh panels for all guilds
         for guild in self.guilds:
-            for wt in WHITELIST_TYPES:
+            whitelists = await self.db.get_whitelists(guild.id)
+            for wl in whitelists:
                 try:
-                    await self.post_or_refresh_panel(None, guild.id, wt)
+                    await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
                 except Exception:
-                    log.debug("Could not refresh %s panel for guild %s", wt, guild.id)
+                    log.debug("Could not refresh %s panel for guild %s", wl["slug"], guild.id)
 
     async def on_guild_join(self, guild: discord.Guild):
         await self.db.seed_guild_defaults(guild.id)
         log.info("Joined guild %s (%s), seeded defaults", guild.name, guild.id)
         # Register persistent views for the new guild
         from bot.cogs.whitelist import WhitelistPanelView
-        for whitelist_type in WHITELIST_TYPES:
-            key = (guild.id, whitelist_type)
+        whitelists = await self.db.get_whitelists(guild.id)
+        for wl in whitelists:
+            key = (guild.id, wl["id"])
             if key not in self.panel_views:
-                view = WhitelistPanelView(self, whitelist_type)
+                view = WhitelistPanelView(self, wl["slug"])
                 self.panel_views[key] = view
                 self.add_view(view)
 
@@ -149,9 +152,9 @@ class WhitelistBot(commands.Bot):
         combined_filename = await self.db.get_setting(guild_id, "combined_filename", WHITELIST_FILENAME)
         retention_days = await self.db.get_setting(guild_id, "retention_days", "90")
         parts = [f"guild_id={guild_id}", f"output_mode={output_mode}", f"combined_filename={combined_filename}", f"retention_days={retention_days}"]
-        for wt in WHITELIST_TYPES:
-            cfg = await self.db.get_type_config(guild_id, wt)
-            parts.append(f"{wt}: enabled={cfg['enabled']} panel_channel_id={cfg['panel_channel_id']} log_channel_id={cfg['log_channel_id']} github_enabled={cfg['github_enabled']} file={cfg['github_filename']}")
+        whitelists = await self.db.get_whitelists(guild_id)
+        for wl in whitelists:
+            parts.append(f"{wl['slug']}: enabled={wl['enabled']} panel_channel_id={wl['panel_channel_id']} log_channel_id={wl['log_channel_id']} file={wl['output_filename']}")
         return " | ".join(parts)
 
     async def log_startup_summary(self):
@@ -173,33 +176,42 @@ class WhitelistBot(commands.Bot):
         if groups:
             group_text = " | ".join(f"`{n}`: {p}" for n, p, _ in groups)
             embed.add_field(name="Squad Groups", value=group_text, inline=False)
-        for wt in WHITELIST_TYPES:
-            cfg = await self.db.get_type_config(guild_id, wt)
-            if not cfg:
-                continue
-            status = "Enabled" if cfg["enabled"] else "Disabled"
-            panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
-            log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
-            gh = "On" if cfg["github_enabled"] else "Off"
-            mappings = await self.db.get_role_mappings(guild_id, wt)
+        whitelists = await self.db.get_whitelists(guild_id)
+        for wl in whitelists:
+            status = "Enabled" if wl["enabled"] else "Disabled"
+            panel_ch = f"<#{wl['panel_channel_id']}>" if wl["panel_channel_id"] else "`Not set`"
+            log_ch = f"<#{wl['log_channel_id']}>" if wl["log_channel_id"] else "`Not set`"
+            mappings = await self.db.get_role_mappings(guild_id, wl["id"])
             role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
             embed.add_field(
-                name=wt.title(),
+                name=wl["name"],
                 value=(
                     f"**Status:** `{status}`\n"
                     f"**Panel:** {panel_ch} | **Log:** {log_ch}\n"
-                    f"**GitHub:** `{gh}` | `{cfg['github_filename']}`\n"
-                    f"**Slots:** `{cfg['default_slot_limit']}` default | Stack: `{'Yes' if cfg['stack_roles'] else 'No'}`\n"
-                    f"**Squad Group:** `{cfg.get('squad_group', 'Whitelist')}`\n"
+                    f"**Output file:** `{wl['output_filename']}`\n"
+                    f"**Slots:** `{wl['default_slot_limit']}` default | Stack: `{'Yes' if wl['stack_roles'] else 'No'}`\n"
+                    f"**Squad Group:** `{wl.get('squad_group') or 'Whitelist'}`\n"
                     f"**Roles:** " + ", ".join(role_lines)
                 ),
                 inline=False,
             )
         return embed
 
-    async def send_log_embed(self, guild_id: int, whitelist_type: str, title: str, description: str, color: discord.Color = discord.Color.blurple()):
-        cfg = await self.db.get_type_config(guild_id, whitelist_type)
-        channel_id = cfg["log_channel_id"]
+    async def send_log_embed(self, guild_id: int, whitelist_id_or_slug, title: str, description: str, color: discord.Color = discord.Color.blurple()):
+        """Send an embed to the log channel for a whitelist. Accepts whitelist_id (int) or slug (str)."""
+        if isinstance(whitelist_id_or_slug, int):
+            # Look up the whitelist by id to get the log channel
+            whitelists = await self.db.get_whitelists(guild_id)
+            wl = next((w for w in whitelists if w["id"] == whitelist_id_or_slug), None)
+            if not wl:
+                return
+            channel_id = wl["log_channel_id"]
+        else:
+            # Legacy: look up by slug
+            wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_id_or_slug)
+            if not wl:
+                return
+            channel_id = wl["log_channel_id"]
         if not channel_id:
             return
         channel = self.get_channel(int(channel_id))
@@ -211,46 +223,58 @@ class WhitelistBot(commands.Bot):
         except discord.Forbidden:
             log.warning("Missing access to log channel %s", channel_id)
 
-    async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_type: str, *, user_record=None, cfg=None) -> tuple:
+    async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None) -> tuple:
+        """Calculate effective slots for a member. whitelist_id must be an int. wl is the whitelist dict."""
         if user_record is None:
-            user_record = await self.db.get_user_record(guild_id, member.id, whitelist_type)
+            user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
         override_slots = user_record[2] if user_record else None
-        if cfg is None:
-            cfg = await self.db.get_type_config(guild_id, whitelist_type)
-        mappings = await self.db.get_role_mappings(guild_id, whitelist_type)
+        if wl is None:
+            # Fetch from DB by scanning all whitelists (caller should pass wl when possible)
+            whitelists = await self.db.get_whitelists(guild_id)
+            wl = next((w for w in whitelists if w["id"] == whitelist_id), None)
+            if not wl:
+                return 0, "unknown"
+        mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
         matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and any(r.id == role_id for r in member.roles)]
         if override_slots is not None:
             return int(override_slots), f"override ({override_slots})"
         if matched:
-            if cfg["stack_roles"]:
+            if wl["stack_roles"]:
                 total = sum(x[1] for x in matched)
                 return total, " + ".join(f"{n}:{s}" for n, s in matched)
             winner = max(matched, key=lambda x: x[1])
             return winner[1], f"{winner[0]}:{winner[1]}"
-        return int(cfg["default_slot_limit"]), f"default:{cfg['default_slot_limit']}"
+        return int(wl["default_slot_limit"]), f"default:{wl['default_slot_limit']}"
 
     async def start_whitelist_flow(self, interaction: discord.Interaction, whitelist_type: str):
+        """Start the whitelist submission flow. whitelist_type is a slug string (for cog compat)."""
         from bot.cogs.whitelist import IdentifierModal
         guild_id = interaction.guild.id
-        cfg = await self.db.get_type_config(guild_id, whitelist_type)
-        if not cfg["enabled"]:
+        wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
+        if not wl or not wl["enabled"]:
             await interaction.response.send_message(f"{whitelist_type.title()} whitelist is disabled.", ephemeral=True)
             return
+        whitelist_id = wl["id"]
         member = interaction.guild.get_member(interaction.user.id)
-        slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_type)
+        slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
         if slots <= 0:
             await interaction.response.send_message("You are not eligible for this whitelist.", ephemeral=True)
             return
-        existing = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_type)
-        if cfg["input_mode"] == "thread":
+        existing = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
+        if wl.get("input_mode", "modal") == "thread":
             await interaction.response.send_message("Thread mode is not enabled in this build. Use modal mode.", ephemeral=True)
             return
         await interaction.response.send_modal(IdentifierModal(self, whitelist_type, slots, existing))
 
     async def handle_identifier_submission(self, interaction: discord.Interaction, whitelist_type: str, steam_raw: str, eos_raw: str):
         guild_id = interaction.guild.id
+        wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
+        if not wl:
+            await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+            return
+        whitelist_id = wl["id"]
         member = interaction.guild.get_member(interaction.user.id)
-        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_type)
+        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
         steam_ids = list(dict.fromkeys(token for token in split_identifier_tokens(steam_raw) if token))
         eos_ids = list(dict.fromkeys(token.lower() for token in split_identifier_tokens(eos_raw) if token))
 
@@ -278,13 +302,13 @@ class WhitelistBot(commands.Bot):
             pairs = [(id_type, id_value) for id_type, id_value, *_ in submitted]
             placeholders = ",".join(["(%s,%s)"] * len(pairs))
             flat_params = [v for pair in pairs for v in pair]
-            flat_params.extend([interaction.user.id, whitelist_type])
+            flat_params.extend([interaction.user.id, whitelist_id])
             rows = await self.db.fetchall(
                 f"""
                 SELECT DISTINCT id_type, id_value
                 FROM whitelist_identifiers
                 WHERE (id_type, id_value) IN ({placeholders})
-                  AND NOT (discord_id=%s AND whitelist_type=%s)
+                  AND NOT (discord_id=%s AND whitelist_id=%s)
                 """,
                 tuple(flat_params),
             )
@@ -294,27 +318,27 @@ class WhitelistBot(commands.Bot):
             await self.db.upsert_user_record(
                 guild_id,
                 interaction.user.id,
-                whitelist_type,
+                whitelist_id,
                 str(interaction.user),
                 "active",
                 slots,
                 plan,
             )
-            await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_type, submitted)
+            await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_id, submitted)
             await self.db.audit(
                 guild_id,
                 "user_submit",
                 interaction.user.id,
                 interaction.user.id,
-                json.dumps({"whitelist_type": whitelist_type, "slots": slots, "plan": plan, "count": len(submitted), "duplicates_warned": duplicate_warnings}),
-                whitelist_type,
+                json.dumps({"whitelist_type": whitelist_type, "whitelist_id": whitelist_id, "slots": slots, "plan": plan, "count": len(submitted), "duplicates_warned": duplicate_warnings}),
+                whitelist_id,
             )
         changed = await self.sync_github_outputs(guild_id)
         msg = f"Saved {len(submitted)} identifier(s). GitHub files changed: {changed}."
         if duplicate_warnings:
             msg += "\nWarning: duplicate identifiers exist elsewhere; published output is deduped."
         await interaction.response.send_message(msg, ephemeral=True)
-        await self.send_log_embed(guild_id, whitelist_type, "Whitelist Updated", f"User: <@{interaction.user.id}>\nType: `{whitelist_type}`\nSlots: `{slots}`\nPlan: `{plan}`\nIDs: `{len(submitted)}`", discord.Color.green())
+        await self.send_log_embed(guild_id, whitelist_id, "Whitelist Updated", f"User: <@{interaction.user.id}>\nType: `{whitelist_type}`\nSlots: `{slots}`\nPlan: `{plan}`\nIDs: `{len(submitted)}`", discord.Color.green())
 
     async def get_output_contents(self, guild_id: int) -> dict:
         """Generate whitelist output files using shared module."""
@@ -363,9 +387,9 @@ class WhitelistBot(commands.Bot):
             if not self._sync_pending:
                 break
 
-    def _build_panel_embed(self, whitelist_type: str) -> discord.Embed:
+    def _build_panel_embed(self, wl_name: str) -> discord.Embed:
         embed = discord.Embed(
-            title=f"{whitelist_type.title()} Whitelist",
+            title=f"{wl_name} Whitelist",
             description=(
                 "Click **Start / Update Whitelist** to submit or change your IDs.\n\n"
                 "**Supported formats:**\n"
@@ -376,25 +400,30 @@ class WhitelistBot(commands.Bot):
         )
         return embed
 
-    async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None):
-        cfg = await self.db.get_type_config(guild_id, whitelist_type)
-        if not cfg:
+    async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):
+        """Post or refresh a whitelist panel. whitelist_type is the slug for backward compat.
+        Pass wl_dict to avoid an extra DB lookup."""
+        wl = wl_dict
+        if wl is None:
+            wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
+        if not wl:
             return None
-        embed = self._build_panel_embed(whitelist_type)
+        whitelist_id = wl["id"]
+        embed = self._build_panel_embed(wl["name"])
 
-        view_key = (guild_id, whitelist_type)
-        # Ensure we have a view for this guild+type
+        view_key = (guild_id, whitelist_id)
+        # Ensure we have a view for this guild+whitelist
         if view_key not in self.panel_views:
             from bot.cogs.whitelist import WhitelistPanelView
-            view = WhitelistPanelView(self, whitelist_type)
+            view = WhitelistPanelView(self, wl["slug"])
             self.panel_views[view_key] = view
             self.add_view(view)
         panel_view = self.panel_views[view_key]
 
         # Try to find the existing panel in its stored channel first
         posted = None
-        stored_channel_id = cfg["panel_channel_id"]
-        stored_message_id = cfg["panel_message_id"]
+        stored_channel_id = wl["panel_channel_id"]
+        stored_message_id = wl["panel_message_id"]
         if stored_message_id and stored_channel_id:
             try:
                 stored_ch = self.get_channel(int(stored_channel_id))
@@ -415,34 +444,35 @@ class WhitelistBot(commands.Bot):
                 posted = await target.send(embed=embed, view=panel_view)
 
         if posted is not None:
-            await self.db.set_type_config(guild_id, whitelist_type, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
+            await self.db.update_whitelist(whitelist_id, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
             actor = interaction.user.id if interaction else None
-            await self.db.audit(guild_id, "panel_post", actor, None, f"type={whitelist_type} channel={posted.channel.id} message={posted.id}", whitelist_type)
+            await self.db.audit(guild_id, "panel_post", actor, None, f"type={wl['slug']} channel={posted.channel.id} message={posted.id}", whitelist_id)
         return posted
 
     async def enforce_member_roles(self, member: discord.Member):
         guild_id = member.guild.id
-        for whitelist_type in WHITELIST_TYPES:
-            cfg = await self.db.get_type_config(guild_id, whitelist_type)
-            if not cfg or not cfg["enabled"]:
+        whitelists = await self.db.get_whitelists(guild_id)
+        for wl in whitelists:
+            if not wl["enabled"]:
                 continue
-            user_record = await self.db.get_user_record(guild_id, member.id, whitelist_type)
+            whitelist_id = wl["id"]
+            user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
                 continue
-            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_type, user_record=user_record, cfg=cfg)
+            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl)
             status_before = user_record[1]
             if slots <= 0:
                 if status_before == "active":
-                    await self.db.set_user_status(guild_id, member.id, whitelist_type, "disabled_role_lost")
-                    await self.db.audit(guild_id, "auto_disable_role_lost", None, member.id, f"type={whitelist_type}", whitelist_type)
-                    await self.send_log_embed(guild_id, whitelist_type, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
+                    await self.db.set_user_status(guild_id, member.id, whitelist_id, "disabled_role_lost")
+                    await self.db.audit(guild_id, "auto_disable_role_lost", None, member.id, f"type={wl['slug']}", whitelist_id)
+                    await self.send_log_embed(guild_id, whitelist_id, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
             else:
                 if status_before != "active" and to_bool(await self.db.get_setting(guild_id, "auto_reactivate_on_role_return", "true")):
-                    await self.db.upsert_user_record(guild_id, member.id, whitelist_type, str(member), "active", slots, plan, user_record[2])
-                    await self.db.audit(guild_id, "auto_reactivate_role_return", None, member.id, f"type={whitelist_type}", whitelist_type)
-                    await self.send_log_embed(guild_id, whitelist_type, "Whitelist Re-enabled", f"User <@{member.id}> regained eligible role(s).", discord.Color.green())
+                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), "active", slots, plan, user_record[2])
+                    await self.db.audit(guild_id, "auto_reactivate_role_return", None, member.id, f"type={wl['slug']}", whitelist_id)
+                    await self.send_log_embed(guild_id, whitelist_id, "Whitelist Re-enabled", f"User <@{member.id}> regained eligible role(s).", discord.Color.green())
                 else:
-                    await self.db.upsert_user_record(guild_id, member.id, whitelist_type, str(member), status_before, slots, plan, user_record[2])
+                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), status_before, slots, plan, user_record[2])
         self.schedule_github_sync(guild_id)
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -451,12 +481,14 @@ class WhitelistBot(commands.Bot):
 
     async def on_member_remove(self, member: discord.Member):
         guild_id = member.guild.id
-        for whitelist_type in WHITELIST_TYPES:
-            row = await self.db.get_user_record(guild_id, member.id, whitelist_type)
+        whitelists = await self.db.get_whitelists(guild_id)
+        for wl in whitelists:
+            whitelist_id = wl["id"]
+            row = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if row:
-                await self.db.set_user_status(guild_id, member.id, whitelist_type, "left_guild")
-                await self.db.audit(guild_id, "left_guild", None, member.id, f"type={whitelist_type}", whitelist_type)
-                await self.send_log_embed(guild_id, whitelist_type, "User Left Guild", f"<@{member.id}> removed from active output.", discord.Color.red())
+                await self.db.set_user_status(guild_id, member.id, whitelist_id, "left_guild")
+                await self.db.audit(guild_id, "left_guild", None, member.id, f"type={wl['slug']}", whitelist_id)
+                await self.send_log_embed(guild_id, whitelist_id, "User Left Guild", f"<@{member.id}> removed from active output.", discord.Color.red())
         self.schedule_github_sync(guild_id)
 
     @tasks.loop(hours=24)
@@ -481,14 +513,15 @@ class WhitelistBot(commands.Bot):
             should_send = frequency == "daily" or (frequency == "weekly" and now.weekday() == 0)
             if not should_send:
                 continue
-            for whitelist_type in WHITELIST_TYPES:
-                cfg = await self.db.get_type_config(guild_id, whitelist_type)
-                if not cfg["log_channel_id"]:
+            whitelists = await self.db.get_whitelists(guild_id)
+            for wl in whitelists:
+                if not wl["log_channel_id"]:
                     continue
-                active = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'", (guild_id, whitelist_type))
-                ids = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s", (guild_id, whitelist_type))
-                actions = await self.db.fetchone("SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND whitelist_type=%s AND created_at >= %s", (guild_id, whitelist_type, utcnow() - timedelta(days=7 if frequency == 'weekly' else 1)))
-                await self.send_log_embed(guild_id, whitelist_type, f"{frequency.title()} Report", f"Active users: `{active[0]}`\nIdentifiers: `{ids[0]}`\nActions in window: `{actions[0]}`", discord.Color.blurple())
+                whitelist_id = wl["id"]
+                active = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'", (guild_id, whitelist_id))
+                ids = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s", (guild_id, whitelist_id))
+                actions = await self.db.fetchone("SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND whitelist_id=%s AND created_at >= %s", (guild_id, whitelist_id, utcnow() - timedelta(days=7 if frequency == 'weekly' else 1)))
+                await self.send_log_embed(guild_id, whitelist_id, f"{frequency.title()} Report", f"Active users: `{active[0]}`\nIdentifiers: `{ids[0]}`\nActions in window: `{actions[0]}`", discord.Color.blurple())
 
     @weekly_report.before_loop
     async def _before_weekly_report(self):

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import aiohttp_jinja2
 import aiohttp_session
 from aiohttp import web
 
-from bot.config import WHITELIST_TYPES, log
+from bot.config import log
 
 
 async def index(request: web.Request) -> web.Response:
@@ -79,7 +81,22 @@ async def dashboard(request: web.Request) -> web.Response:
                 "last_plan_name": user_record[4],
                 "updated_at": str(user_record[5]) if user_record[5] else "",
                 "created_at": str(user_record[6]) if user_record[6] else "",
+                "expires_at": "",
+                "notes": "",
             }
+
+            # Parse last_plan_name for expires_at metadata
+            if user_record[4]:  # last_plan_name
+                try:
+                    meta = json.loads(user_record[4])
+                    if isinstance(meta, dict):
+                        whitelist_data[wl_slug]["user_record"]["expires_at"] = meta.get("expires_at", "")
+                        whitelist_data[wl_slug]["user_record"]["notes"] = meta.get("notes", "")
+                        # Show the display name from meta if available, otherwise keep raw
+                        if meta.get("name"):
+                            whitelist_data[wl_slug]["user_record"]["last_plan_name"] = meta["name"]
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
     context = {
         "session": dict(session),
@@ -90,6 +107,34 @@ async def dashboard(request: web.Request) -> web.Response:
         "active_guild_id": active_guild_id,
     }
     return aiohttp_jinja2.render_template("dashboard.html", request, context)
+
+
+async def _get_admin_context(request: web.Request):
+    """Common admin context builder. Returns (context, guild_id) or raises."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        raise web.HTTPFound("/login")
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    if not active_guild or not active_guild.get("is_mod"):
+        raise web.HTTPForbidden(text="Access denied.")
+
+    guild_id = int(active_guild_id)
+    bot = request.app["bot"]
+    whitelists = await bot.db.get_whitelists(guild_id)
+    whitelist_slugs = [wl["slug"] for wl in whitelists]
+
+    context = {
+        "session": dict(session),
+        "whitelist_types": whitelist_slugs,
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
+    return context
 
 
 async def admin_page(request: web.Request) -> web.Response:
@@ -116,93 +161,25 @@ async def admin_page(request: web.Request) -> web.Response:
 
 async def admin_users_page(request: web.Request) -> web.Response:
     """Render the admin user management page."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    active_guild_id = session.get("active_guild_id")
-    guilds = session.get("guilds", [])
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
-    if not active_guild or not active_guild.get("is_mod"):
-        raise web.HTTPForbidden(text="Access denied.")
-
-    context = {
-        "session": dict(session),
-        "whitelist_types": WHITELIST_TYPES,
-        "guilds": guilds,
-        "active_guild": active_guild,
-        "active_guild_id": active_guild_id,
-    }
+    context = await _get_admin_context(request)
     return aiohttp_jinja2.render_template("admin_users.html", request, context)
 
 
 async def admin_audit_page(request: web.Request) -> web.Response:
     """Render the admin audit log page."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    active_guild_id = session.get("active_guild_id")
-    guilds = session.get("guilds", [])
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
-    if not active_guild or not active_guild.get("is_mod"):
-        raise web.HTTPForbidden(text="Access denied.")
-
-    context = {
-        "session": dict(session),
-        "whitelist_types": WHITELIST_TYPES,
-        "guilds": guilds,
-        "active_guild": active_guild,
-        "active_guild_id": active_guild_id,
-    }
+    context = await _get_admin_context(request)
     return aiohttp_jinja2.render_template("admin_audit.html", request, context)
 
 
 async def admin_setup_page(request: web.Request) -> web.Response:
     """Render the admin community setup page."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    active_guild_id = session.get("active_guild_id")
-    guilds = session.get("guilds", [])
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
-    if not active_guild or not active_guild.get("is_mod"):
-        raise web.HTTPForbidden(text="Access denied.")
-
-    context = {
-        "session": dict(session),
-        "whitelist_types": WHITELIST_TYPES,
-        "guilds": guilds,
-        "active_guild": active_guild,
-        "active_guild_id": active_guild_id,
-    }
+    context = await _get_admin_context(request)
     return aiohttp_jinja2.render_template("admin_setup.html", request, context)
 
 
 async def admin_import_export_page(request: web.Request) -> web.Response:
     """Render the admin import/export page."""
-    session = await aiohttp_session.get_session(request)
-    if not session.get("logged_in"):
-        raise web.HTTPFound("/login")
-
-    active_guild_id = session.get("active_guild_id")
-    guilds = session.get("guilds", [])
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
-
-    if not active_guild or not active_guild.get("is_mod"):
-        raise web.HTTPForbidden(text="Access denied.")
-
-    context = {
-        "session": dict(session),
-        "whitelist_types": WHITELIST_TYPES,
-        "guilds": guilds,
-        "active_guild": active_guild,
-        "active_guild_id": active_guild_id,
-    }
+    context = await _get_admin_context(request)
     return aiohttp_jinja2.render_template("admin_import_export.html", request, context)
 
 

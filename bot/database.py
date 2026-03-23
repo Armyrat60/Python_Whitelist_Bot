@@ -571,8 +571,8 @@ class Database:
             try:
                 await self.execute(stmt)
             except Exception:
-                # Column/constraint already exists or old constraint not found — safe to ignore
-                pass
+                # Column/constraint already exists or old constraint not found -- usually safe to ignore
+                log.debug("Migration skipped (likely already applied): %s", str(exc)[:80])
 
         # Seed Squad permissions (global, no guild_id)
         for perm, desc in SQUAD_PERMISSIONS.items():
