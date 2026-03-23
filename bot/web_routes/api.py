@@ -1331,14 +1331,16 @@ def _parse_csv_data(data: str, guild_id: int, wl_type: str, existing_steam_ids: 
     col_map: dict[str, str] = {}
     for fn in reader.fieldnames:
         lower = fn.strip().lower().replace(" ", "_")
-        if lower in ("discord_name", "name", "player", "playername", "player_name"):
+        if lower in ("discord_name", "name", "player", "playername", "player_name", "username", "user_name", "user"):
             col_map["discord_name"] = fn
-        elif lower in ("discord_id", "discordid"):
+        elif lower in ("discord_id", "discordid", "discord_user_id"):
             col_map["discord_id"] = fn
-        elif lower in ("steam64", "steamid", "steam_id", "steam64id", "steam64_id"):
+        elif lower in ("steam64", "steamid", "steam_id", "steam64id", "steam64_id", "steam"):
             col_map["steam64"] = fn
-        elif lower in ("eos_id", "eosid", "eos"):
+        elif lower in ("eos_id", "eosid", "eos", "eos_player_id"):
             col_map["eos_id"] = fn
+        elif lower in ("plan", "plan_name", "role", "tier", "subscription"):
+            col_map["plan"] = fn
 
     rows: list[dict] = []
     summary = {"total": 0, "new": 0, "duplicate": 0, "invalid": 0}
@@ -1470,20 +1472,22 @@ async def admin_import_preview(request: web.Request) -> web.Response:
             part = await reader.next()
             if part is None:
                 break
-            if part.name == "data":
+            if part.name in ("data", "file", "paste_data"):
                 data = (await part.read(decode=True)).decode("utf-8", errors="replace")
             elif part.name == "format":
                 fmt = (await part.read(decode=True)).decode().strip()
-            elif part.name == "whitelist_type":
+            elif part.name in ("whitelist_type", "type"):
                 wl_type = (await part.read(decode=True)).decode().strip()
+            elif part.name == "duplicate_handling":
+                pass  # Used in import, not preview
     else:
         try:
             body = await request.json()
         except Exception:
             return web.json_response({"error": "Invalid request body."}, status=400)
-        data = body.get("data", "")
+        data = body.get("data", "") or body.get("paste_data", "")
         fmt = body.get("format", "csv")
-        wl_type = body.get("whitelist_type", "")
+        wl_type = body.get("whitelist_type", "") or body.get("type", "")
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -1526,11 +1530,11 @@ async def admin_import(request: web.Request) -> web.Response:
             part = await reader.next()
             if part is None:
                 break
-            if part.name == "data":
+            if part.name in ("data", "file", "paste_data"):
                 data = (await part.read(decode=True)).decode("utf-8", errors="replace")
             elif part.name == "format":
                 fmt = (await part.read(decode=True)).decode().strip()
-            elif part.name == "whitelist_type":
+            elif part.name in ("whitelist_type", "type"):
                 wl_type = (await part.read(decode=True)).decode().strip()
             elif part.name == "duplicate_handling":
                 dup_handling = (await part.read(decode=True)).decode().strip()
@@ -1539,9 +1543,9 @@ async def admin_import(request: web.Request) -> web.Response:
             body = await request.json()
         except Exception:
             return web.json_response({"error": "Invalid request body."}, status=400)
-        data = body.get("data", "")
+        data = body.get("data", "") or body.get("paste_data", "")
         fmt = body.get("format", "csv")
-        wl_type = body.get("whitelist_type", "")
+        wl_type = body.get("whitelist_type", "") or body.get("type", "")
         dup_handling = body.get("duplicate_handling", "skip")
 
     if not data:
