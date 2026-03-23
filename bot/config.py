@@ -37,6 +37,11 @@ WEB_BASE_PATH = os.getenv("WEB_BASE_PATH", "/").rstrip("/")
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
 WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
+WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://staff.dmhwhitelist.com
+
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
+WEB_SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "change-me-to-a-random-secret-key")
 
 STEAM64_RE = re.compile(r"^7656119\d{10}$")
 EOSID_RE = re.compile(r"^[0-9a-fA-F]{32}$")

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Whitelist Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Admin Dashboard</h1>
+    <p class="text-muted">Server whitelist overview and management.</p>
+</div>
+
+<div class="stats-row" id="admin-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-active-users">--</div>
+        <div class="stat-label">Total Active Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total-ids">--</div>
+        <div class="stat-label">Total Identifiers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-audit-week">--</div>
+        <div class="stat-label">Actions This Week</div>
+    </div>
+</div>
+
+<div class="cards-grid">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Quick Links</h3>
+        </div>
+        <div class="card-body">
+            <div class="quick-links">
+                <a href="/admin/users" class="quick-link">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                    User Management
+                </a>
+                <a href="/admin/audit" class="quick-link">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Audit Log
+                </a>
+                <a href="/wl/" class="quick-link">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    Whitelist Files
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Recent Activity</h3>
+        </div>
+        <div class="card-body">
+            <div id="recent-activity">
+                <p class="text-muted">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAdminStats();
+    loadRecentActivity();
+});
+
+function loadAdminStats() {
+    fetch('/api/admin/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-active-users').textContent = data.total_active_users;
+            document.getElementById('stat-total-ids').textContent = data.total_identifiers;
+            document.getElementById('stat-audit-week').textContent = data.recent_audit_count;
+        })
+        .catch(() => {});
+}
+
+function loadRecentActivity() {
+    fetch('/api/admin/audit?per_page=10')
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('recent-activity');
+            if (!data.entries || data.entries.length === 0) {
+                container.innerHTML = '<p class="text-muted">No recent activity.</p>';
+                return;
+            }
+            let html = '<ul class="activity-list">';
+            data.entries.forEach(entry => {
+                const time = entry.created_at ? new Date(entry.created_at).toLocaleString() : '';
+                html += '<li class="activity-item">';
+                html += '<span class="activity-action">' + escapeHtml(entry.action_type) + '</span>';
+                if (entry.whitelist_type) {
+                    html += ' <span class="badge badge-sm">' + escapeHtml(entry.whitelist_type) + '</span>';
+                }
+                html += '<span class="activity-time">' + escapeHtml(time) + '</span>';
+                if (entry.details) {
+                    html += '<p class="activity-details">' + escapeHtml(entry.details.substring(0, 120)) + '</p>';
+                }
+                html += '</li>';
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('recent-activity').innerHTML = '<p class="text-muted">Failed to load activity.</p>';
+        });
+}
+</script>
+{% endblock %}

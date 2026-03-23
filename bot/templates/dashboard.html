@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Whitelist Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Welcome, {{ session.username }}</h1>
+    <p class="text-muted">Manage your whitelist entries across all available types.</p>
+</div>
+
+<div class="cards-grid">
+    {% for wl_type in whitelist_types %}
+    {% set data = whitelist_data[wl_type] %}
+    <div class="card {% if not data.enabled %}card-disabled{% endif %}" id="card-{{ wl_type }}">
+        <div class="card-header">
+            <h3 class="card-title">{{ wl_type | capitalize }} Whitelist</h3>
+            {% if not data.enabled %}
+                <span class="badge badge-muted">Disabled</span>
+            {% elif data.user_record and data.user_record.status == 'active' %}
+                <span class="badge badge-success">Active</span>
+            {% elif data.user_record %}
+                <span class="badge badge-danger">{{ data.user_record.status | capitalize }}</span>
+            {% else %}
+                <span class="badge badge-muted">Inactive</span>
+            {% endif %}
+        </div>
+
+        {% if not data.enabled %}
+        <div class="card-body card-body-disabled">
+            <p class="text-muted">This whitelist type is not currently available.</p>
+        </div>
+        {% else %}
+        <div class="card-body">
+            {% if data.user_record %}
+            <div class="info-row">
+                <span class="info-label">Plan</span>
+                <span class="info-value">{{ data.user_record.last_plan_name or 'N/A' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Slots</span>
+                <span class="info-value">{{ data.user_record.effective_slot_limit or 1 }}</span>
+            </div>
+            {% else %}
+            <div class="info-row">
+                <span class="info-label">Slots</span>
+                <span class="info-value">{{ data.config.default_slot_limit if data.config else 1 }}</span>
+            </div>
+            {% endif %}
+
+            <div class="id-section">
+                <h4>Steam64 IDs</h4>
+                {% if data.steam_ids %}
+                <ul class="id-list">
+                    {% for sid in data.steam_ids %}
+                    <li class="id-item"><code>{{ sid }}</code></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted text-sm">No Steam IDs configured.</p>
+                {% endif %}
+            </div>
+
+            <div class="id-section">
+                <h4>EOS IDs</h4>
+                {% if data.eos_ids %}
+                <ul class="id-list">
+                    {% for eid in data.eos_ids %}
+                    <li class="id-item"><code>{{ eid }}</code></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted text-sm">No EOS IDs configured.</p>
+                {% endif %}
+            </div>
+
+            <button class="btn btn-primary btn-block edit-toggle-btn" data-type="{{ wl_type }}">Edit IDs</button>
+
+            <div class="edit-form" id="edit-form-{{ wl_type }}" style="display:none;">
+                <div class="form-group">
+                    <label for="steam-{{ wl_type }}">Steam64 IDs (one per line)</label>
+                    <textarea id="steam-{{ wl_type }}" class="form-input" rows="3" placeholder="76561198012345678">{{ data.steam_ids | join('\n') }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="eos-{{ wl_type }}">EOS IDs (one per line)</label>
+                    <textarea id="eos-{{ wl_type }}" class="form-input" rows="3" placeholder="0123456789abcdef0123456789abcdef">{{ data.eos_ids | join('\n') }}</textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-success save-ids-btn" data-type="{{ wl_type }}">Save</button>
+                    <button class="btn btn-outline cancel-edit-btn" data-type="{{ wl_type }}">Cancel</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

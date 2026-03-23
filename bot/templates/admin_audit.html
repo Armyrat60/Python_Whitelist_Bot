@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - Whitelist Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Audit Log</h1>
+    <p class="text-muted">Review all actions and changes.</p>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="filter-group">
+                <select id="audit-type" class="form-input form-select">
+                    <option value="">All Types</option>
+                    {% for wl_type in whitelist_types %}
+                    <option value="{{ wl_type }}">{{ wl_type | capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <input type="text" id="audit-action" class="form-input" placeholder="Filter by action type...">
+            </div>
+            <button class="btn btn-primary" id="audit-search-btn">Filter</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="data-table" id="audit-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Target</th>
+                    <th>Type</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="audit-tbody">
+                <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+        <div class="pagination" id="audit-pagination"></div>
+    </div>
+</div>
+
+<script>
+let auditPage = 1;
+const auditPerPage = 25;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAudit();
+    document.getElementById('audit-search-btn').addEventListener('click', function() {
+        auditPage = 1;
+        loadAudit();
+    });
+    document.getElementById('audit-type').addEventListener('change', function() { auditPage = 1; loadAudit(); });
+    document.getElementById('audit-action').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { auditPage = 1; loadAudit(); }
+    });
+});
+
+function loadAudit() {
+    const type = document.getElementById('audit-type').value;
+    const action = document.getElementById('audit-action').value;
+    const params = new URLSearchParams({page: auditPage, per_page: auditPerPage});
+    if (type) params.set('type', type);
+    if (action) params.set('action', action);
+
+    fetch('/api/admin/audit?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('audit-tbody');
+            if (!data.entries || data.entries.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No audit entries found.</td></tr>';
+                document.getElementById('audit-pagination').innerHTML = '';
+                return;
+            }
+            let html = '';
+            data.entries.forEach(e => {
+                const time = e.created_at ? new Date(e.created_at).toLocaleString() : '';
+                html += '<tr>';
+                html += '<td class="text-nowrap">' + escapeHtml(time) + '</td>';
+                html += '<td><span class="badge badge-sm">' + escapeHtml(e.action_type) + '</span></td>';
+                html += '<td>' + (e.actor_discord_id ? '<code>' + escapeHtml(e.actor_discord_id) + '</code>' : '-') + '</td>';
+                html += '<td>' + (e.target_discord_id ? '<code>' + escapeHtml(e.target_discord_id) + '</code>' : '-') + '</td>';
+                html += '<td>' + (e.whitelist_type ? escapeHtml(e.whitelist_type) : '-') + '</td>';
+                html += '<td class="details-cell">' + escapeHtml(e.details ? e.details.substring(0, 100) : '') + '</td>';
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+            renderAuditPagination(data.page, data.pages);
+        })
+        .catch(() => {
+            document.getElementById('audit-tbody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Failed to load audit log.</td></tr>';
+        });
+}
+
+function renderAuditPagination(current, total) {
+    const container = document.getElementById('audit-pagination');
+    if (total <= 1) { container.innerHTML = ''; return; }
+    let html = '';
+    if (current > 1) html += '<button class="btn btn-sm btn-outline" onclick="goToAuditPage(' + (current-1) + ')">Prev</button>';
+    html += '<span class="page-info">Page ' + current + ' of ' + total + '</span>';
+    if (current < total) html += '<button class="btn btn-sm btn-outline" onclick="goToAuditPage(' + (current+1) + ')">Next</button>';
+    container.innerHTML = html;
+}
+
+function goToAuditPage(page) {
+    auditPage = page;
+    loadAudit();
+}
+</script>
+{% endblock %}

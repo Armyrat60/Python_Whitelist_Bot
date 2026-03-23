@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - Whitelist Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>User Management</h1>
+    <p class="text-muted">Search and manage whitelisted users.</p>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="filter-group">
+                <input type="text" id="user-search" class="form-input" placeholder="Search by username or Discord ID...">
+            </div>
+            <div class="filter-group">
+                <select id="filter-type" class="form-input form-select">
+                    <option value="">All Types</option>
+                    {% for wl_type in whitelist_types %}
+                    <option value="{{ wl_type }}">{{ wl_type | capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="filter-status" class="form-input form-select">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="removed">Removed</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="search-btn">Search</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body table-responsive">
+        <table class="data-table" id="users-table">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Discord ID</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Slots</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="users-tbody">
+                <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+        <div class="pagination" id="users-pagination"></div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+const perPage = 25;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadUsers();
+    document.getElementById('search-btn').addEventListener('click', function() {
+        currentPage = 1;
+        loadUsers();
+    });
+    document.getElementById('user-search').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { currentPage = 1; loadUsers(); }
+    });
+    document.getElementById('filter-type').addEventListener('change', function() { currentPage = 1; loadUsers(); });
+    document.getElementById('filter-status').addEventListener('change', function() { currentPage = 1; loadUsers(); });
+});
+
+function loadUsers() {
+    const search = document.getElementById('user-search').value;
+    const type = document.getElementById('filter-type').value;
+    const status = document.getElementById('filter-status').value;
+    const params = new URLSearchParams({page: currentPage, per_page: perPage});
+    if (search) params.set('search', search);
+    if (type) params.set('type', type);
+    if (status) params.set('status', status);
+
+    fetch('/api/admin/users?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('users-tbody');
+            if (!data.users || data.users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No users found.</td></tr>';
+                document.getElementById('users-pagination').innerHTML = '';
+                return;
+            }
+            let html = '';
+            data.users.forEach(u => {
+                const statusClass = u.status === 'active' ? 'badge-success' : (u.status === 'removed' ? 'badge-danger' : 'badge-muted');
+                html += '<tr>';
+                html += '<td>' + escapeHtml(u.discord_name) + '</td>';
+                html += '<td><code>' + escapeHtml(u.discord_id) + '</code></td>';
+                html += '<td><span class="badge badge-sm">' + escapeHtml(u.whitelist_type) + '</span></td>';
+                html += '<td><span class="badge ' + statusClass + '">' + escapeHtml(u.status) + '</span></td>';
+                html += '<td>' + u.effective_slot_limit + '</td>';
+                html += '<td>' + escapeHtml(u.updated_at ? new Date(u.updated_at).toLocaleDateString() : '') + '</td>';
+                html += '<td><button class="btn btn-sm btn-outline" onclick="viewUser(\'' + u.discord_id + '\', \'' + u.whitelist_type + '\')">View</button></td>';
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+            renderPagination(data.page, data.pages, 'users-pagination');
+        })
+        .catch(() => {
+            document.getElementById('users-tbody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Failed to load users.</td></tr>';
+        });
+}
+
+function viewUser(discordId, type) {
+    showFlash('User details view: ' + discordId + ' (' + type + ')', 'info');
+}
+
+function renderPagination(current, total, containerId) {
+    const container = document.getElementById(containerId);
+    if (total <= 1) { container.innerHTML = ''; return; }
+    let html = '';
+    if (current > 1) html += '<button class="btn btn-sm btn-outline" onclick="goToPage(' + (current-1) + ')">Prev</button>';
+    html += '<span class="page-info">Page ' + current + ' of ' + total + '</span>';
+    if (current < total) html += '<button class="btn btn-sm btn-outline" onclick="goToPage(' + (current+1) + ')">Next</button>';
+    container.innerHTML = html;
+}
+
+function goToPage(page) {
+    currentPage = page;
+    loadUsers();
+}
+</script>
+{% endblock %}
