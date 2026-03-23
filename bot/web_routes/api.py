@@ -1750,6 +1750,8 @@ async def admin_import(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     db = bot.db
 
+    plan_map = None  # Optional plan→slot mapping from plan mapping step
+
     # Accept multipart or JSON
     content_type = request.content_type or ""
     if "multipart" in content_type:
@@ -1785,6 +1787,9 @@ async def admin_import(request: web.Request) -> web.Response:
         column_map_raw = ""
         if "column_map" in body:
             column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
+        plan_map = None
+        if isinstance(body.get("plan_map"), dict):
+            plan_map = {k: int(v) for k, v in body["plan_map"].items()}
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -1822,8 +1827,8 @@ async def admin_import(request: web.Request) -> web.Response:
     )
     existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
 
-    # Group rows by user
-    users = _group_rows_by_user(rows, default_slot, existing_discord_ids)
+    # Group rows by user (use plan_map if provided for slot limits)
+    users = _group_rows_by_user(rows, default_slot, existing_discord_ids, plan_map=plan_map)
 
     added = 0
     updated = 0
