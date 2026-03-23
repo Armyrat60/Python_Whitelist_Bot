@@ -127,6 +127,8 @@ class WebServer:
 
         # Session setup: hash the secret to exactly 32 bytes for Fernet
         secret_bytes = hashlib.sha256(WEB_SESSION_SECRET.encode("utf-8")).digest()
+        # Cookies should be secure when behind a proxy (Railway/Cloudflare) OR with direct SSL
+        is_secure = bool(SSL_CERT_PATH) or WEB_BASE_URL.startswith("https")
         aiohttp_session.setup(
             self.app,
             EncryptedCookieStorage(
@@ -135,7 +137,7 @@ class WebServer:
                 max_age=86400,        # 24 hour session
                 httponly=True,         # Not accessible via JS
                 samesite="Lax",       # CSRF protection
-                secure=bool(SSL_CERT_PATH),  # HTTPS only if SSL configured
+                secure=is_secure,     # HTTPS via direct SSL or proxy
             ),
         )
 
