@@ -10,10 +10,16 @@ from bot.config import log
 
 
 async def index(request: web.Request) -> web.Response:
-    """If logged in redirect to /dashboard, else render login page."""
+    """If logged in redirect based on role, else render login page."""
     session = await aiohttp_session.get_session(request)
     if session.get("logged_in"):
-        raise web.HTTPFound("/dashboard")
+        # Admins go to dashboard, regular users go to their whitelist
+        active_guild_id = session.get("active_guild_id")
+        guilds = session.get("guilds", [])
+        active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+        if active_guild and active_guild.get("is_mod"):
+            raise web.HTTPFound("/dashboard")
+        raise web.HTTPFound("/my-whitelist")
     context = {"session": {}}
     return aiohttp_jinja2.render_template("login.html", request, context)
 
@@ -90,13 +96,18 @@ async def _get_whitelist_data(request, session):
 
 
 async def dashboard(request: web.Request) -> web.Response:
-    """Render the new unified dashboard with user summary and admin sections."""
+    """Admin-only dashboard with stats, health, files, and quick actions."""
     session = await aiohttp_session.get_session(request)
     if not session.get("logged_in"):
         raise web.HTTPFound("/login")
 
     active_guild_id = session.get("active_guild_id")
     guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    # Non-admins get redirected to My Whitelist
+    if not active_guild or not active_guild.get("is_mod"):
+        raise web.HTTPFound("/my-whitelist")
 
     if not active_guild_id or not guilds:
         context = {
@@ -105,8 +116,6 @@ async def dashboard(request: web.Request) -> web.Response:
             "no_guilds": True,
         }
         return aiohttp_jinja2.render_template("dashboard_new.html", request, context)
-
-    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
 
     # Fetch user whitelist data for summary cards
     whitelist_data, whitelist_names = await _get_whitelist_data(request, session)
