@@ -96,8 +96,19 @@ class _PostgresAdapter:
 
     async def connect(self):
         import asyncpg
+        import ssl as ssl_mod
         if DATABASE_URL:
-            self.pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=10)
+            # Railway PostgreSQL may require SSL
+            dsn = DATABASE_URL
+            # asyncpg needs ssl='require' for Railway/cloud providers
+            ssl_ctx = ssl_mod.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl_mod.CERT_NONE
+            try:
+                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=10, ssl=ssl_ctx)
+            except Exception:
+                # Retry without SSL (local dev)
+                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=10)
         else:
             self.pool = await asyncpg.create_pool(
                 host=DB_HOST,
