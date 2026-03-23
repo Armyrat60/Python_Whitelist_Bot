@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from datetime import timedelta, timezone
 
-from bot.config import SSL_CERT_PATH, WEB_HOST, WEB_PORT, WEB_BASE_PATH, WHITELIST_TYPES
+from bot.config import WHITELIST_TYPES
 from bot.utils import utcnow
 
 
@@ -25,8 +25,7 @@ class GeneralCog(commands.Cog):
             db_ok = False
         web_status = "Off"
         if self.bot.web and self.bot.web.runner:
-            proto = "https" if SSL_CERT_PATH else "http"
-            web_status = f"{proto}://{WEB_HOST}:{WEB_PORT}{WEB_BASE_PATH}/"
+            web_status = "Running"
         await interaction.response.send_message(
             f"Pong.\nLatency: `{round(self.bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{bool(self.bot.github.repo)}`\nWeb: `{web_status}`",
             ephemeral=True,

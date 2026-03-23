@@ -8,7 +8,6 @@ from discord.ext import commands, tasks
 
 from bot.config import (
     DISCORD_TOKEN, GUILD_ID, WHITELIST_FILENAME, WEB_ENABLED,
-    SSL_CERT_PATH, WEB_HOST, WEB_PORT, WEB_BASE_PATH,
     WHITELIST_TYPES, log,
 )
 from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identifier
@@ -124,8 +123,9 @@ class WhitelistBot(commands.Bot):
         embed.add_field(name="Output Mode", value=f"`{await self.db.get_setting('output_mode', 'combined')}`", inline=True)
         embed.add_field(name="Retention", value=f"`{await self.db.get_setting('retention_days', '90')}` days", inline=True)
         if self.web and self.web.runner:
-            proto = "https" if SSL_CERT_PATH else "http"
-            embed.add_field(name="Web Server", value=f"`{proto}://{WEB_HOST}:{WEB_PORT}{WEB_BASE_PATH}/`", inline=True)
+            combined_fn = await self.db.get_setting("combined_filename", WHITELIST_FILENAME)
+            wl_url = self.web.get_file_url(combined_fn)
+            embed.add_field(name="Whitelist URL", value=f"`{wl_url}`", inline=False)
         groups = await self.db.get_squad_groups()
         if groups:
             group_text = " | ".join(f"`{n}`: {p}" for n, p, _ in groups)

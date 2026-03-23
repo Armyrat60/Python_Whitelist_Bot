@@ -37,7 +37,8 @@ WEB_BASE_PATH = os.getenv("WEB_BASE_PATH", "/").rstrip("/")
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
 WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
-WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://staff.dmhwhitelist.com
+WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://wl.yourdomain.com
+WEB_FILE_SECRET = os.getenv("WEB_FILE_SECRET", "")  # Secret token for whitelist file URLs (auto-generated if empty)
 
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
