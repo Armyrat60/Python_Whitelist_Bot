@@ -489,6 +489,11 @@ POSTGRES_MIGRATIONS = [
     "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS guild_id BIGINT NOT NULL DEFAULT 0",
     "ALTER TABLE squad_groups DROP CONSTRAINT IF EXISTS squad_groups_pkey, ADD PRIMARY KEY (guild_id, group_name)",
 
+    # --- Make legacy whitelist_type columns nullable ---
+    "ALTER TABLE role_mappings ALTER COLUMN whitelist_type DROP NOT NULL",
+    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_type DROP NOT NULL",
+    "ALTER TABLE whitelist_identifiers ALTER COLUMN whitelist_type DROP NOT NULL",
+
     # --- New whitelists migration: add whitelist_id columns ---
     "ALTER TABLE role_mappings ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",

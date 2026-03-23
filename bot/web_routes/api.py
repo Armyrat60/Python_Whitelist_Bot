@@ -1076,9 +1076,9 @@ async def admin_add_role(request: web.Request) -> web.Response:
     now = utcnow()
     is_active_val = True if db.engine == "postgres" else 1
     await db.execute(
-        "INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (guild_id, wl_id, role_id, role_name, slot_limit, is_active_val, now),
+        "INSERT INTO role_mappings (guild_id, whitelist_type, whitelist_id, role_id, role_name, slot_limit, is_active, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (guild_id, wl_type, wl_id, role_id, role_name, slot_limit, is_active_val, now),
     )
 
     log.info("Guild %s: admin added role %s (%s) to type %s with %d slots",
