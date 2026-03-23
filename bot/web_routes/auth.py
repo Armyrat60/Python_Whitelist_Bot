@@ -12,6 +12,10 @@ from bot.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, WEB_BASE_URL, l
 DISCORD_API = "https://discord.com/api/v10"
 OAUTH2_SCOPES = "identify guilds guilds.members.read"
 
+# Discord permission bit flags
+PERM_ADMINISTRATOR = 0x8
+PERM_MANAGE_GUILD = 0x20
+
 
 async def login(request: web.Request) -> web.Response:
     """Redirect the user to Discord OAuth2 authorize URL."""
@@ -85,8 +89,10 @@ async def callback(request: web.Request) -> web.Response:
         bot_guild_ids = {g.id for g in bot.guilds}
         mutual_guild_ids = user_guild_ids & bot_guild_ids
 
-        # For each mutual guild, check if user has mod role and gather info
+        # For each mutual guild, check if user has admin access and gather info
         guilds_info = []
+        user_discord_id = int(user_data["id"])
+
         for gid in mutual_guild_ids:
             user_guild_data = user_guilds_by_id.get(gid, {})
             discord_guild = bot.get_guild(gid)
@@ -110,16 +116,62 @@ async def callback(request: web.Request) -> web.Response:
             except Exception:
                 log.warning("Could not fetch guild member data for user %s in guild %s", user_data.get("id"), gid)
 
-            # Check if user has mod role for this guild
-            mod_role_id_str = await bot.db.get_setting(gid, "mod_role_id", "0")
-            mod_role_id = int(mod_role_id_str) if mod_role_id_str else 0
-            is_mod = str(mod_role_id) in member_roles if mod_role_id else False
+            # ── Tiered admin detection ──────────────────────────────────
+            is_mod = False
+            mod_reason = None
+
+            # 1. Guild owner — always admin
+            if discord_guild and discord_guild.owner_id == user_discord_id:
+                is_mod = True
+                mod_reason = "owner"
+
+            # 2. Discord Administrator permission (from guild permissions bitfield)
+            if not is_mod:
+                guild_perms = int(user_guild_data.get("permissions", 0))
+                if guild_perms & PERM_ADMINISTRATOR:
+                    is_mod = True
+                    mod_reason = "administrator"
+
+            # 3. Discord Manage Guild permission
+            if not is_mod:
+                guild_perms = int(user_guild_data.get("permissions", 0))
+                if guild_perms & PERM_MANAGE_GUILD:
+                    is_mod = True
+                    mod_reason = "manage_guild"
+
+            # 4. Check member's roles against role permissions in Discord
+            if not is_mod and discord_guild:
+                member = discord_guild.get_member(user_discord_id)
+                if member:
+                    if member.guild_permissions.administrator:
+                        is_mod = True
+                        mod_reason = "role_administrator"
+                    elif member.guild_permissions.manage_guild:
+                        is_mod = True
+                        mod_reason = "role_manage_guild"
+
+            # 5. Custom mod roles from bot settings (supports multiple)
+            if not is_mod:
+                mod_role_id_str = await bot.db.get_setting(gid, "mod_role_id", "0")
+                if mod_role_id_str:
+                    # Support comma-separated multiple mod role IDs
+                    mod_role_ids = [r.strip() for r in mod_role_id_str.split(",") if r.strip()]
+                    for mr_id in mod_role_ids:
+                        if mr_id in member_roles:
+                            is_mod = True
+                            mod_reason = "custom_mod_role"
+                            break
+
+            if is_mod:
+                log.info("User %s granted admin for guild %s (%s) via: %s",
+                         user_data.get("username"), guild_name, gid, mod_reason)
 
             guilds_info.append({
                 "id": str(gid),
                 "name": guild_name,
                 "icon": guild_icon,
                 "is_mod": is_mod,
+                "mod_reason": mod_reason,
                 "roles": member_roles,
             })
 

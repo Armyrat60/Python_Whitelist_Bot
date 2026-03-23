@@ -108,10 +108,30 @@ class WhitelistBot(commands.Bot):
         await super().close()
 
     async def user_is_mod(self, guild_id: int, user: discord.abc.User) -> bool:
+        """Tiered admin check:
+        1. Guild owner
+        2. Administrator permission
+        3. Manage Guild permission
+        4. Custom mod role(s) from bot settings
+        """
         if not isinstance(user, discord.Member):
             return False
-        mod_role_id = int((await self.db.get_setting(guild_id, "mod_role_id", "")) or 0)
-        return bool(mod_role_id and any(r.id == mod_role_id for r in user.roles))
+        # Guild owner
+        if user.guild and user.guild.owner_id == user.id:
+            return True
+        # Discord Administrator permission
+        if user.guild_permissions.administrator:
+            return True
+        # Discord Manage Guild permission
+        if user.guild_permissions.manage_guild:
+            return True
+        # Custom mod roles (supports comma-separated IDs)
+        mod_role_id_str = await self.db.get_setting(guild_id, "mod_role_id", "")
+        if mod_role_id_str:
+            mod_role_ids = {int(r.strip()) for r in mod_role_id_str.split(",") if r.strip().isdigit()}
+            if any(r.id in mod_role_ids for r in user.roles):
+                return True
+        return False
 
     async def require_mod(self, interaction: discord.Interaction) -> bool:
         guild_id = interaction.guild.id
