@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+
+{% block title %}Whitelists - Squad Whitelister{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Whitelist Management</h1>
+    <p class="text-muted">Create, configure, and manage your whitelists. Each list generates a unique URL for your Squad server. Maximum 5 per community.</p>
+</div>
+
+<style>
+    .wl-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 24px; }
+    .wl-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        border-left: 4px solid var(--text-muted);
+        transition: border-color 150ms ease;
+    }
+    .wl-card.enabled { border-left-color: var(--success); }
+    .wl-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px 0;
+    }
+    .wl-card-title { font-size: 1.1rem; font-weight: 600; }
+    .wl-card-badges { display: flex; gap: 6px; align-items: center; }
+    .wl-badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .wl-badge-default { background: var(--accent); color: #fff; }
+    .wl-badge-enabled { background: var(--success); color: #fff; }
+    .wl-badge-disabled { background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-light); }
+    .wl-card-body { padding: 12px 20px 16px; }
+    .wl-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 8px 24px;
+        margin-bottom: 12px;
+    }
+    .wl-info-item label {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+    .wl-info-item span {
+        font-size: 0.88rem;
+        color: var(--text-primary);
+    }
+    .wl-url-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 10px 0;
+        background: var(--bg-primary);
+        border-radius: var(--radius-sm);
+        padding: 8px 12px;
+    }
+    .wl-url-row input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--accent);
+        font-family: monospace;
+        font-size: 0.85rem;
+        outline: none;
+    }
+    .wl-url-label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 10px;
+        margin-bottom: 4px;
+    }
+    .wl-card-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 0 20px 16px;
+    }
+    .wl-create-card {
+        background: var(--bg-secondary);
+        border: 2px dashed var(--border-light);
+        border-radius: var(--radius);
+        padding: 20px 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .wl-create-card input { flex: 1; }
+    .wl-stats { display: flex; gap: 16px; margin-bottom: 16px; }
+    .wl-stat {
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-sm);
+        padding: 6px 14px;
+        font-size: 0.85rem;
+    }
+    .wl-stat strong { color: var(--text-primary); }
+    .wl-stat span { color: var(--text-muted); }
+    .copy-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-light);
+        color: var(--text-secondary);
+        border-radius: var(--radius-sm);
+        padding: 6px 10px;
+        cursor: pointer;
+        transition: all 150ms;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.8rem;
+    }
+    .copy-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .copy-btn.copied { background: var(--success); color: #fff; border-color: var(--success); }
+</style>
+
+<!-- Stats bar -->
+<div class="wl-stats" id="wl-stats">
+    <div class="wl-stat"><strong id="stat-total">0</strong> <span>lists</span></div>
+    <div class="wl-stat"><strong id="stat-enabled">0</strong> <span>enabled</span></div>
+    <div class="wl-stat"><strong id="stat-limit">5</strong> <span>max</span></div>
+</div>
+
+<!-- Whitelist Cards -->
+<div class="wl-grid" id="wl-grid">
+    <p class="text-muted">Loading whitelists...</p>
+</div>
+
+<!-- Create new -->
+<div id="wl-create-section">
+    <div class="wl-create-card">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--text-muted)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <input type="text" class="form-input" id="wl-new-name" placeholder="Enter whitelist name (e.g. VIP, Subscribers, Staff)" maxlength="100">
+        <input type="text" class="form-input" id="wl-new-filename" placeholder="Output filename (optional)" maxlength="100" style="max-width:200px;">
+        <button class="btn btn-primary" onclick="createWhitelist()">Create Whitelist</button>
+    </div>
+</div>
+
+<script>
+let whitelistData = [];
+let whitelistUrls = {};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadWhitelists();
+});
+
+function loadWhitelists() {
+    Promise.all([
+        fetch('/api/admin/settings').then(r => r.json()),
+        fetch('/api/admin/whitelist-urls').then(r => r.json())
+    ]).then(function([settings, urls]) {
+        var tc = settings.type_configs || {};
+        whitelistData = Object.entries(tc).map(function([slug, cfg]) {
+            var urlInfo = (urls.urls || []).find(u => u.slug === slug) || {};
+            return { ...cfg, slug: slug, url: urlInfo.url || '' };
+        });
+
+        // Sort: default first, then enabled, then by name
+        whitelistData.sort(function(a, b) {
+            if (a.is_default && !b.is_default) return -1;
+            if (!a.is_default && b.is_default) return 1;
+            if (a.enabled && !b.enabled) return -1;
+            if (!a.enabled && b.enabled) return 1;
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        renderWhitelists();
+        updateStats();
+    }).catch(function() {
+        document.getElementById('wl-grid').innerHTML = '<p style="color:var(--red);">Failed to load whitelists.</p>';
+    });
+}
+
+function updateStats() {
+    document.getElementById('stat-total').textContent = whitelistData.length;
+    document.getElementById('stat-enabled').textContent = whitelistData.filter(w => w.enabled).length;
+    // Hide create if at limit
+    document.getElementById('wl-create-section').style.display = whitelistData.length >= 5 ? 'none' : 'block';
+}
+
+function renderWhitelists() {
+    var grid = document.getElementById('wl-grid');
+    grid.innerHTML = '';
+
+    if (whitelistData.length === 0) {
+        grid.innerHTML = '<p class="text-muted">No whitelists yet. Create one below to get started.</p>';
+        return;
+    }
+
+    whitelistData.forEach(function(wl) {
+        var card = document.createElement('div');
+        card.className = 'wl-card' + (wl.enabled ? ' enabled' : '');
+
+        var html = '';
+
+        // Header
+        html += '<div class="wl-card-header">';
+        html += '<span class="wl-card-title">' + escapeHtml(wl.name || wl.slug) + '</span>';
+        html += '<div class="wl-card-badges">';
+        if (wl.is_default) html += '<span class="wl-badge wl-badge-default">Default</span>';
+        html += '<span class="wl-badge ' + (wl.enabled ? 'wl-badge-enabled' : 'wl-badge-disabled') + '">' + (wl.enabled ? 'Enabled' : 'Disabled') + '</span>';
+        html += '</div></div>';
+
+        // Body
+        html += '<div class="wl-card-body">';
+
+        // Info grid
+        html += '<div class="wl-info-grid">';
+        html += '<div class="wl-info-item"><label>Slug</label><span>' + escapeHtml(wl.slug) + '</span></div>';
+        html += '<div class="wl-info-item"><label>Output File</label><span>' + escapeHtml(wl.output_filename || 'N/A') + '</span></div>';
+        html += '<div class="wl-info-item"><label>Squad Group</label><span>' + escapeHtml(wl.squad_group || 'Whitelist') + '</span></div>';
+        html += '<div class="wl-info-item"><label>Default Slots</label><span>' + (wl.default_slot_limit || 1) + '</span></div>';
+        html += '<div class="wl-info-item"><label>Stack Roles</label><span>' + (wl.stack_roles ? 'Yes' : 'No') + '</span></div>';
+        html += '</div>';
+
+        // URL
+        if (wl.url) {
+            html += '<div class="wl-url-label">Squad Server URL — add this to RemoteAdminListHosts.cfg</div>';
+            html += '<div class="wl-url-row">';
+            html += '<input type="text" value="' + escapeHtml(wl.url) + '" readonly id="url-' + wl.slug + '">';
+            html += '<button class="copy-btn" onclick="copyUrl(\'' + wl.slug + '\', this)">';
+            html += '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+            html += ' Copy</button>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        // Actions
+        html += '<div class="wl-card-actions">';
+        html += '<a href="/admin/setup#type-' + wl.slug + '" class="btn btn-outline btn-sm">Configure</a>';
+        if (!wl.is_default) {
+            html += '<button class="btn btn-danger btn-sm" onclick="deleteWhitelist(\'' + wl.slug + '\', \'' + escapeHtml(wl.name || wl.slug) + '\')">Delete</button>';
+        }
+        html += '</div>';
+
+        card.innerHTML = html;
+        grid.appendChild(card);
+    });
+}
+
+function copyUrl(slug, btn) {
+    var input = document.getElementById('url-' + slug);
+    if (!input) return;
+    navigator.clipboard.writeText(input.value).then(function() {
+        btn.classList.add('copied');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+        setTimeout(function() {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy';
+        }, 2000);
+    }).catch(function() {
+        input.select();
+        document.execCommand('copy');
+        showFlash('URL copied!', 'success');
+    });
+}
+
+function createWhitelist() {
+    var name = document.getElementById('wl-new-name').value.trim();
+    var filename = document.getElementById('wl-new-filename').value.trim();
+    if (!name) {
+        showFlash('Enter a name for the new whitelist.', 'error');
+        return;
+    }
+
+    var body = { name: name };
+    if (filename) body.output_filename = filename;
+
+    fetch('/api/admin/whitelists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to create whitelist.', 'error');
+            return;
+        }
+        showFlash('Whitelist "' + name + '" created successfully!', 'success');
+        document.getElementById('wl-new-name').value = '';
+        document.getElementById('wl-new-filename').value = '';
+        loadWhitelists();
+    })
+    .catch(function() { showFlash('Network error.', 'error'); });
+}
+
+function deleteWhitelist(slug, name) {
+    if (!confirm('Delete "' + name + '"?\n\nThis will permanently remove all users, role mappings, and identifiers in this whitelist. This cannot be undone.')) {
+        return;
+    }
+
+    fetch('/api/admin/whitelists/' + slug, { method: 'DELETE' })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(function(result) {
+        if (!result.ok) {
+            showFlash(result.data.error || 'Failed to delete.', 'error');
+            return;
+        }
+        showFlash('Whitelist "' + name + '" deleted.', 'success');
+        loadWhitelists();
+    })
+    .catch(function() { showFlash('Network error.', 'error'); });
+}
+
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
