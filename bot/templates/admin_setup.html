@@ -573,11 +573,26 @@ function initSearchableDropdowns(container) {
 
         function openList() {
             dd.classList.add('open');
-            // Position the fixed dropdown below the input
+            // Position the fixed dropdown relative to the input
             var rect = input.getBoundingClientRect();
-            list.style.top = (rect.bottom + 4) + 'px';
+            var maxHeight = 220;
+            var spaceBelow = window.innerHeight - rect.bottom - 8;
+            var spaceAbove = rect.top - 8;
+
             list.style.left = rect.left + 'px';
             list.style.width = rect.width + 'px';
+            list.style.maxHeight = Math.min(maxHeight, Math.max(spaceBelow, spaceAbove)) + 'px';
+
+            if (spaceBelow < 120 && spaceAbove > spaceBelow) {
+                // Open upward
+                list.style.top = 'auto';
+                list.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+            } else {
+                // Open downward
+                list.style.top = (rect.bottom + 4) + 'px';
+                list.style.bottom = 'auto';
+            }
+
             filterItems('');
             highlightIndex = -1;
         }
