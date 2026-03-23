@@ -575,7 +575,7 @@ class Database:
         for stmt in migrations:
             try:
                 await self.execute(stmt)
-            except Exception:
+            except Exception as exc:
                 # Column/constraint already exists or old constraint not found -- usually safe to ignore
                 log.debug("Migration skipped (likely already applied): %s", str(exc)[:80])
 
