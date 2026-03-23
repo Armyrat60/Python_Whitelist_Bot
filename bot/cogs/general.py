@@ -1,102 +1,72 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import timedelta, timezone
 
-from bot.config import WHITELIST_TYPES
-from bot.utils import utcnow
-
-
-async def setup_autocomplete(interaction: discord.Interaction, current: str):
-    return [app_commands.Choice(name=item, value=item) for item in WHITELIST_TYPES if current.lower() in item][:25]
+from bot.config import WEB_BASE_URL
 
 
 class GeneralCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="ping", description="Check bot latency and health")
-    async def ping(self, interaction: discord.Interaction):
-        db_ok = False
-        try:
-            await self.bot.db.fetchone("SELECT 1")
-            db_ok = True
-        except Exception:
-            db_ok = False
-        web_status = "Off"
-        if self.bot.web and self.bot.web.runner:
-            web_status = "Running"
-        await interaction.response.send_message(
-            f"Pong.\nLatency: `{round(self.bot.latency*1000)}ms`\nDB: `{db_ok}`\nGitHub: `{'On' if self.bot.github and self.bot.github.repo else 'Off'}`\nWeb: `{web_status}`",
-            ephemeral=True,
-        )
-
     @app_commands.command(name="help", description="Show help")
     async def help_cmd(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="Whitelist Bot Help", color=discord.Color.blurple())
+        dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"
+        embed = discord.Embed(title="Squad Whitelister", color=discord.Color.blurple())
         embed.add_field(
-            name="User Commands",
+            name="Discord Commands",
             value=(
-                "`/whitelist` \u2014 Submit or update your whitelist IDs\n"
-                "`/my_whitelist` \u2014 View your saved IDs and slots\n"
-                "`/status` \u2014 View bot configuration\n"
-                "`/ping` \u2014 Check bot health"
+                "`/whitelist` \u2014 Submit your Steam/EOS IDs\n"
+                "`/my_whitelist` \u2014 View your current whitelist entries\n"
+                "`/status` \u2014 Check bot status"
             ),
             inline=False,
         )
         embed.add_field(
-            name="Admin Commands",
+            name="Web Dashboard",
             value=(
-                "`/setup` \u2014 Interactive setup wizard (channels, roles, groups, settings)\n"
-                "`/setup_mod_role` \u2014 Set the moderator role (first-time bootstrap)\n"
-                "`/whitelist_panel` \u2014 Post or refresh a whitelist panel\n"
-                "`/resync_whitelist` \u2014 Force GitHub + web sync"
+                f"**{dashboard_url}**\n"
+                "Setup, user management, search, audit log,\n"
+                "import/export, statistics, and more."
             ),
             inline=False,
         )
-        embed.add_field(
-            name="Moderator Commands",
-            value=(
-                "`/mod_view` \u2014 View a user's whitelist\n"
-                "`/mod_set` \u2014 Replace a user's IDs\n"
-                "`/mod_remove` \u2014 Remove user from active output\n"
-                "`/mod_override` \u2014 Set or clear a slot override\n"
-                "`/search` \u2014 Find a Steam/EOS ID across all whitelists\n"
-                "`/audit` \u2014 View recent audit log entries\n"
-                "`/stats` \u2014 Whitelist statistics overview\n"
-                "`/export` \u2014 Export whitelist data as CSV\n"
-                "`/import_csv` \u2014 Bulk import from CSV file\n"
-                "`/report_now` \u2014 Generate an ad-hoc report\n"
-                "`/reload` \u2014 Hot-reload bot modules"
-            ),
-            inline=False,
-        )
-        embed.set_footer(text="Steam64 and EOSID supported. Output published to GitHub + web server.")
+        embed.set_footer(text="Steam64 and EOSID supported.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="status", description="Show bot status")
     async def status(self, interaction: discord.Interaction):
         embed = await self.bot.build_status_embed(interaction.guild)
+        dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"
+        embed.add_field(
+            name="Web Dashboard",
+            value=f"[Open Dashboard]({dashboard_url})",
+            inline=False,
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="resync_whitelist", description="Force GitHub whitelist sync")
-    async def resync_whitelist(self, interaction: discord.Interaction):
+    @app_commands.command(name="reload", description="Hot-reload a bot module")
+    @app_commands.describe(module="Module name to reload (e.g. general, whitelist, notifications, all)")
+    async def reload_cmd(self, interaction: discord.Interaction, module: str):
         if not await self.bot.require_mod(interaction):
             return
-        guild_id = interaction.guild.id
-        changed = await self.bot.sync_github_outputs(guild_id=guild_id)
-        await self.bot.db.audit(guild_id, "manual_resync", interaction.user.id, None, f"changed_files={changed}")
-        await interaction.response.send_message(f"GitHub sync complete. Changed files: {changed}", ephemeral=True)
-
-    @app_commands.command(name="report_now", description="Send a report immediately")
-    @app_commands.autocomplete(whitelist_type=setup_autocomplete)
-    async def report_now(self, interaction: discord.Interaction, whitelist_type: str):
-        if not await self.bot.require_mod(interaction):
-            return
-        guild_id = interaction.guild.id
-        active = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'", (guild_id, whitelist_type,))
-        ids = await self.bot.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s", (guild_id, whitelist_type,))
-        await interaction.response.send_message(f"{whitelist_type.title()} report\nActive users: {active[0]}\nIdentifiers: {ids[0]}", ephemeral=True)
+        if module == "all":
+            reloaded = []
+            for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications"):
+                try:
+                    await self.bot.reload_extension(ext)
+                    reloaded.append(ext.split(".")[-1])
+                except Exception as e:
+                    await interaction.followup.send(f"Failed to reload {ext}: {e}", ephemeral=True)
+                    return
+            await interaction.response.send_message(f"Reloaded: {', '.join(reloaded)}", ephemeral=True)
+        else:
+            ext = f"bot.cogs.{module}"
+            try:
+                await self.bot.reload_extension(ext)
+                await interaction.response.send_message(f"Reloaded `{module}`.", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"Failed: {e}", ephemeral=True)
 
 
 async def setup(bot):

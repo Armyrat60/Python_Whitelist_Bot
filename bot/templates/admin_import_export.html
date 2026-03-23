@@ -1,0 +1,932 @@
+{% extends "base.html" %}
+
+{% block title %}Import / Export - Squad Whitelister{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Import / Export</h1>
+    <p class="text-muted">Bulk import whitelist entries or export data in various formats.</p>
+</div>
+
+<style>
+    /* ── Section Tabs ────────────────────────────────────────────────────── */
+    .ie-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 24px;
+        border-bottom: 2px solid var(--border);
+    }
+    .ie-tab {
+        padding: 10px 24px;
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: all var(--transition);
+    }
+    .ie-tab:hover {
+        color: var(--text-primary);
+    }
+    .ie-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+    }
+    .ie-section {
+        display: none;
+    }
+    .ie-section.active {
+        display: block;
+    }
+
+    /* ── Drop Zone ───────────────────────────────────────────────────────── */
+    .drop-zone {
+        border: 2px dashed var(--border-light);
+        border-radius: var(--radius);
+        padding: 40px 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all var(--transition);
+        background: var(--bg-primary);
+        margin-bottom: 16px;
+    }
+    .drop-zone:hover,
+    .drop-zone.dragover {
+        border-color: var(--accent);
+        background: rgba(88, 101, 242, 0.05);
+    }
+    .drop-zone-icon {
+        color: var(--text-muted);
+        margin-bottom: 10px;
+    }
+    .drop-zone-text {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-bottom: 4px;
+    }
+    .drop-zone-hint {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+    }
+    .drop-zone-file {
+        display: none;
+    }
+    .drop-zone-selected {
+        margin-top: 10px;
+        font-size: 0.85rem;
+        color: var(--accent);
+        font-weight: 600;
+    }
+
+    /* ── Or Divider ──────────────────────────────────────────────────────── */
+    .or-divider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 16px 0;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .or-divider::before,
+    .or-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+    }
+
+    /* ── Import Options Row ──────────────────────────────────────────────── */
+    .import-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    @media (max-width: 768px) {
+        .import-options {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* ── Preview Table ───────────────────────────────────────────────────── */
+    .preview-container {
+        display: none;
+        margin-top: 20px;
+    }
+    .preview-container.visible {
+        display: block;
+    }
+    .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+    .preview-header h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .preview-summary {
+        display: flex;
+        gap: 16px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    .preview-summary .count {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    /* ── Progress Bar ────────────────────────────────────────────────────── */
+    .progress-bar-container {
+        display: none;
+        margin-top: 16px;
+    }
+    .progress-bar-container.visible {
+        display: block;
+    }
+    .progress-bar-bg {
+        width: 100%;
+        height: 8px;
+        background: var(--bg-primary);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .progress-bar-fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 4px;
+        transition: width 0.3s ease;
+        width: 0%;
+    }
+    .progress-text {
+        margin-top: 6px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    /* ── Import Result ───────────────────────────────────────────────────── */
+    .import-result {
+        display: none;
+        margin-top: 16px;
+        padding: 16px;
+        background: var(--bg-primary);
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+    }
+    .import-result.visible {
+        display: block;
+    }
+    .import-result h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
+    .result-stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+    @media (max-width: 768px) {
+        .result-stats {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    .result-stat {
+        text-align: center;
+        padding: 10px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-secondary);
+    }
+    .result-stat-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+    .result-stat-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+    .result-stat-value.added { color: var(--green); }
+    .result-stat-value.updated { color: var(--accent); }
+    .result-stat-value.skipped { color: var(--yellow); }
+    .result-stat-value.errors { color: var(--red); }
+
+    /* ── Export Section ───────────────────────────────────────────────────── */
+    .export-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    @media (max-width: 768px) {
+        .export-options {
+            grid-template-columns: 1fr;
+        }
+    }
+    .column-checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        margin-top: 6px;
+    }
+    .column-checkboxes label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        text-transform: none;
+        letter-spacing: normal;
+        font-weight: 400;
+    }
+    .column-checkboxes input[type="checkbox"] {
+        accent-color: var(--accent);
+        width: 15px;
+        height: 15px;
+    }
+
+    /* ── Export Preview ───────────────────────────────────────────────────── */
+    .export-preview {
+        display: none;
+        margin-top: 16px;
+    }
+    .export-preview.visible {
+        display: block;
+    }
+    .export-preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .export-preview-header h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .export-preview-content {
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        max-height: 300px;
+        overflow: auto;
+        white-space: pre;
+        line-height: 1.6;
+    }
+
+    /* ── Buttons row ─────────────────────────────────────────────────────── */
+    .btn-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+    }
+
+    /* ── Loading spinner ─────────────────────────────────────────────────── */
+    .loading-spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--border-light);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+<!-- Section Tabs -->
+<div class="ie-tabs">
+    <button class="ie-tab active" data-tab="import" onclick="switchTab('import')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:4px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Import
+    </button>
+    <button class="ie-tab" data-tab="export" onclick="switchTab('export')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:4px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Export
+    </button>
+</div>
+
+<!-- ================================================================== -->
+<!-- IMPORT SECTION                                                      -->
+<!-- ================================================================== -->
+<div class="ie-section active" id="section-import">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Import Whitelist Entries</h3>
+        </div>
+        <div class="card-body">
+
+            <!-- File Upload Drop Zone -->
+            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <div class="drop-zone-icon">
+                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <div class="drop-zone-text">Drag &amp; drop a file here, or click to browse</div>
+                <div class="drop-zone-hint">Supports .csv, .cfg, .txt files</div>
+                <div class="drop-zone-selected" id="selected-file-name"></div>
+                <input type="file" class="drop-zone-file" id="file-input" accept=".csv,.cfg,.txt,.json">
+            </div>
+
+            <div class="or-divider">or paste data below</div>
+
+            <!-- Paste Textarea -->
+            <div class="form-group">
+                <label>Paste CSV / Text Data</label>
+                <textarea class="form-input" id="import-paste" rows="6" placeholder="Paste CSV rows or Squad RemoteAdminList content here..."></textarea>
+            </div>
+
+            <!-- Import Options -->
+            <div class="import-options">
+                <div class="form-group">
+                    <label>Target Whitelist Type</label>
+                    <select class="form-input form-select" id="import-type">
+                        <option value="">Loading types...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select class="form-input form-select" id="import-format">
+                        <option value="csv">CSV</option>
+                        <option value="squad_cfg">Squad RemoteAdminList (.cfg)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Duplicate Handling</label>
+                    <select class="form-input form-select" id="import-duplicates">
+                        <option value="skip">Skip Duplicates</option>
+                        <option value="overwrite">Overwrite</option>
+                        <option value="merge">Merge</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="btn-row">
+                <button class="btn btn-primary" id="btn-preview-import" onclick="previewImport()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Preview Import
+                </button>
+                <button class="btn btn-success" id="btn-confirm-import" onclick="confirmImport()" disabled>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                    Import
+                </button>
+            </div>
+
+            <!-- Preview Table -->
+            <div class="preview-container" id="import-preview">
+                <div class="preview-header">
+                    <h4>Import Preview</h4>
+                    <div class="preview-summary" id="preview-summary"></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table" id="preview-table">
+                        <thead>
+                            <tr id="preview-thead-row"></tr>
+                        </thead>
+                        <tbody id="preview-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-bar-container" id="import-progress">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="import-progress-fill"></div>
+                </div>
+                <div class="progress-text" id="import-progress-text">Importing...</div>
+            </div>
+
+            <!-- Import Result -->
+            <div class="import-result" id="import-result">
+                <h4>Import Complete</h4>
+                <div class="result-stats">
+                    <div class="result-stat">
+                        <div class="result-stat-value added" id="result-added">0</div>
+                        <div class="result-stat-label">Added</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="result-stat-value updated" id="result-updated">0</div>
+                        <div class="result-stat-label">Updated</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="result-stat-value skipped" id="result-skipped">0</div>
+                        <div class="result-stat-label">Skipped</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="result-stat-value errors" id="result-errors">0</div>
+                        <div class="result-stat-label">Errors</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- EXPORT SECTION                                                      -->
+<!-- ================================================================== -->
+<div class="ie-section" id="section-export">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Export Whitelist Data</h3>
+        </div>
+        <div class="card-body">
+
+            <!-- Export Options -->
+            <div class="export-options">
+                <div class="form-group">
+                    <label>Whitelist Type</label>
+                    <select class="form-input form-select" id="export-type">
+                        <option value="_all">All Combined</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Format</label>
+                    <select class="form-input form-select" id="export-format">
+                        <option value="csv">CSV</option>
+                        <option value="squad_cfg">Squad RemoteAdminList (.cfg)</option>
+                        <option value="json">JSON</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="export-options">
+                <div class="form-group">
+                    <label>Filter</label>
+                    <select class="form-input form-select" id="export-filter">
+                        <option value="active">Active Only</option>
+                        <option value="all">All</option>
+                        <option value="expired">Expired Only</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Columns to Include</label>
+                    <div class="column-checkboxes" id="export-columns">
+                        <label><input type="checkbox" value="discord_name" checked> Discord Name</label>
+                        <label><input type="checkbox" value="discord_id" checked> Discord ID</label>
+                        <label><input type="checkbox" value="steam_ids" checked> Steam64 IDs</label>
+                        <label><input type="checkbox" value="eos_ids" checked> EOS IDs</label>
+                        <label><input type="checkbox" value="status" checked> Status</label>
+                        <label><input type="checkbox" value="notes"> Notes</label>
+                        <label><input type="checkbox" value="expires"> Expires</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="btn-row">
+                <button class="btn btn-primary" id="btn-export" onclick="doExport()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Export &amp; Download
+                </button>
+                <button class="btn btn-outline" id="btn-export-copy" onclick="doExportCopy()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    Copy to Clipboard
+                </button>
+                <button class="btn btn-outline" id="btn-export-preview" onclick="doExportPreview()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Preview
+                </button>
+            </div>
+
+            <!-- Export Preview -->
+            <div class="export-preview" id="export-preview">
+                <div class="export-preview-header">
+                    <h4>Preview (first 10 rows)</h4>
+                    <span class="text-muted text-sm" id="export-preview-count"></span>
+                </div>
+                <div class="export-preview-content" id="export-preview-content"></div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadWhitelistTypes();
+    setupDropZone();
+});
+
+/* ── Tab Switching ────────────────────────────────────────────────────────── */
+
+function switchTab(tab) {
+    document.querySelectorAll('.ie-tab').forEach(function(el) {
+        el.classList.toggle('active', el.getAttribute('data-tab') === tab);
+    });
+    document.querySelectorAll('.ie-section').forEach(function(el) {
+        el.classList.toggle('active', el.id === 'section-' + tab);
+    });
+}
+
+/* ── Load Whitelist Types ─────────────────────────────────────────────────── */
+
+function loadWhitelistTypes() {
+    fetch('/api/admin/settings')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var settings = data.settings || data;
+            var types = settings.whitelist_types || settings.types || [];
+
+            // Populate import dropdown
+            var importSel = document.getElementById('import-type');
+            importSel.innerHTML = '';
+            if (types.length === 0) {
+                importSel.innerHTML = '<option value="">No types configured</option>';
+            } else {
+                types.forEach(function(t) {
+                    var name = t.name || t.type_name || t;
+                    var opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    importSel.appendChild(opt);
+                });
+            }
+
+            // Populate export dropdown
+            var exportSel = document.getElementById('export-type');
+            exportSel.innerHTML = '<option value="_all">All Combined</option>';
+            types.forEach(function(t) {
+                var name = t.name || t.type_name || t;
+                var opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                exportSel.appendChild(opt);
+            });
+        })
+        .catch(function() {
+            document.getElementById('import-type').innerHTML = '<option value="">Failed to load</option>';
+        });
+}
+
+/* ── Drop Zone Setup ──────────────────────────────────────────────────────── */
+
+var selectedFile = null;
+
+function setupDropZone() {
+    var zone = document.getElementById('drop-zone');
+    var input = document.getElementById('file-input');
+
+    zone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', function() {
+        zone.classList.remove('dragover');
+    });
+    zone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            selectedFile = e.dataTransfer.files[0];
+            showSelectedFile();
+        }
+    });
+    input.addEventListener('change', function() {
+        if (input.files.length > 0) {
+            selectedFile = input.files[0];
+            showSelectedFile();
+        }
+    });
+}
+
+function showSelectedFile() {
+    var el = document.getElementById('selected-file-name');
+    if (selectedFile) {
+        el.textContent = 'Selected: ' + selectedFile.name + ' (' + formatBytes(selectedFile.size) + ')';
+        el.style.display = 'block';
+    } else {
+        el.style.display = 'none';
+    }
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    var k = 1024;
+    var sizes = ['B', 'KB', 'MB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+/* ── Import Preview ───────────────────────────────────────────────────────── */
+
+var previewData = null;
+
+function previewImport() {
+    var type = document.getElementById('import-type').value;
+    var format = document.getElementById('import-format').value;
+    var duplicates = document.getElementById('import-duplicates').value;
+    var pasteText = document.getElementById('import-paste').value.trim();
+
+    if (!type) {
+        showFlash('Please select a target whitelist type.', 'error');
+        return;
+    }
+    if (!selectedFile && !pasteText) {
+        showFlash('Please upload a file or paste data to import.', 'error');
+        return;
+    }
+
+    var btn = document.getElementById('btn-preview-import');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Previewing...';
+
+    var formData = new FormData();
+    formData.append('type', type);
+    formData.append('format', format);
+    formData.append('duplicate_handling', duplicates);
+
+    if (selectedFile) {
+        formData.append('file', selectedFile);
+    } else {
+        formData.append('paste_data', pasteText);
+    }
+
+    fetch('/api/admin/import/preview', { method: 'POST', body: formData })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(result) {
+            if (!result.ok) {
+                showFlash(result.data.error || 'Failed to preview import.', 'error');
+                return;
+            }
+
+            previewData = result.data;
+            renderPreviewTable(result.data);
+
+            document.getElementById('import-preview').classList.add('visible');
+            document.getElementById('btn-confirm-import').disabled = false;
+        })
+        .catch(function() {
+            showFlash('Network error previewing import.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview Import';
+        });
+}
+
+function renderPreviewTable(data) {
+    var rows = data.rows || data.entries || [];
+    var columns = data.columns || ['steam_id', 'eos_id', 'discord_name', 'status'];
+    var summary = data.summary || {};
+
+    // Summary
+    var summaryEl = document.getElementById('preview-summary');
+    var parts = [];
+    if (summary.total != null) parts.push('<span class="count">' + summary.total + '</span> total');
+    if (summary.new != null) parts.push('<span class="count">' + summary.new + '</span> new');
+    if (summary.duplicates != null) parts.push('<span class="count">' + summary.duplicates + '</span> duplicates');
+    if (summary.errors != null) parts.push('<span class="count">' + summary.errors + '</span> errors');
+    summaryEl.innerHTML = parts.join(' &middot; ');
+
+    // Header
+    var thead = document.getElementById('preview-thead-row');
+    thead.innerHTML = '';
+    columns.forEach(function(col) {
+        var th = document.createElement('th');
+        th.textContent = col.replace(/_/g, ' ');
+        thead.appendChild(th);
+    });
+
+    // Body (max 20 rows in preview)
+    var tbody = document.getElementById('preview-tbody');
+    tbody.innerHTML = '';
+    var displayRows = rows.slice(0, 20);
+    displayRows.forEach(function(row) {
+        var tr = document.createElement('tr');
+        columns.forEach(function(col) {
+            var td = document.createElement('td');
+            var val = row[col] != null ? row[col] : '';
+            td.textContent = typeof val === 'object' ? JSON.stringify(val) : val;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+
+    if (rows.length > 20) {
+        var tr = document.createElement('tr');
+        var td = document.createElement('td');
+        td.setAttribute('colspan', columns.length);
+        td.className = 'text-muted text-center';
+        td.textContent = '... and ' + (rows.length - 20) + ' more rows';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+}
+
+/* ── Confirm Import ───────────────────────────────────────────────────────── */
+
+function confirmImport() {
+    var type = document.getElementById('import-type').value;
+    var format = document.getElementById('import-format').value;
+    var duplicates = document.getElementById('import-duplicates').value;
+    var pasteText = document.getElementById('import-paste').value.trim();
+
+    var btn = document.getElementById('btn-confirm-import');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Importing...';
+
+    // Show progress bar
+    var progressContainer = document.getElementById('import-progress');
+    progressContainer.classList.add('visible');
+    var progressFill = document.getElementById('import-progress-fill');
+    var progressText = document.getElementById('import-progress-text');
+    progressFill.style.width = '10%';
+    progressText.textContent = 'Starting import...';
+
+    var formData = new FormData();
+    formData.append('type', type);
+    formData.append('format', format);
+    formData.append('duplicate_handling', duplicates);
+
+    if (selectedFile) {
+        formData.append('file', selectedFile);
+    } else {
+        formData.append('paste_data', pasteText);
+    }
+
+    // Simulate progress
+    var progressInterval = setInterval(function() {
+        var current = parseFloat(progressFill.style.width) || 10;
+        if (current < 85) {
+            progressFill.style.width = (current + Math.random() * 15) + '%';
+            progressText.textContent = 'Importing entries...';
+        }
+    }, 500);
+
+    fetch('/api/admin/import', { method: 'POST', body: formData })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(result) {
+            clearInterval(progressInterval);
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Complete!';
+
+            if (!result.ok) {
+                showFlash(result.data.error || 'Import failed.', 'error');
+                return;
+            }
+
+            var res = result.data;
+            // Show result summary
+            document.getElementById('result-added').textContent = res.added || 0;
+            document.getElementById('result-updated').textContent = res.updated || 0;
+            document.getElementById('result-skipped').textContent = res.skipped || 0;
+            document.getElementById('result-errors').textContent = res.errors || 0;
+            document.getElementById('import-result').classList.add('visible');
+
+            showFlash('Import completed successfully.', 'success');
+        })
+        .catch(function() {
+            clearInterval(progressInterval);
+            showFlash('Network error during import.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Import';
+
+            setTimeout(function() {
+                progressContainer.classList.remove('visible');
+            }, 2000);
+        });
+}
+
+/* ── Export ────────────────────────────────────────────────────────────────── */
+
+function getExportParams() {
+    var type = document.getElementById('export-type').value;
+    var format = document.getElementById('export-format').value;
+    var filter = document.getElementById('export-filter').value;
+
+    var columns = [];
+    document.querySelectorAll('#export-columns input[type="checkbox"]:checked').forEach(function(cb) {
+        columns.push(cb.value);
+    });
+
+    return {
+        type: type,
+        format: format,
+        filter: filter,
+        columns: columns.join(',')
+    };
+}
+
+function buildExportUrl(params) {
+    var qs = new URLSearchParams(params);
+    return '/api/admin/export?' + qs.toString();
+}
+
+function doExport() {
+    var params = getExportParams();
+    var btn = document.getElementById('btn-export');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Exporting...';
+
+    // Trigger file download via hidden link
+    var url = buildExportUrl(params);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    showFlash('Export download started.', 'success');
+
+    setTimeout(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export &amp; Download';
+    }, 1500);
+}
+
+function doExportCopy() {
+    var params = getExportParams();
+    var btn = document.getElementById('btn-export-copy');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Copying...';
+
+    var url = buildExportUrl(params);
+    fetch(url)
+        .then(function(r) {
+            if (!r.ok) throw new Error('Export failed');
+            return r.text();
+        })
+        .then(function(text) {
+            if (navigator.clipboard) {
+                return navigator.clipboard.writeText(text);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        })
+        .then(function() {
+            showFlash('Export data copied to clipboard.', 'success');
+        })
+        .catch(function() {
+            showFlash('Failed to copy export data.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy to Clipboard';
+        });
+}
+
+function doExportPreview() {
+    var params = getExportParams();
+    params.preview = '10';
+    var btn = document.getElementById('btn-export-preview');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Loading...';
+
+    var url = buildExportUrl(params);
+    fetch(url)
+        .then(function(r) {
+            if (!r.ok) throw new Error('Export preview failed');
+            return r.text();
+        })
+        .then(function(text) {
+            var previewEl = document.getElementById('export-preview');
+            var contentEl = document.getElementById('export-preview-content');
+            var countEl = document.getElementById('export-preview-count');
+
+            contentEl.textContent = text;
+
+            var lines = text.split('\n').filter(function(l) { return l.trim(); });
+            countEl.textContent = lines.length + ' rows shown';
+
+            previewEl.classList.add('visible');
+        })
+        .catch(function() {
+            showFlash('Failed to load export preview.', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview';
+        });
+}
+</script>
+{% endblock %}

@@ -46,8 +46,8 @@ class WhitelistBot(commands.Bot):
         if self.web:
             await self.web.start()
 
-        # Load cog extensions
-        for ext in ("bot.cogs.general", "bot.cogs.setup", "bot.cogs.whitelist", "bot.cogs.modtools", "bot.cogs.admin", "bot.cogs.notifications", "bot.cogs.search", "bot.cogs.audit", "bot.cogs.importexport"):
+        # Load cog extensions (setup, modtools, search, audit, importexport, admin moved to web dashboard)
+        for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications"):
             await self.load_extension(ext)
 
         # Sync commands globally

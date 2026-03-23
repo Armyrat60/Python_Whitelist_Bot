@@ -170,6 +170,29 @@ async def admin_setup_page(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template("admin_setup.html", request, context)
 
 
+async def admin_import_export_page(request: web.Request) -> web.Response:
+    """Render the admin import/export page."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        raise web.HTTPFound("/login")
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    if not active_guild or not active_guild.get("is_mod"):
+        raise web.HTTPForbidden(text="Access denied.")
+
+    context = {
+        "session": dict(session),
+        "whitelist_types": WHITELIST_TYPES,
+        "guilds": guilds,
+        "active_guild": active_guild,
+        "active_guild_id": active_guild_id,
+    }
+    return aiohttp_jinja2.render_template("admin_import_export.html", request, context)
+
+
 def setup_routes(app: web.Application):
     app.router.add_get("/", index)
     app.router.add_get("/dashboard", dashboard)
@@ -177,3 +200,4 @@ def setup_routes(app: web.Application):
     app.router.add_get("/admin/setup", admin_setup_page)
     app.router.add_get("/admin/users", admin_users_page)
     app.router.add_get("/admin/audit", admin_audit_page)
+    app.router.add_get("/admin/import-export", admin_import_export_page)
