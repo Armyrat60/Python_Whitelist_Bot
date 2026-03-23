@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}Setup - Squad Whitelister{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Community Setup</h1>
+    <p class="text-muted">Configure whitelist settings for this server.</p>
+</div>
+
+<style>
+    /* ── Toggle Switch ──────────────────────────────────────────────────── */
+    .toggle {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 22px;
+        flex-shrink: 0;
+    }
+    .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: var(--border-light);
+        border-radius: 22px;
+        transition: background var(--transition);
+    }
+    .toggle-slider::before {
+        content: "";
+        position: absolute;
+        height: 16px;
+        width: 16px;
+        left: 3px;
+        bottom: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform var(--transition);
+    }
+    .toggle input:checked + .toggle-slider {
+        background: var(--accent);
+    }
+    .toggle input:checked + .toggle-slider::before {
+        transform: translateX(18px);
+    }
+
+    /* ── Form Row (label + control side by side) ────────────────────────── */
+    .form-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+    .form-row label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        margin-bottom: 0;
+    }
+    .form-row .form-input {
+        max-width: 240px;
+    }
+
+    /* ── Section spacing ────────────────────────────────────────────────── */
+    .setup-section {
+        margin-bottom: 32px;
+    }
+    .setup-section-header {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 14px;
+        color: var(--text-primary);
+    }
+
+    /* ── Type cards stacked full-width ──────────────────────────────────── */
+    .type-card {
+        margin-bottom: 16px;
+    }
+    .type-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+    }
+    .type-card-header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .type-card-header-left h3 {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    /* ── Role mapping table ─────────────────────────────────────────────── */
+    .role-section {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+    }
+    .role-section h4 {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 10px;
+    }
+    .add-role-row {
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+        margin-top: 10px;
+    }
+    .add-role-row .form-input {
+        max-width: 200px;
+    }
+    .add-role-row .slot-input {
+        max-width: 80px;
+    }
+</style>
+
+<!-- ================================================================== -->
+<!-- Global Settings                                                     -->
+<!-- ================================================================== -->
+<div class="setup-section">
+    <h2 class="setup-section-header">Global Settings</h2>
+    <div class="card">
+        <div class="card-body" id="global-settings-form">
+            <div class="form-row">
+                <label for="output-mode">Output Mode</label>
+                <select id="output-mode" class="form-input form-select">
+                    <option value="combined">Combined</option>
+                    <option value="separate">Separate</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label for="combined-filename">Combined Filename</label>
+                <input type="text" id="combined-filename" class="form-input" placeholder="whitelist.txt">
+            </div>
+            <div class="form-row">
+                <label for="retention-period">Retention Period</label>
+                <select id="retention-period" class="form-input form-select">
+                    <option value="30">30 days</option>
+                    <option value="60">60 days</option>
+                    <option value="90">90 days</option>
+                    <option value="180">180 days</option>
+                    <option value="365">365 days</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label for="report-frequency">Report Frequency</label>
+                <select id="report-frequency" class="form-input form-select">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="disabled">Disabled</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Global Settings</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- Whitelist Types                                                      -->
+<!-- ================================================================== -->
+<div class="setup-section">
+    <h2 class="setup-section-header">Whitelist Types</h2>
+    <div id="type-cards-container">
+        <p class="text-muted">Loading...</p>
+    </div>
+</div>
+
+<script>
+let channelOptions = [];
+let roleOptions = [];
+const TYPES = ['subscription', 'clan', 'staff'];
+
+document.addEventListener('DOMContentLoaded', function() {
+    Promise.all([
+        loadChannels(),
+        loadRoles(),
+        loadSettings()
+    ]).then(() => {
+        renderTypeCards();
+    }).catch(() => {
+        showFlash('Failed to load setup data.', 'error');
+    });
+});
+
+/* ── Data loading ─────────────────────────────────────────────────────── */
+let settingsData = {};
+
+function loadSettings() {
+    return fetch('/api/admin/settings')
+        .then(r => r.json())
+        .then(data => { settingsData = data; populateGlobalSettings(data); });
+}
+
+function loadChannels() {
+    return fetch('/api/admin/channels')
+        .then(r => r.json())
+        .then(data => { channelOptions = data.channels || data || []; });
+}
+
+function loadRoles() {
+    return fetch('/api/admin/roles')
+        .then(r => r.json())
+        .then(data => { roleOptions = data.roles || data || []; });
+}
+
+/* ── Global settings ──────────────────────────────────────────────────── */
+function populateGlobalSettings(data) {
+    if (data.output_mode) document.getElementById('output-mode').value = data.output_mode;
+    if (data.combined_filename) document.getElementById('combined-filename').value = data.combined_filename;
+    if (data.retention_period) document.getElementById('retention-period').value = String(data.retention_period);
+    if (data.report_frequency) document.getElementById('report-frequency').value = data.report_frequency;
+}
+
+function saveGlobalSettings() {
+    var payload = {
+        output_mode: document.getElementById('output-mode').value,
+        combined_filename: document.getElementById('combined-filename').value,
+        retention_period: parseInt(document.getElementById('retention-period').value, 10),
+        report_frequency: document.getElementById('report-frequency').value
+    };
+    fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Failed');
+        return r.json();
+    })
+    .then(function() { showFlash('Global settings saved.', 'success'); })
+    .catch(function() { showFlash('Failed to save global settings.', 'error'); });
+}
+
+/* ── Channel / Role dropdown builders ─────────────────────────────────── */
+function buildChannelSelect(id, selectedId) {
+    var html = '<select id="' + escapeHtml(id) + '" class="form-input form-select">';
+    html += '<option value="">-- Select Channel --</option>';
+    channelOptions.forEach(function(ch) {
+        var val = ch.id || ch;
+        var name = ch.name || ch;
+        var sel = (String(val) === String(selectedId)) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(String(val)) + '"' + sel + '>#' + escapeHtml(String(name)) + '</option>';
+    });
+    html += '</select>';
+    return html;
+}
+
+function buildRoleSelect(id) {
+    var html = '<select id="' + escapeHtml(id) + '" class="form-input form-select">';
+    html += '<option value="">-- Select Role --</option>';
+    roleOptions.forEach(function(r) {
+        var val = r.id || r;
+        var name = r.name || r;
+        html += '<option value="' + escapeHtml(String(val)) + '">' + escapeHtml(String(name)) + '</option>';
+    });
+    html += '</select>';
+    return html;
+}
+
+/* ── Render type cards ────────────────────────────────────────────────── */
+function renderTypeCards() {
+    var container = document.getElementById('type-cards-container');
+    var html = '';
+    TYPES.forEach(function(type) {
+        var cfg = (settingsData.types && settingsData.types[type]) || {};
+        var enabled = cfg.enabled || false;
+        var panelChannel = cfg.panel_channel || '';
+        var logChannel = cfg.log_channel || '';
+        var slotLimit = cfg.default_slot_limit || 1;
+        var stackRoles = cfg.stack_roles || false;
+        var squadGroup = cfg.squad_group || '';
+        var ghFilename = cfg.github_filename || '';
+        var roleMappings = cfg.role_mappings || [];
+
+        html += '<div class="card type-card" id="type-card-' + type + '">';
+
+        /* Header with toggle */
+        html += '<div class="type-card-header">';
+        html += '<div class="type-card-header-left">';
+        html += '<h3>' + escapeHtml(type.charAt(0).toUpperCase() + type.slice(1)) + '</h3>';
+        if (enabled) {
+            html += '<span class="badge badge-success">Enabled</span>';
+        } else {
+            html += '<span class="badge badge-muted">Disabled</span>';
+        }
+        html += '</div>';
+        html += '<label class="toggle"><input type="checkbox" id="toggle-' + type + '"' + (enabled ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+        html += '</div>';
+
+        /* Body */
+        html += '<div class="card-body">';
+
+        html += '<div class="form-row">';
+        html += '<label for="panel-ch-' + type + '">Panel Channel</label>';
+        html += buildChannelSelect('panel-ch-' + type, panelChannel);
+        html += '</div>';
+
+        html += '<div class="form-row">';
+        html += '<label for="log-ch-' + type + '">Log Channel</label>';
+        html += buildChannelSelect('log-ch-' + type, logChannel);
+        html += '</div>';
+
+        html += '<div class="form-row">';
+        html += '<label for="slot-limit-' + type + '">Default Slot Limit</label>';
+        html += '<input type="number" id="slot-limit-' + type + '" class="form-input" min="1" max="99" value="' + slotLimit + '">';
+        html += '</div>';
+
+        html += '<div class="form-row">';
+        html += '<label for="stack-roles-' + type + '">Stack Roles</label>';
+        html += '<label class="toggle"><input type="checkbox" id="stack-roles-' + type + '"' + (stackRoles ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+        html += '</div>';
+
+        html += '<div class="form-row">';
+        html += '<label for="squad-group-' + type + '">Squad Group</label>';
+        html += '<input type="text" id="squad-group-' + type + '" class="form-input" placeholder="e.g. squad_alpha" value="' + escapeHtml(squadGroup) + '">';
+        html += '</div>';
+
+        html += '<div class="form-row">';
+        html += '<label for="gh-filename-' + type + '">GitHub Filename</label>';
+        html += '<input type="text" id="gh-filename-' + type + '" class="form-input" placeholder="e.g. whitelist_sub.txt" value="' + escapeHtml(ghFilename) + '">';
+        html += '</div>';
+
+        html += '<div class="form-actions">';
+        html += '<button class="btn btn-primary" onclick="saveTypeSettings(\'' + type + '\')">Save ' + escapeHtml(type.charAt(0).toUpperCase() + type.slice(1)) + ' Settings</button>';
+        html += '</div>';
+
+        /* Role Mappings */
+        html += '<div class="role-section">';
+        html += '<h4>Role Mappings</h4>';
+        html += '<div class="table-responsive">';
+        html += '<table class="data-table">';
+        html += '<thead><tr><th>Role Name</th><th>Slot Limit</th><th>Actions</th></tr></thead>';
+        html += '<tbody id="role-tbody-' + type + '">';
+        if (roleMappings.length === 0) {
+            html += '<tr><td colspan="3" class="text-center text-muted">No role mappings configured.</td></tr>';
+        } else {
+            roleMappings.forEach(function(rm) {
+                var roleName = rm.role_name || rm.role_id || 'Unknown';
+                html += '<tr>';
+                html += '<td>' + escapeHtml(String(roleName)) + '</td>';
+                html += '<td>' + (rm.slot_limit || 1) + '</td>';
+                html += '<td><button class="btn btn-sm btn-danger" onclick="removeRoleMapping(\'' + type + '\', \'' + escapeHtml(String(rm.role_id)) + '\')">Remove</button></td>';
+                html += '</tr>';
+            });
+        }
+        html += '</tbody></table></div>';
+
+        /* Add role mapping form */
+        html += '<div class="add-role-row">';
+        html += buildRoleSelect('add-role-select-' + type);
+        html += '<input type="number" id="add-role-slots-' + type + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
+        html += '<button class="btn btn-primary btn-sm" onclick="addRoleMapping(\'' + type + '\')">Add</button>';
+        html += '</div>';
+
+        html += '</div>'; /* /role-section */
+        html += '</div>'; /* /card-body */
+        html += '</div>'; /* /card */
+    });
+
+    container.innerHTML = html;
+}
+
+/* ── Save type settings ───────────────────────────────────────────────── */
+function saveTypeSettings(type) {
+    var payload = {
+        enabled: document.getElementById('toggle-' + type).checked,
+        panel_channel: document.getElementById('panel-ch-' + type).value,
+        log_channel: document.getElementById('log-ch-' + type).value,
+        default_slot_limit: parseInt(document.getElementById('slot-limit-' + type).value, 10) || 1,
+        stack_roles: document.getElementById('stack-roles-' + type).checked,
+        squad_group: document.getElementById('squad-group-' + type).value,
+        github_filename: document.getElementById('gh-filename-' + type).value
+    };
+    fetch('/api/admin/types/' + encodeURIComponent(type), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Failed');
+        return r.json();
+    })
+    .then(function() {
+        showFlash(type.charAt(0).toUpperCase() + type.slice(1) + ' settings saved.', 'success');
+        reloadTypeData();
+    })
+    .catch(function() {
+        showFlash('Failed to save ' + type + ' settings.', 'error');
+    });
+}
+
+/* ── Role mapping actions ─────────────────────────────────────────────── */
+function addRoleMapping(type) {
+    var roleId = document.getElementById('add-role-select-' + type).value;
+    var slotLimit = parseInt(document.getElementById('add-role-slots-' + type).value, 10) || 1;
+    if (!roleId) {
+        showFlash('Please select a role.', 'error');
+        return;
+    }
+    fetch('/api/admin/roles/' + encodeURIComponent(type), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ role_id: roleId, slot_limit: slotLimit })
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Failed');
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Role mapping added.', 'success');
+        reloadTypeData();
+    })
+    .catch(function() {
+        showFlash('Failed to add role mapping.', 'error');
+    });
+}
+
+function removeRoleMapping(type, roleId) {
+    fetch('/api/admin/roles/' + encodeURIComponent(type) + '/' + encodeURIComponent(roleId), {
+        method: 'DELETE'
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Failed');
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Role mapping removed.', 'success');
+        reloadTypeData();
+    })
+    .catch(function() {
+        showFlash('Failed to remove role mapping.', 'error');
+    });
+}
+
+/* ── Reload after mutations ───────────────────────────────────────────── */
+function reloadTypeData() {
+    loadSettings().then(function() {
+        renderTypeCards();
+    });
+}
+</script>
+{% endblock %}

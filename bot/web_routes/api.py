@@ -7,7 +7,8 @@ from typing import Callable
 import aiohttp_session
 from aiohttp import web
 
-from bot.config import WHITELIST_TYPES, STEAM64_RE, EOSID_RE, log
+from bot.config import WHITELIST_TYPES, DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, log
+from bot.utils import utcnow
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -436,6 +437,345 @@ async def admin_audit(request: web.Request) -> web.Response:
     })
 
 
+# ── Admin Setup API routes ───────────────────────────────────────────────────
+
+@require_admin
+async def admin_get_settings(request: web.Request) -> web.Response:
+    """Return all settings for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    # Bot-level settings
+    bot_settings = {}
+    for key, default in DEFAULT_SETTINGS.items():
+        bot_settings[key] = await db.get_setting(guild_id, key, default)
+
+    # Whitelist type configs
+    type_configs = {}
+    for wl_type in WHITELIST_TYPES:
+        cfg = await db.get_type_config(guild_id, wl_type)
+        type_configs[wl_type] = cfg if cfg else {}
+
+    # Role mappings per type
+    role_mappings = {}
+    for wl_type in WHITELIST_TYPES:
+        rows = await db.fetchall(
+            "SELECT id, role_id, role_name, slot_limit, is_active "
+            "FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s "
+            "ORDER BY role_name",
+            (guild_id, wl_type),
+        )
+        role_mappings[wl_type] = [
+            {
+                "id": row[0],
+                "role_id": str(row[1]),
+                "role_name": row[2],
+                "slot_limit": row[3],
+                "is_active": bool(row[4]),
+            }
+            for row in (rows or [])
+        ]
+
+    # Squad groups
+    squad_rows = await db.fetchall(
+        "SELECT DISTINCT squad_group FROM whitelist_types "
+        "WHERE guild_id=%s AND squad_group IS NOT NULL AND squad_group != ''",
+        (guild_id,),
+    )
+    squad_groups = [row[0] for row in (squad_rows or [])]
+
+    return web.json_response({
+        "bot_settings": bot_settings,
+        "type_configs": type_configs,
+        "role_mappings": role_mappings,
+        "squad_groups": squad_groups,
+        "squad_permissions": SQUAD_PERMISSIONS,
+    })
+
+
+@require_admin
+async def admin_update_settings(request: web.Request) -> web.Response:
+    """Update global bot settings for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    if not isinstance(body, dict) or not body:
+        return web.json_response({"error": "Body must be a non-empty JSON object."}, status=400)
+
+    allowed_keys = set(DEFAULT_SETTINGS.keys())
+    updated = []
+    for key, value in body.items():
+        if key not in allowed_keys:
+            return web.json_response({"error": f"Unknown setting: {key}"}, status=400)
+        await db.set_setting(guild_id, key, str(value))
+        updated.append(key)
+
+    log.info("Guild %s: admin updated settings %s", guild_id, updated)
+    return web.json_response({"ok": True, "updated": updated})
+
+
+@require_admin
+async def admin_update_type(request: web.Request) -> web.Response:
+    """Update a whitelist type configuration."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    wl_type = request.match_info["type"]
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    if not isinstance(body, dict) or not body:
+        return web.json_response({"error": "Body must be a non-empty JSON object."}, status=400)
+
+    allowed_columns = {
+        "enabled", "panel_channel_id", "log_channel_id", "github_enabled",
+        "github_filename", "input_mode", "stack_roles", "default_slot_limit",
+        "squad_group",
+    }
+
+    # Validate keys
+    for key in body:
+        if key not in allowed_columns:
+            return web.json_response({"error": f"Unknown type config field: {key}"}, status=400)
+
+    # Check if row exists
+    existing = await db.fetchone(
+        "SELECT guild_id FROM whitelist_types WHERE guild_id=%s AND whitelist_type=%s",
+        (guild_id, wl_type),
+    )
+
+    now = utcnow()
+
+    if existing:
+        # Build dynamic UPDATE
+        set_parts = []
+        params = []
+        for key, value in body.items():
+            set_parts.append(f"{key}=%s")
+            params.append(str(value))
+        set_parts.append("updated_at=%s")
+        params.append(now)
+        params.extend([guild_id, wl_type])
+        await db.execute(
+            f"UPDATE whitelist_types SET {', '.join(set_parts)} "
+            f"WHERE guild_id=%s AND whitelist_type=%s",
+            tuple(params),
+        )
+    else:
+        # INSERT new row with provided values
+        columns = ["guild_id", "whitelist_type", "updated_at"]
+        placeholders = ["%s", "%s", "%s"]
+        params = [guild_id, wl_type, now]
+        for key, value in body.items():
+            columns.append(key)
+            placeholders.append("%s")
+            params.append(str(value))
+        await db.execute(
+            f"INSERT INTO whitelist_types ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
+            tuple(params),
+        )
+
+    log.info("Guild %s: admin updated type config %s: %s", guild_id, wl_type, list(body.keys()))
+    return web.json_response({"ok": True, "type": wl_type, "updated": list(body.keys())})
+
+
+@require_admin
+async def admin_toggle_type(request: web.Request) -> web.Response:
+    """Quick toggle enable/disable for a whitelist type."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    wl_type = request.match_info["type"]
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    # Get current state
+    cfg = await db.get_type_config(guild_id, wl_type)
+    current_enabled = cfg.get("enabled", False) if cfg else False
+    new_enabled = not current_enabled
+
+    now = utcnow()
+
+    existing = await db.fetchone(
+        "SELECT guild_id FROM whitelist_types WHERE guild_id=%s AND whitelist_type=%s",
+        (guild_id, wl_type),
+    )
+
+    if existing:
+        await db.execute(
+            "UPDATE whitelist_types SET enabled=%s, updated_at=%s "
+            "WHERE guild_id=%s AND whitelist_type=%s",
+            (str(new_enabled).lower(), now, guild_id, wl_type),
+        )
+    else:
+        await db.execute(
+            "INSERT INTO whitelist_types (guild_id, whitelist_type, enabled, updated_at) "
+            "VALUES (%s, %s, %s, %s)",
+            (guild_id, wl_type, str(new_enabled).lower(), now),
+        )
+
+    log.info("Guild %s: admin toggled type %s -> %s", guild_id, wl_type, new_enabled)
+    return web.json_response({"ok": True, "type": wl_type, "enabled": new_enabled})
+
+
+@require_admin
+async def admin_add_role(request: web.Request) -> web.Response:
+    """Add a role mapping for a whitelist type."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    wl_type = request.match_info["type"]
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    role_id = body.get("role_id")
+    role_name = body.get("role_name", "")
+    slot_limit = body.get("slot_limit", 1)
+
+    if not role_id:
+        return web.json_response({"error": "role_id is required."}, status=400)
+
+    try:
+        role_id = str(int(role_id))
+    except (ValueError, TypeError):
+        return web.json_response({"error": "role_id must be a numeric string."}, status=400)
+
+    try:
+        slot_limit = int(slot_limit)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "slot_limit must be an integer."}, status=400)
+
+    # Check for duplicate
+    dup = await db.fetchone(
+        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
+        (guild_id, wl_type, role_id),
+    )
+    if dup:
+        return web.json_response({"error": "Role mapping already exists for this type."}, status=409)
+
+    now = utcnow()
+    await db.execute(
+        "INSERT INTO role_mappings (guild_id, whitelist_type, role_id, role_name, slot_limit, is_active, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (guild_id, wl_type, role_id, role_name, slot_limit, True, now),
+    )
+
+    log.info("Guild %s: admin added role %s (%s) to type %s with %d slots",
+             guild_id, role_id, role_name, wl_type, slot_limit)
+    return web.json_response({
+        "ok": True,
+        "role_id": role_id,
+        "role_name": role_name,
+        "slot_limit": slot_limit,
+    })
+
+
+@require_admin
+async def admin_delete_role(request: web.Request) -> web.Response:
+    """Remove a role mapping for a whitelist type."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    wl_type = request.match_info["type"]
+    role_id = request.match_info["role_id"]
+
+    if wl_type not in WHITELIST_TYPES:
+        return web.json_response({"error": "Invalid whitelist type."}, status=400)
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    existing = await db.fetchone(
+        "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
+        (guild_id, wl_type, role_id),
+    )
+    if not existing:
+        return web.json_response({"error": "Role mapping not found."}, status=404)
+
+    await db.execute(
+        "DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND role_id=%s",
+        (guild_id, wl_type, role_id),
+    )
+
+    log.info("Guild %s: admin deleted role %s from type %s", guild_id, role_id, wl_type)
+    return web.json_response({"ok": True, "deleted_role_id": role_id})
+
+
+@require_admin
+async def admin_get_channels(request: web.Request) -> web.Response:
+    """Return list of text channels in the guild from Discord bot cache."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+
+    import discord
+    guild = bot.get_guild(guild_id)
+    if not guild:
+        return web.json_response({"error": "Guild not found in bot cache."}, status=404)
+
+    channels = []
+    for ch in guild.channels:
+        if isinstance(ch, discord.TextChannel):
+            channels.append({
+                "id": str(ch.id),
+                "name": ch.name,
+                "category": ch.category.name if ch.category else None,
+            })
+    channels.sort(key=lambda c: (c["category"] or "", c["name"]))
+
+    return web.json_response({"channels": channels})
+
+
+@require_admin
+async def admin_get_roles(request: web.Request) -> web.Response:
+    """Return list of roles in the guild from Discord bot cache."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+
+    guild = bot.get_guild(guild_id)
+    if not guild:
+        return web.json_response({"error": "Guild not found in bot cache."}, status=404)
+
+    roles = []
+    for role in guild.roles:
+        if role.is_default():
+            continue
+        roles.append({
+            "id": str(role.id),
+            "name": role.name,
+            "color": str(role.color),
+            "position": role.position,
+        })
+    roles.sort(key=lambda r: -r["position"])
+
+    return web.json_response({"roles": roles})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -447,3 +787,12 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/admin/stats", admin_stats)
     app.router.add_get("/api/admin/users", admin_users)
     app.router.add_get("/api/admin/audit", admin_audit)
+    # Admin Setup API
+    app.router.add_get("/api/admin/settings", admin_get_settings)
+    app.router.add_post("/api/admin/settings", admin_update_settings)
+    app.router.add_post("/api/admin/types/{type}", admin_update_type)
+    app.router.add_post("/api/admin/types/{type}/toggle", admin_toggle_type)
+    app.router.add_post("/api/admin/roles/{type}", admin_add_role)
+    app.router.add_delete("/api/admin/roles/{type}/{role_id}", admin_delete_role)
+    app.router.add_get("/api/admin/channels", admin_get_channels)
+    app.router.add_get("/api/admin/roles", admin_get_roles)
