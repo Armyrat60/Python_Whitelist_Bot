@@ -160,6 +160,9 @@ class WebServer:
             context_processors=[aiohttp_jinja2.request_processor],
         )
 
+        # Health check (no auth, no middleware overhead)
+        self.app.router.add_get("/healthz", self._healthz)
+
         # Mount route modules
         auth.setup_routes(self.app)
         dashboard.setup_routes(self.app)
@@ -228,6 +231,14 @@ class WebServer:
             disk.mkdir(parents=True, exist_ok=True)
             for filename, content in outputs.items():
                 (disk / filename).write_text(content, encoding="utf-8")
+
+    async def _healthz(self, request: web.Request) -> web.Response:
+        """Health check endpoint for Railway / load balancers."""
+        return web.json_response({
+            "status": "ok",
+            "guilds_cached": len(self._cache),
+            "files_cached": sum(len(v) for v in self._cache.values()),
+        })
 
     async def _handle_file(self, request: web.Request) -> web.Response:
         """Serve whitelist files only if the token matches a known guild."""

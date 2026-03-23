@@ -13,10 +13,33 @@ import aiohttp_session
 from aiohttp import web
 
 from bot.config import DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, log
+from bot.output import sync_outputs
 from bot.utils import utcnow
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+async def _trigger_sync(request: web.Request, guild_id: int):
+    """Trigger output file regeneration after a data change.
+
+    Works in both bot-worker and web-standalone mode.
+    """
+    bot = request.app.get("bot")
+    if not bot:
+        return
+
+    web_server = request.app.get("web_server")
+    github = getattr(bot, "github", None)
+    db = getattr(bot, "db", None)
+    if not db:
+        return
+
+    try:
+        await sync_outputs(db, guild_id, web_server=web_server, github=github)
+        log.info("Sync triggered for guild %s", guild_id)
+    except Exception:
+        log.exception("Sync failed for guild %s", guild_id)
+
 
 async def _resolve_whitelist(db, guild_id: int, slug_or_type: str) -> dict | None:
     """Resolve a whitelist slug (or legacy type name) to a whitelist dict.
@@ -306,14 +329,7 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         wl_id,
     )
 
-    # Trigger sync
-    try:
-        if hasattr(bot, "schedule_github_sync"):
-            bot.schedule_github_sync()
-        elif hasattr(bot, "schedule_sync"):
-            bot.schedule_sync()
-    except Exception:
-        log.debug("Could not trigger sync after web update")
+    await _trigger_sync(request, guild_id)
 
     return web.json_response({"ok": True, "message": "Whitelist updated successfully."})
 
@@ -626,6 +642,8 @@ async def admin_add_user(request: web.Request) -> web.Response:
 
     log.info("Guild %s: admin %s added user %s (%s) to %s", guild_id, actor_id, discord_id, discord_name, wl_type)
 
+    await _trigger_sync(request, guild_id)
+
     return web.json_response({
         "ok": True,
         "discord_id": str(discord_id),
@@ -762,6 +780,8 @@ async def admin_update_user(request: web.Request) -> web.Response:
 
     log.info("Guild %s: admin %s updated user %s/%s: %s", guild_id, actor_id, discord_id, wl_type, changes)
 
+    await _trigger_sync(request, guild_id)
+
     return web.json_response({"ok": True, "changes": changes})
 
 
@@ -813,6 +833,8 @@ async def admin_delete_user(request: web.Request) -> web.Response:
     )
 
     log.info("Guild %s: admin %s deleted user %s (%s) from %s", guild_id, actor_id, discord_id, discord_name, wl_type)
+
+    await _trigger_sync(request, guild_id)
 
     return web.json_response({"ok": True, "deleted_discord_id": str(discord_id), "whitelist_type": wl_type})
 
@@ -1008,6 +1030,7 @@ async def admin_toggle_type(request: web.Request) -> web.Response:
         await db.update_whitelist(wl_id, enabled=int(new_enabled))
 
     log.info("Guild %s: admin toggled type %s -> %s", guild_id, wl_type, new_enabled)
+    await _trigger_sync(request, guild_id)
     return web.json_response({"ok": True, "type": wl_type, "enabled": new_enabled})
 
 
@@ -1286,20 +1309,11 @@ async def admin_health(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_resync(request: web.Request) -> web.Response:
-    """Trigger whitelist file regeneration."""
-    bot = request.app["bot"]
-    if hasattr(bot, "schedule_github_sync"):
-        try:
-            bot.schedule_github_sync()
-        except Exception:
-            log.warning("schedule_github_sync call failed")
-    elif hasattr(bot, "schedule_sync"):
-        try:
-            bot.schedule_sync()
-        except Exception:
-            log.warning("schedule_sync call failed")
-    else:
-        log.info("Resync requested but schedule_github_sync not available")
+    """Trigger whitelist file regeneration for all guilds the user has access to."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session.get("active_guild_id", 0))
+    if guild_id:
+        await _trigger_sync(request, guild_id)
     return web.json_response({"ok": True, "message": "Whitelist sync triggered"})
 
 
@@ -1898,14 +1912,7 @@ async def admin_import(request: web.Request) -> web.Response:
     log.info("Guild %s: admin %s imported %s into %s (added=%d updated=%d skipped=%d errors=%d)",
              guild_id, actor_id, fmt, wl_type, added, updated, skipped, errors)
 
-    # Trigger sync
-    try:
-        if hasattr(bot, "schedule_github_sync"):
-            bot.schedule_github_sync()
-        elif hasattr(bot, "schedule_sync"):
-            bot.schedule_sync()
-    except Exception:
-        log.debug("Could not trigger sync after import")
+    await _trigger_sync(request, guild_id)
 
     return web.json_response({
         "ok": True,

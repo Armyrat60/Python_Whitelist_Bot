@@ -204,6 +204,15 @@ async def start_web():
     await site.start()
     log.info("Web server started on http://%s:%s/", WEB_HOST, WEB_PORT)
 
+    # Prime the output file cache for all guilds on startup
+    from bot.output import sync_outputs
+    for guild in discord_client.guilds:
+        try:
+            await sync_outputs(db, guild.id, web_server=web_server)
+            log.info("Primed output cache for guild %s (%s)", guild.name, guild.id)
+        except Exception:
+            log.exception("Failed to prime cache for guild %s", guild.id)
+
     # Keep running
     try:
         while True:
