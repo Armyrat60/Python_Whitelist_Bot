@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.*
+.claude/
+__pycache__
+*.pyc
+*.pyo
+bot_legacy.py
+README.md
+LICENSE
+.dockerignore
+Dockerfile
