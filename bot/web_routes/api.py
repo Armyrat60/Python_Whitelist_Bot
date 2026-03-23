@@ -876,7 +876,22 @@ async def admin_get_settings(request: web.Request) -> web.Response:
             "is_default": wl["is_default"],
         }
 
-    # Role mappings per type
+    # Build live role name lookup from Discord API
+    role_name_map: dict[str, str] = {}  # role_id_str -> live name
+    try:
+        if hasattr(bot, "get_roles"):
+            raw_roles = await bot.get_roles(guild_id)
+            for r in raw_roles:
+                role_name_map[str(r["id"])] = r.get("name", "")
+        elif hasattr(bot, "get_guild"):
+            guild = bot.get_guild(guild_id)
+            if guild:
+                for r in guild.roles:
+                    role_name_map[str(r.id)] = r.name
+    except Exception:
+        pass  # Fall back to DB-stored names
+
+    # Role mappings per type (resolve names from Discord)
     role_mappings = {}
     for wl in whitelists:
         wl_id = wl["id"]
@@ -891,7 +906,7 @@ async def admin_get_settings(request: web.Request) -> web.Response:
             {
                 "id": row[0],
                 "role_id": str(row[1]),
-                "role_name": row[2],
+                "role_name": role_name_map.get(str(row[1]), row[2] or str(row[1])),
                 "slot_limit": row[3],
                 "is_active": bool(row[4]),
             }
