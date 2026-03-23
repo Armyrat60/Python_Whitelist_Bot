@@ -157,6 +157,15 @@ code {
     margin-bottom: 2px;
 }
 
+.sidebar-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px 12px 4px;
+}
+
 .sidebar-link {
     display: flex;
     align-items: center;
