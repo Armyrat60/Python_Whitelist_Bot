@@ -1194,7 +1194,7 @@ async def admin_health(request: web.Request) -> web.Response:
             })
         # Check role mappings
         role_rows = await db.fetchall(
-            "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND is_active=1",
+            "SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_type=%s AND is_active=TRUE",
             (guild_id, wl_type),
         )
         if not role_rows:
