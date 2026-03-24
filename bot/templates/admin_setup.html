@@ -291,10 +291,12 @@
     /* ── Permissions Grid ──────────────────────────────────────────────── */
     .perms-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 6px 16px;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px 20px;
         margin-bottom: 8px;
     }
+    @media (max-width: 900px) { .perms-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .perms-grid { grid-template-columns: repeat(2, 1fr); } }
     .perm-item {
         display: flex;
         align-items: center;
@@ -443,7 +445,7 @@
     <!-- ================================================================= -->
     <div class="tab-content" x-show="tab === 'groups'" x-cloak>
         <div class="summary-badges" id="groups-badges"></div>
-        <div class="cards-grid" id="groups-grid">
+        <div class="cards-grid" id="groups-grid" style="grid-template-columns: 1fr;">
             <p class="text-muted">Loading groups...</p>
         </div>
         <button class="btn-create btn-sm" id="btn-create-group" onclick="createGroupPrompt()" style="margin-top:4px;">

@@ -24,23 +24,56 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
     <!-- Dark theme overrides for libraries -->
     <style>
-        /* Tom Select dark theme */
-        .ts-wrapper .ts-control { background: #12141a; border: 2px solid #3a3d45; color: var(--text-primary, #e0e0e0); min-height: 38px; border-radius: 6px; }
+        /* Tom Select dark theme — high contrast against card backgrounds */
+        .ts-wrapper .ts-control {
+            background: #0d0f14 !important;
+            border: 2px solid #4a4d58 !important;
+            color: var(--text-primary, #e0e0e0);
+            min-height: 38px;
+            border-radius: 6px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
         .ts-wrapper .ts-control input { color: var(--text-primary, #e0e0e0); }
-        .ts-wrapper .ts-control .item { background: var(--accent, #5865f2); color: #fff; border-radius: 4px; padding: 2px 8px; }
-        .ts-wrapper .ts-dropdown { background: #12141a; border: 2px solid #3a3d45; color: var(--text-primary, #e0e0e0); z-index: 100000; border-radius: 6px; margin-top: 2px; }
+        .ts-wrapper .ts-control .item {
+            background: var(--accent, #5865f2);
+            color: #fff;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.85rem;
+        }
+        .ts-wrapper .ts-dropdown {
+            background: #0d0f14;
+            border: 2px solid #4a4d58;
+            color: var(--text-primary, #e0e0e0);
+            z-index: 100000;
+            border-radius: 6px;
+            margin-top: 2px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
         .ts-wrapper .ts-dropdown .option { color: var(--text-primary, #e0e0e0); padding: 8px 12px; }
         .ts-wrapper .ts-dropdown .option:hover, .ts-wrapper .ts-dropdown .active { background: #252830; color: #fff; }
         .ts-wrapper .ts-dropdown .option.selected { background: var(--accent, #5865f2); color: #fff; }
-        .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2); box-shadow: 0 0 0 2px rgba(88,101,242,0.25); }
+        .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2) !important; box-shadow: 0 0 0 2px rgba(88,101,242,0.3); }
         .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: #6a6d75; }
         /* Tom Select inside SweetAlert2 — fix overflow clipping */
         .swal2-html-container { overflow: visible !important; }
         .swal2-popup { overflow: visible !important; }
         .swal2-popup .ts-wrapper .ts-dropdown { z-index: 200000 !important; }
         .swal2-popup .ts-wrapper { z-index: 200000; position: relative; }
-        /* Form inputs consistent border */
-        .form-input { border: 2px solid #3a3d45 !important; background: #12141a !important; color: var(--text-primary, #e0e0e0) !important; border-radius: 6px !important; }
+        /* Form inputs consistent border — match Tom Select contrast */
+        .form-input {
+            border: 2px solid #4a4d58 !important;
+            background: #0d0f14 !important;
+            color: var(--text-primary, #e0e0e0) !important;
+            border-radius: 6px !important;
+            padding: 6px 10px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-input:focus {
+            border-color: var(--accent, #5865f2) !important;
+            box-shadow: 0 0 0 2px rgba(88,101,242,0.3);
+            outline: none;
+        }
         /* SweetAlert2 dark theme */
         .swal2-popup { background: var(--bg-secondary, #1e2028) !important; color: var(--text-primary, #e0e0e0) !important; border: 1px solid var(--border, #2a2d35) !important; }
         .swal2-title { color: var(--text-primary, #e0e0e0) !important; }
