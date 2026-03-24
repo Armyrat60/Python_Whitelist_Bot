@@ -165,6 +165,13 @@ class WebOnlyApp:
         """Fetch roles via REST (used by admin API)."""
         return await self._discord.fetch_roles(guild_id)
 
+    async def get_member_roles(self, guild_id: int, user_id: int) -> list[int]:
+        """Fetch a member's role IDs via REST."""
+        member = await self._discord.fetch_guild_member(guild_id, user_id)
+        if not member:
+            return []
+        return [int(r) for r in member.get("roles", [])]
+
     def schedule_sync(self):
         """No-op in web-only mode — bot handles sync."""
         pass
