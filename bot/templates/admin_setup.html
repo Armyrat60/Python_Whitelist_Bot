@@ -919,7 +919,8 @@ function showRoleMappingModal(panelId) {
                     sortField: { field: 'text', direction: 'asc' },
                     maxOptions: 200,
                     plugins: ['remove_button'],
-                    placeholder: 'Search and select roles...'
+                    placeholder: 'Search and select roles...',
+                    dropdownParent: 'body'
                 });
             } else {
                 console.error('Tom Select init: #modal-add-role not found in DOM');

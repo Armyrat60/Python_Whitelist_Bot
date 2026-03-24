@@ -34,9 +34,11 @@
         .ts-wrapper .ts-dropdown .option.selected { background: var(--accent, #5865f2); color: #fff; }
         .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2); box-shadow: 0 0 0 2px rgba(88,101,242,0.25); }
         .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: #6a6d75; }
-        /* Tom Select inside SweetAlert2 — ensure dropdown renders above modal */
+        /* Tom Select inside SweetAlert2 — fix overflow clipping */
+        .swal2-html-container { overflow: visible !important; }
+        .swal2-popup { overflow: visible !important; }
         .swal2-popup .ts-wrapper .ts-dropdown { z-index: 200000 !important; }
-        .swal2-popup .ts-wrapper { z-index: 200000; }
+        .swal2-popup .ts-wrapper { z-index: 200000; position: relative; }
         /* Form inputs consistent border */
         .form-input { border: 2px solid #3a3d45 !important; background: #12141a !important; color: var(--text-primary, #e0e0e0) !important; border-radius: 6px !important; }
         /* SweetAlert2 dark theme */
