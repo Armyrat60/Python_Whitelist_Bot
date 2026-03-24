@@ -628,8 +628,8 @@ class Database:
                     (perm, desc),
                 )
 
-        # Seed defaults for guild_id=0 (legacy / fallback)
-        await self.seed_guild_defaults(0)
+        # Note: guild defaults are seeded per-guild in bot on_ready / web startup
+        # No longer seed for guild_id=0 (legacy artifact)
 
     async def seed_guild_defaults(self, guild_id: int):
         """Seed a default whitelist and default squad group for a guild if they don't exist."""
@@ -678,36 +678,48 @@ class Database:
 
         # Seed one default whitelist ("Default Whitelist", slug "default") if none exists
         existing = await self.fetchone(
-            "SELECT id FROM whitelists WHERE guild_id=%s AND is_default=%s LIMIT 1",
-            (guild_id, True if self.engine == "postgres" else 1),
+            "SELECT id FROM whitelists WHERE guild_id=%s AND slug=%s LIMIT 1",
+            (guild_id, "default"),
         )
         if not existing:
-            wl_id = await self.create_whitelist(
-                guild_id,
-                name="Default Whitelist",
-                slug="default",
-                enabled=False,
-                squad_group="Whitelist",
-                output_filename="whitelist.txt",
-                default_slot_limit=1,
-                stack_roles=False,
-                is_default=True,
-            )
+            try:
+                wl_id = await self.create_whitelist(
+                    guild_id,
+                    name="Default Whitelist",
+                    slug="default",
+                    enabled=False,
+                    squad_group="Whitelist",
+                    output_filename="whitelist.txt",
+                    default_slot_limit=1,
+                    stack_roles=False,
+                    is_default=True,
+                )
+            except Exception:
+                # Race condition: another process created it first
+                row = await self.fetchone(
+                    "SELECT id FROM whitelists WHERE guild_id=%s AND slug=%s LIMIT 1",
+                    (guild_id, "default"),
+                )
+                wl_id = row[0] if row else None
         else:
             wl_id = existing[0]
 
         # Seed one default panel linked to the default whitelist if none exists
-        existing_panel = await self.fetchone(
-            "SELECT id FROM panels WHERE guild_id=%s AND is_default=%s LIMIT 1",
-            (guild_id, True if self.engine == "postgres" else 1),
-        )
-        if not existing_panel:
-            await self.create_panel(
-                guild_id,
-                name="Default Panel",
-                whitelist_id=wl_id,
-                is_default=True,
+        if wl_id:
+            existing_panel = await self.fetchone(
+                "SELECT id FROM panels WHERE guild_id=%s AND is_default=%s LIMIT 1",
+                (guild_id, True if self.engine == "postgres" else 1),
             )
+            if not existing_panel:
+                try:
+                    await self.create_panel(
+                        guild_id,
+                        name="Default Panel",
+                        whitelist_id=wl_id,
+                        is_default=True,
+                    )
+                except Exception:
+                    pass  # Race condition: another process created it
 
     # ── Settings ──
 
