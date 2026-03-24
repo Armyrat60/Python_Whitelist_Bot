@@ -291,6 +291,20 @@ MYSQL_SCHEMA = [
         PRIMARY KEY (guild_id, group_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    """
+    CREATE TABLE IF NOT EXISTS panels (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guild_id BIGINT NOT NULL DEFAULT 0,
+        name VARCHAR(100) NOT NULL,
+        channel_id BIGINT NULL,
+        log_channel_id BIGINT NULL,
+        whitelist_id INT NULL,
+        panel_message_id BIGINT NULL,
+        is_default TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 
 POSTGRES_SCHEMA = [
@@ -419,6 +433,20 @@ POSTGRES_SCHEMA = [
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL,
         PRIMARY KEY (guild_id, group_name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS panels (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL DEFAULT 0,
+        name VARCHAR(100) NOT NULL,
+        channel_id BIGINT NULL,
+        log_channel_id BIGINT NULL,
+        whitelist_id INT NULL REFERENCES whitelists(id) ON DELETE SET NULL,
+        panel_message_id BIGINT NULL,
+        is_default BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
     )
     """,
 ]
@@ -654,7 +682,7 @@ class Database:
             (guild_id, True if self.engine == "postgres" else 1),
         )
         if not existing:
-            await self.create_whitelist(
+            wl_id = await self.create_whitelist(
                 guild_id,
                 name="Default Whitelist",
                 slug="default",
@@ -663,6 +691,21 @@ class Database:
                 output_filename="whitelist.txt",
                 default_slot_limit=1,
                 stack_roles=False,
+                is_default=True,
+            )
+        else:
+            wl_id = existing[0]
+
+        # Seed one default panel linked to the default whitelist if none exists
+        existing_panel = await self.fetchone(
+            "SELECT id FROM panels WHERE guild_id=%s AND is_default=%s LIMIT 1",
+            (guild_id, True if self.engine == "postgres" else 1),
+        )
+        if not existing_panel:
+            await self.create_panel(
+                guild_id,
+                name="Default Panel",
+                whitelist_id=wl_id,
                 is_default=True,
             )
 
@@ -833,6 +876,104 @@ class Database:
 
     async def delete_whitelist(self, whitelist_id: int):
         await self.execute("DELETE FROM whitelists WHERE id=%s", (whitelist_id,))
+
+    # ── Panels ──
+
+    _PANEL_COLUMNS = (
+        "id", "guild_id", "name", "channel_id", "log_channel_id",
+        "whitelist_id", "panel_message_id", "is_default", "created_at", "updated_at",
+    )
+
+    def _row_to_panel(self, row: tuple) -> Dict[str, Any]:
+        """Convert a raw DB row to a panel dict."""
+        d = dict(zip(self._PANEL_COLUMNS, row))
+        d["is_default"] = bool(d["is_default"])
+        return d
+
+    async def get_panels(self, guild_id: int) -> List[Dict[str, Any]]:
+        rows = await self.fetchall(
+            """
+            SELECT id, guild_id, name, channel_id, log_channel_id,
+                   whitelist_id, panel_message_id, is_default, created_at, updated_at
+            FROM panels WHERE guild_id=%s
+            ORDER BY is_default DESC, name ASC
+            """,
+            (guild_id,),
+        )
+        return [self._row_to_panel(r) for r in rows]
+
+    async def get_panel_by_id(self, panel_id: int) -> Optional[Dict[str, Any]]:
+        row = await self.fetchone(
+            """
+            SELECT id, guild_id, name, channel_id, log_channel_id,
+                   whitelist_id, panel_message_id, is_default, created_at, updated_at
+            FROM panels WHERE id=%s
+            """,
+            (panel_id,),
+        )
+        return self._row_to_panel(row) if row else None
+
+    async def create_panel(self, guild_id: int, name: str, **kwargs) -> int:
+        """Create a new panel and return its id."""
+        now = utcnow()
+        channel_id = kwargs.get("channel_id", None)
+        log_channel_id = kwargs.get("log_channel_id", None)
+        whitelist_id = kwargs.get("whitelist_id", None)
+        panel_message_id = kwargs.get("panel_message_id", None)
+        is_default = kwargs.get("is_default", False)
+
+        if self.engine == "postgres":
+            row = await self.execute_returning(
+                """
+                INSERT INTO panels
+                (guild_id, name, channel_id, log_channel_id, whitelist_id,
+                 panel_message_id, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (guild_id, name, channel_id, log_channel_id, whitelist_id,
+                 panel_message_id, is_default, now, now),
+            )
+            return row[0]
+        else:
+            row = await self.execute_returning(
+                """
+                INSERT INTO panels
+                (guild_id, name, channel_id, log_channel_id, whitelist_id,
+                 panel_message_id, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (guild_id, name, channel_id, log_channel_id, whitelist_id,
+                 panel_message_id, 1 if is_default else 0, now, now),
+            )
+            return row[0]
+
+    async def update_panel(self, panel_id: int, **kwargs):
+        allowed = {
+            "name", "channel_id", "log_channel_id", "whitelist_id",
+            "panel_message_id", "is_default",
+        }
+        bool_cols = {"is_default"}
+        parts = []
+        params = []
+        for key, value in kwargs.items():
+            if key in allowed:
+                if key in bool_cols:
+                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                parts.append(f"{key}=%s")
+                params.append(value)
+        if not parts:
+            return
+        parts.append("updated_at=%s")
+        params.append(utcnow())
+        params.append(panel_id)
+        await self.execute(
+            f"UPDATE panels SET {', '.join(parts)} WHERE id=%s",
+            tuple(params),
+        )
+
+    async def delete_panel(self, panel_id: int):
+        await self.execute("DELETE FROM panels WHERE id=%s", (panel_id,))
 
     # ── Legacy type config (backward compatibility shim) ──
 

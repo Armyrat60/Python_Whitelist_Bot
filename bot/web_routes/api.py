@@ -2281,6 +2281,179 @@ async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
     return web.json_response({"urls": urls})
 
 
+# ── Admin Panel API routes ────────────────────────────────────────────────────
+
+MAX_PANELS_PER_GUILD = 5
+
+
+@require_admin
+async def admin_get_panels(request: web.Request) -> web.Response:
+    """Return all panels for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    panels = await db.get_panels(guild_id)
+    result = []
+    for p in panels:
+        result.append({
+            "id": p["id"],
+            "name": p["name"],
+            "channel_id": str(p["channel_id"]) if p["channel_id"] else None,
+            "log_channel_id": str(p["log_channel_id"]) if p["log_channel_id"] else None,
+            "whitelist_id": p["whitelist_id"],
+            "panel_message_id": str(p["panel_message_id"]) if p["panel_message_id"] else None,
+            "is_default": p["is_default"],
+        })
+    return web.json_response({"panels": result})
+
+
+@require_admin
+async def admin_create_panel(request: web.Request) -> web.Response:
+    """Create a new panel for the active guild (max 5)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    name = (body.get("name") or "").strip()
+    if not name or len(name) > 100:
+        return web.json_response({"error": "Name is required (max 100 chars)."}, status=400)
+
+    existing = await db.get_panels(guild_id)
+    if len(existing) >= MAX_PANELS_PER_GUILD:
+        return web.json_response(
+            {"error": f"Maximum of {MAX_PANELS_PER_GUILD} panels per community."},
+            status=400,
+        )
+
+    channel_id = body.get("channel_id")
+    log_channel_id = body.get("log_channel_id")
+    whitelist_id = body.get("whitelist_id")
+
+    if channel_id:
+        channel_id = int(channel_id)
+    if log_channel_id:
+        log_channel_id = int(log_channel_id)
+    if whitelist_id:
+        whitelist_id = int(whitelist_id)
+
+    panel_id = await db.create_panel(
+        guild_id,
+        name=name,
+        channel_id=channel_id,
+        log_channel_id=log_channel_id,
+        whitelist_id=whitelist_id,
+        is_default=False,
+    )
+
+    log.info("Guild %s: admin created panel '%s' (id=%s)", guild_id, name, panel_id)
+    return web.json_response({"ok": True, "id": panel_id, "name": name})
+
+
+@require_admin
+async def admin_update_panel(request: web.Request) -> web.Response:
+    """Update a panel."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        panel_id = int(request.match_info["panel_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid panel_id."}, status=400)
+
+    panel = await db.get_panel_by_id(panel_id)
+    if not panel or panel["guild_id"] != guild_id:
+        return web.json_response({"error": "Panel not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    update_kwargs = {}
+    if "name" in body:
+        name = (body["name"] or "").strip()
+        if not name or len(name) > 100:
+            return web.json_response({"error": "Name is required (max 100 chars)."}, status=400)
+        update_kwargs["name"] = name
+    if "channel_id" in body:
+        val = body["channel_id"]
+        update_kwargs["channel_id"] = int(val) if val else None
+    if "log_channel_id" in body:
+        val = body["log_channel_id"]
+        update_kwargs["log_channel_id"] = int(val) if val else None
+    if "whitelist_id" in body:
+        val = body["whitelist_id"]
+        update_kwargs["whitelist_id"] = int(val) if val else None
+
+    if update_kwargs:
+        await db.update_panel(panel_id, **update_kwargs)
+
+    log.info("Guild %s: admin updated panel %s: %s", guild_id, panel_id, list(body.keys()))
+    return web.json_response({"ok": True, "panel_id": panel_id})
+
+
+@require_admin
+async def admin_delete_panel(request: web.Request) -> web.Response:
+    """Delete a panel (cannot delete the default one)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        panel_id = int(request.match_info["panel_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid panel_id."}, status=400)
+
+    panel = await db.get_panel_by_id(panel_id)
+    if not panel or panel["guild_id"] != guild_id:
+        return web.json_response({"error": "Panel not found."}, status=404)
+    if panel["is_default"]:
+        return web.json_response({"error": "Cannot delete the default panel."}, status=400)
+
+    await db.delete_panel(panel_id)
+
+    log.info("Guild %s: admin deleted panel %s", guild_id, panel_id)
+    return web.json_response({"ok": True, "deleted_panel_id": panel_id})
+
+
+@require_admin
+async def admin_push_panel(request: web.Request) -> web.Response:
+    """Push/refresh the Discord embed for a panel in its channel."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        panel_id = int(request.match_info["panel_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid panel_id."}, status=400)
+
+    panel = await db.get_panel_by_id(panel_id)
+    if not panel or panel["guild_id"] != guild_id:
+        return web.json_response({"error": "Panel not found."}, status=404)
+
+    if not panel["channel_id"]:
+        return web.json_response({"error": "Panel has no channel assigned."}, status=400)
+
+    # Trigger a resync which will send/update panels in their channels
+    await _trigger_sync(request, guild_id)
+
+    log.info("Guild %s: admin pushed panel %s to channel %s", guild_id, panel_id, panel["channel_id"])
+    return web.json_response({"ok": True, "panel_id": panel_id})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2312,6 +2485,12 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/whitelists", admin_create_whitelist)
     app.router.add_delete("/api/admin/whitelists/{slug}", admin_delete_whitelist)
     app.router.add_get("/api/admin/whitelist-urls", admin_get_whitelist_urls)
+    # Admin Panel CRUD
+    app.router.add_get("/api/admin/panels", admin_get_panels)
+    app.router.add_post("/api/admin/panels", admin_create_panel)
+    app.router.add_put("/api/admin/panels/{panel_id}", admin_update_panel)
+    app.router.add_delete("/api/admin/panels/{panel_id}", admin_delete_panel)
+    app.router.add_post("/api/admin/panels/{panel_id}/push", admin_push_panel)
     # Admin Import / Export
     app.router.add_post("/api/admin/import/headers", admin_import_headers)
     app.router.add_post("/api/admin/import/preview", admin_import_preview)

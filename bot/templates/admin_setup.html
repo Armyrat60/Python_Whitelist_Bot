@@ -157,6 +157,16 @@
     .form-row .searchable-dropdown { max-width: 300px; width: 100%; }
 
     /* ── Panels Grid ──────────────────────────────────────────────────── */
+    .panels-summary-badges {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+    .panels-summary-badges .badge {
+        font-size: 0.78rem;
+        padding: 3px 10px;
+        border-radius: 10px;
+    }
     .panels-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -213,6 +223,56 @@
         letter-spacing: 0.03em;
     }
 
+    /* ── Button styles for panel actions ──────────────────────────────── */
+    .btn-push {
+        background: var(--success, #43b581);
+        color: #fff;
+        border: 1px solid var(--success, #43b581);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm, 4px);
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, filter 0.15s;
+    }
+    .btn-push:hover { filter: brightness(1.1); opacity: 0.92; }
+    .btn-save {
+        background: var(--accent, #5865f2);
+        color: #fff;
+        border: 1px solid var(--accent, #5865f2);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm, 4px);
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, filter 0.15s;
+    }
+    .btn-save:hover { filter: brightness(1.1); opacity: 0.92; }
+    .btn-delete {
+        background: var(--danger, #ed4245);
+        color: #fff;
+        border: 1px solid var(--danger, #ed4245);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm, 4px);
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, filter 0.15s;
+    }
+    .btn-delete:hover { filter: brightness(1.1); opacity: 0.92; }
+    .btn-create {
+        background: var(--accent, #5865f2);
+        color: #fff;
+        border: 1px solid var(--accent, #5865f2);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm, 4px);
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, filter 0.15s;
+    }
+    .btn-create:hover { filter: brightness(1.1); opacity: 0.92; }
+
     /* ── Whitelist Config Cards ─────────────────────────────────────── */
     .wl-card {
         margin-bottom: 12px;
@@ -257,7 +317,7 @@
         font-size: 0.78rem;
         color: var(--text-muted);
     }
-    .wl-panel-tag {
+    .wl-squad-tag {
         font-size: 0.72rem;
         padding: 2px 8px;
         border-radius: 10px;
@@ -458,6 +518,12 @@
     /* Ensure overflow visible on all card containers so dropdowns are never clipped */
     .card, .card-body, .panel-card, .panel-card-body, .wl-card, .wl-card-detail,
     .collapse-body, .collapse-section { overflow: visible; }
+
+    .panels-limit-text {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-top: 8px;
+    }
 </style>
 
 <!-- ===================================================================== -->
@@ -517,19 +583,21 @@
         <span style="font-size:0.8rem;color:var(--text-muted);" id="panel-count-label"></span>
     </div>
     <div class="collapse-body">
+        <div class="panels-summary-badges" id="panels-summary-badges"></div>
         <div class="panels-grid" id="panels-grid">
             <p class="text-muted">Loading panels...</p>
         </div>
-        <button class="btn btn-primary btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
-            + New Panel
+        <button class="btn-create btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
+            + Create Panel
         </button>
+        <div class="panels-limit-text">Maximum 5 panels per community</div>
     </div>
 </div>
 
 <!-- ===================================================================== -->
 <!-- Section 3: Whitelist Configuration                                     -->
 <!-- ===================================================================== -->
-<div class="card collapse-section open" id="section-whitelists">
+<div class="card collapse-section" id="section-whitelists">
     <div class="collapse-header" onclick="toggleSection('section-whitelists')">
         <div class="collapse-header-left">
             <span class="collapse-arrow">&#9654;</span>
@@ -562,7 +630,7 @@
         <input type="text" id="new-panel-name" class="form-input" placeholder="e.g. Seed Panel" style="margin-bottom:16px;width:100%;">
         <div class="modal-actions">
             <button class="btn btn-secondary btn-sm" onclick="closeCreatePanelModal()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="createPanel()">Create</button>
+            <button class="btn-create btn-sm" onclick="createPanel()">Create</button>
         </div>
     </div>
 </div>
@@ -574,8 +642,9 @@
 var channelOptions = [];
 var roleOptions = [];
 var settingsData = {};
+var panelsData = [];   // panels from /api/admin/panels
 var TYPES = [];
-var modRoleIds = []; // array of selected mod role IDs
+var modRoleIds = [];    // array of selected mod role IDs
 
 /* ════════════════════════════════════════════════════════════════════════════
    Collapsible Sections
@@ -628,7 +697,7 @@ document.addEventListener('mouseover', function(e) {
    Data Loading
    ════════════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
-    Promise.all([loadChannels(), loadRoles(), loadSettings()])
+    Promise.all([loadChannels(), loadRoles(), loadSettings(), loadPanels()])
         .then(function() {
             renderGeneralSettings();
             renderPanels();
@@ -646,6 +715,14 @@ function loadSettings() {
             settingsData = data;
             var tc = data.type_configs || data.types || {};
             TYPES = Object.keys(tc);
+        });
+}
+
+function loadPanels() {
+    return fetch('/api/admin/panels')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            panelsData = data.panels || [];
         });
 }
 
@@ -874,24 +951,46 @@ function saveGeneralSettings() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   Section 2: Panels
+   Section 2: Panels (uses /api/admin/panels)
    ════════════════════════════════════════════════════════════════════════════ */
-function renderPanels() {
+function buildWhitelistDropdownOptions() {
     var tc = settingsData.type_configs || {};
+    var opts = [];
+    var slugs = Object.keys(tc);
+    for (var i = 0; i < slugs.length; i++) {
+        var cfg = tc[slugs[i]];
+        opts.push({ id: String(cfg.id), name: cfg.name || slugs[i] });
+    }
+    return opts;
+}
+
+function renderPanels() {
     var container = document.getElementById('panels-grid');
     var html = '';
-    var panelCount = TYPES.length;
+    var panelCount = panelsData.length;
+    var activeCount = 0;
+    for (var a = 0; a < panelsData.length; a++) {
+        if (panelsData[a].channel_id) activeCount++;
+    }
 
     document.getElementById('panel-count-label').textContent = panelCount + ' / 5';
+
+    // Summary badges
+    var badgesHtml = '<span class="badge status-badge-enabled">' + panelCount + ' panel' + (panelCount !== 1 ? 's' : '') + '</span>';
+    badgesHtml += '<span class="badge status-badge-enabled">' + activeCount + ' active</span>';
+    document.getElementById('panels-summary-badges').innerHTML = badgesHtml;
+
     document.getElementById('btn-create-panel').style.display = (panelCount >= 5) ? 'none' : '';
 
-    TYPES.forEach(function(slug) {
-        var cfg = tc[slug] || {};
-        var name = cfg.name || slug;
-        var isDefault = cfg.is_default || false;
-        var channelName = getChannelName(cfg.panel_channel_id);
+    var wlOptions = buildWhitelistDropdownOptions();
 
-        html += '<div class="panel-card" id="panel-card-' + escapeHtml(slug) + '">';
+    panelsData.forEach(function(panel) {
+        var panelId = panel.id;
+        var name = panel.name || 'Panel';
+        var isDefault = panel.is_default || false;
+        var channelName = getChannelName(panel.channel_id);
+
+        html += '<div class="panel-card" id="panel-card-' + panelId + '">';
 
         // Header
         html += '<div class="panel-card-header">';
@@ -910,27 +1009,36 @@ function renderPanels() {
         // Panel name (editable)
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Name</label></div>';
-        html += '<input type="text" id="panel-name-' + escapeHtml(slug) + '" class="form-input" value="' + escapeHtml(name) + '" style="max-width:200px;">';
+        html += '<input type="text" id="panel-name-' + panelId + '" class="form-input" value="' + escapeHtml(name) + '" style="max-width:200px;">';
         html += '</div>';
 
         // Channel selector
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Channel</label></div>';
-        html += buildSearchableDropdown('panel-ch-' + slug, channelOptions, String(cfg.panel_channel_id || ''), '-- Select Channel --');
+        html += buildSearchableDropdown('panel-ch-' + panelId, channelOptions, String(panel.channel_id || ''), '-- Select Channel --');
         html += '</div>';
 
         // Log channel selector
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Log Channel</label></div>';
-        html += buildSearchableDropdown('panel-log-' + slug, channelOptions, String(cfg.log_channel_id || ''), '-- Select Log Channel --');
+        html += buildSearchableDropdown('panel-log-' + panelId, channelOptions, String(panel.log_channel_id || ''), '-- Select Log Channel --');
+        html += '</div>';
+
+        // Linked whitelist selector
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Whitelist</label>';
+        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
+        html += '<span class="info-tip-text">Link a whitelist to this panel. The panel embed will display this whitelist\'s data.</span></span>';
+        html += '</div>';
+        html += buildSearchableDropdown('panel-wl-' + panelId, wlOptions, String(panel.whitelist_id || ''), '-- Select Whitelist --');
         html += '</div>';
 
         // Actions
         html += '<div class="panel-card-actions">';
-        html += '<button class="btn btn-primary btn-sm" onclick="savePanelSettings(\'' + escapeHtml(slug) + '\')">Save</button>';
-        html += '<button class="btn btn-secondary btn-sm" onclick="pushPanel(\'' + escapeHtml(slug) + '\')">Push Panel</button>';
+        html += '<button class="btn-push btn-sm" onclick="pushPanel(' + panelId + ')">Push Panel</button>';
+        html += '<button class="btn-save btn-sm" onclick="savePanelSettings(' + panelId + ')">Save</button>';
         if (!isDefault) {
-            html += '<button class="btn btn-danger btn-sm" onclick="confirmDeletePanel(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(name) + '\')">Delete</button>';
+            html += '<button class="btn-delete btn-sm" onclick="confirmDeletePanel(' + panelId + ', \'' + escapeHtml(name) + '\')">Delete</button>';
         }
         html += '</div>';
 
@@ -950,18 +1058,19 @@ function getChannelName(channelId) {
     return '';
 }
 
-function savePanelSettings(slug) {
+function savePanelSettings(panelId) {
     var payload = {
-        name: document.getElementById('panel-name-' + slug).value.trim(),
-        panel_channel_id: getDropdownValue('panel-ch-' + slug) || null,
-        log_channel_id: getDropdownValue('panel-log-' + slug) || null
+        name: document.getElementById('panel-name-' + panelId).value.trim(),
+        channel_id: getDropdownValue('panel-ch-' + panelId) || null,
+        log_channel_id: getDropdownValue('panel-log-' + panelId) || null,
+        whitelist_id: getDropdownValue('panel-wl-' + panelId) || null
     };
     if (!payload.name) {
         showFlash('Panel name cannot be empty.', 'error');
         return;
     }
-    fetch('/api/admin/types/' + encodeURIComponent(slug), {
-        method: 'POST',
+    fetch('/api/admin/panels/' + panelId, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
@@ -973,28 +1082,30 @@ function savePanelSettings(slug) {
     .catch(function() { showFlash('Failed to save panel settings.', 'error'); });
 }
 
-function pushPanel(slug) {
-    /* Trigger a resync which will send/update panels in their channels */
-    fetch('/api/admin/resync', {
+function pushPanel(panelId) {
+    fetch('/api/admin/panels/' + panelId + '/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
-    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
     .then(function() { showFlash('Panel push triggered. The embed will appear shortly in the assigned channel.', 'success'); })
-    .catch(function() { showFlash('Failed to push panel.', 'error'); });
+    .catch(function(err) { showFlash(err.message || 'Failed to push panel.', 'error'); });
 }
 
-function confirmDeletePanel(slug, name) {
+function confirmDeletePanel(panelId, name) {
     showModal(
         'Delete Panel',
-        'Are you sure you want to delete "' + name + '"? This will remove all associated whitelist entries and role mappings. This cannot be undone.',
+        'Are you sure you want to delete "' + name + '"? This cannot be undone.',
         'Delete',
-        function() { deletePanel(slug); }
+        function() { deletePanel(panelId); }
     );
 }
 
-function deletePanel(slug) {
-    fetch('/api/admin/whitelists/' + encodeURIComponent(slug), { method: 'DELETE' })
+function deletePanel(panelId) {
+    fetch('/api/admin/panels/' + panelId, { method: 'DELETE' })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
         showFlash('Panel deleted.', 'success');
@@ -1009,7 +1120,7 @@ function createPanel() {
         showFlash('Please enter a panel name.', 'error');
         return;
     }
-    fetch('/api/admin/whitelists', {
+    fetch('/api/admin/panels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name })
@@ -1042,9 +1153,6 @@ function renderWhitelists() {
         var name = cfg.name || slug;
         var stateClass = enabled ? 'wl-enabled' : 'wl-disabled';
 
-        // Find assigned panel channel name
-        var panelChName = getChannelName(cfg.panel_channel_id);
-
         html += '<div class="wl-card ' + stateClass + '" id="wl-card-' + escapeHtml(slug) + '">';
 
         // Collapsed summary row
@@ -1060,8 +1168,8 @@ function renderWhitelists() {
         html += '</div>';
         html += '<div class="wl-card-meta">';
         html += '<span class="wl-role-count">' + roleMappings.length + ' role' + (roleMappings.length !== 1 ? 's' : '') + '</span>';
-        if (panelChName) {
-            html += '<span class="wl-panel-tag"># ' + escapeHtml(panelChName) + '</span>';
+        if (cfg.squad_group) {
+            html += '<span class="wl-squad-tag">' + escapeHtml(cfg.squad_group) + '</span>';
         }
         // Toggle switch (stop propagation so clicking it doesn't expand/collapse)
         html += '<label class="toggle" onclick="event.stopPropagation()">';
@@ -1082,17 +1190,8 @@ function renderWhitelists() {
         html += '<input type="text" id="wl-squad-' + escapeHtml(slug) + '" class="form-input" placeholder="e.g. Whitelist" value="' + escapeHtml(cfg.squad_group || '') + '" style="max-width:200px;">';
         html += '</div>';
 
-        // Panel assignment dropdown
-        html += '<div class="form-row" style="margin-bottom:12px;">';
-        html += '<div class="form-row-label"><label>Panel</label>';
-        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
-        html += '<span class="info-tip-text">Which panel this whitelist is displayed on.</span></span>';
-        html += '</div>';
-        html += buildSearchableDropdown('wl-panel-' + slug, channelOptions, String(cfg.panel_channel_id || ''), '-- Select Panel Channel --');
-        html += '</div>';
-
         html += '<div class="form-actions" style="margin-bottom:14px;">';
-        html += '<button class="btn btn-primary btn-sm" onclick="saveWhitelistSettings(\'' + escapeHtml(slug) + '\')">Save Settings</button>';
+        html += '<button class="btn-save btn-sm" onclick="saveWhitelistSettings(\'' + escapeHtml(slug) + '\')">Save Settings</button>';
         html += '</div>';
 
         // Role mappings
@@ -1135,7 +1234,7 @@ function renderWhitelists() {
         html += '<div class="add-role-row">';
         html += buildSearchableDropdown('add-role-' + slug, roleOptions, '', '-- Select Role --');
         html += '<input type="number" id="add-role-slots-' + escapeHtml(slug) + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
-        html += '<button class="btn btn-primary btn-sm" onclick="addRoleMapping(\'' + escapeHtml(slug) + '\')">Add</button>';
+        html += '<button class="btn-save btn-sm" onclick="addRoleMapping(\'' + escapeHtml(slug) + '\')">Add</button>';
         html += '</div>';
 
         html += '</div>'; // role-section
@@ -1182,8 +1281,7 @@ function toggleWhitelist(slug, enabled) {
 
 function saveWhitelistSettings(slug) {
     var payload = {
-        squad_group: document.getElementById('wl-squad-' + slug).value.trim(),
-        panel_channel_id: getDropdownValue('wl-panel-' + slug) || null
+        squad_group: document.getElementById('wl-squad-' + slug).value.trim()
     };
     fetch('/api/admin/types/' + encodeURIComponent(slug), {
         method: 'POST',
@@ -1242,7 +1340,7 @@ function removeRoleMapping(slug, roleId) {
    Reload
    ════════════════════════════════════════════════════════════════════════════ */
 function reloadAll() {
-    loadSettings().then(function() {
+    Promise.all([loadSettings(), loadPanels()]).then(function() {
         renderPanels();
         renderWhitelists();
     });
