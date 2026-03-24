@@ -9,6 +9,50 @@
 </div>
 
 <style>
+    /* Confirm Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 500;
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius);
+        padding: 28px 32px;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        animation: modalIn 0.15s ease;
+    }
+    @keyframes modalIn {
+        from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+    .modal-body {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+    .modal-body strong { color: var(--red); }
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
     .wl-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 24px; }
     .wl-card {
         background: var(--bg-secondary);
@@ -296,10 +340,23 @@ function createWhitelist() {
     .catch(function() { showFlash('Network error.', 'error'); });
 }
 
+var _pendingDeleteSlug = null;
+
 function deleteWhitelist(slug, name) {
-    if (!confirm('Delete "' + name + '"?\n\nThis will permanently remove all users, role mappings, and identifiers in this whitelist. This cannot be undone.')) {
-        return;
-    }
+    _pendingDeleteSlug = slug;
+    document.getElementById('modal-delete-name').textContent = name;
+    document.getElementById('delete-modal').classList.add('open');
+}
+
+function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.remove('open');
+    _pendingDeleteSlug = null;
+}
+
+function confirmDelete() {
+    var slug = _pendingDeleteSlug;
+    if (!slug) return;
+    closeDeleteModal();
 
     fetch('/api/admin/whitelists/' + slug, { method: 'DELETE' })
     .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
@@ -308,7 +365,7 @@ function deleteWhitelist(slug, name) {
             showFlash(result.data.error || 'Failed to delete.', 'error');
             return;
         }
-        showFlash('Whitelist "' + name + '" deleted.', 'success');
+        showFlash('Whitelist deleted.', 'success');
         loadWhitelists();
     })
     .catch(function() { showFlash('Network error.', 'error'); });
@@ -320,4 +377,20 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 </script>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="delete-modal" onclick="if(event.target===this)closeDeleteModal()">
+    <div class="modal-box">
+        <div class="modal-title">Delete Whitelist</div>
+        <div class="modal-body">
+            Are you sure you want to delete <strong id="modal-delete-name"></strong>?
+            <br><br>
+            This will permanently remove all users, role mappings, and identifiers in this whitelist. This cannot be undone.
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
