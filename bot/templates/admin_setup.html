@@ -5,11 +5,11 @@
 {% block content %}
 <div class="page-header">
     <h1>Community Setup</h1>
-    <p class="text-muted">Configure whitelist settings, type behavior, and role mappings for this server.</p>
+    <p class="text-muted">Configure general settings, panels, and whitelist types for this server.</p>
 </div>
 
 <style>
-    /* ── Tooltip ───────────────────────────────────────────────────────────── */
+    /* ── Tooltip (fixed positioning, never clipped) ───────────────────── */
     .info-tip {
         position: relative;
         display: inline-flex;
@@ -39,10 +39,7 @@
     }
     .info-tip-text {
         display: none;
-        position: absolute;
-        bottom: calc(100% + 8px);
-        left: 50%;
-        transform: translateX(-50%);
+        position: fixed;
         background: var(--bg-primary);
         color: var(--text-secondary);
         border: 1px solid var(--border-light);
@@ -56,23 +53,14 @@
         text-transform: none;
         letter-spacing: normal;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        z-index: 9999;
+        z-index: 99999;
         pointer-events: none;
-    }
-    .info-tip-text::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        border: 6px solid transparent;
-        border-top-color: var(--border-light);
     }
     .info-tip:hover .info-tip-text {
         display: block;
     }
 
-    /* ── Toggle Switch ──────────────────────────────────────────────────── */
+    /* ── Toggle Switch ──────────────────────────────────────────────── */
     .toggle {
         position: relative;
         display: inline-block;
@@ -80,11 +68,7 @@
         height: 24px;
         flex-shrink: 0;
     }
-    .toggle input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
     .toggle-slider {
         position: absolute;
         cursor: pointer;
@@ -104,14 +88,48 @@
         border-radius: 50%;
         transition: transform 0.25s ease;
     }
-    .toggle input:checked + .toggle-slider {
-        background: #43b581;
-    }
-    .toggle input:checked + .toggle-slider::before {
-        transform: translateX(20px);
-    }
+    .toggle input:checked + .toggle-slider { background: #43b581; }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
-    /* ── Form Row (2-column: label + control) ─────────────────────────── */
+    /* ── Collapsible Section ──────────────────────────────────────────── */
+    .collapse-section { margin-bottom: 24px; }
+    .collapse-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+    }
+    .collapse-header:hover { background: rgba(255,255,255,0.02); }
+    .collapse-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .collapse-arrow {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        transition: transform 0.2s ease;
+        width: 14px;
+        text-align: center;
+    }
+    .collapse-section.open .collapse-arrow { transform: rotate(90deg); }
+    .collapse-header h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+    .collapse-body {
+        display: none;
+        padding: 20px;
+    }
+    .collapse-section.open .collapse-body { display: block; }
+
+    /* ── Form Row (label + control) ───────────────────────────────────── */
     .form-row {
         display: flex;
         align-items: center;
@@ -119,12 +137,12 @@
         gap: 16px;
         margin-bottom: 16px;
         min-height: 38px;
+        overflow: visible;
     }
     .form-row-label {
         display: flex;
         align-items: center;
         flex-shrink: 0;
-        min-width: 0;
     }
     .form-row-label label {
         font-size: 0.82rem;
@@ -136,61 +154,123 @@
         margin-bottom: 0;
     }
     .form-row .form-input,
-    .form-row .searchable-dropdown {
-        max-width: 260px;
-        width: 100%;
-    }
+    .form-row .searchable-dropdown { max-width: 300px; width: 100%; }
 
-    /* ── Section spacing ──────────────────────────────────────────────── */
-    .setup-section {
-        margin-bottom: 36px;
-    }
-    .setup-section-header {
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-bottom: 4px;
-        color: var(--text-primary);
-    }
-    .setup-section-desc {
-        font-size: 0.85rem;
-        color: var(--text-muted);
+    /* ── Panels Grid ──────────────────────────────────────────────────── */
+    .panels-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
         margin-bottom: 16px;
     }
-
-    /* ── Type cards ────────────────────────────────────────────────────── */
-    .type-card {
-        margin-bottom: 20px;
-        transition: border-color 0.3s ease;
+    .panel-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-secondary);
+        overflow: visible;
+        transition: border-color 0.2s;
     }
-    .type-card-enabled {
-        border-left: 4px solid #43b581;
-    }
-    .type-card-disabled {
-        border-left: 4px solid #72767d;
-    }
-    .type-card-header {
+    .panel-card:hover { border-color: var(--border-light); }
+    .panel-card-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 20px;
+        padding: 12px 16px;
         border-bottom: 1px solid var(--border);
     }
-    .type-card-header-left {
+    .panel-card-header-left {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
     }
-    .type-card-header-left h3 {
-        font-size: 1.05rem;
+    .panel-card-name {
         font-weight: 600;
-        transition: color 0.3s ease;
-    }
-    .type-card-disabled .type-card-header-left h3 {
-        color: var(--text-muted);
-    }
-    .type-card-enabled .type-card-header-left h3 {
+        font-size: 0.95rem;
         color: var(--text-primary);
     }
+    .panel-card-channel {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    .panel-card-body {
+        padding: 14px 16px;
+        overflow: visible;
+    }
+    .panel-card-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+    }
+    .panel-default-badge {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: rgba(88, 101, 242, 0.15);
+        color: var(--accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    /* ── Whitelist Config Cards ─────────────────────────────────────── */
+    .wl-card {
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-secondary);
+        overflow: visible;
+        transition: border-color 0.2s;
+    }
+    .wl-card.wl-enabled { border-left: 3px solid #43b581; }
+    .wl-card.wl-disabled { border-left: 3px solid #72767d; }
+    .wl-card-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s;
+    }
+    .wl-card-summary:hover { background: rgba(255,255,255,0.02); }
+    .wl-card-summary-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .wl-card-summary-left .collapse-arrow { font-size: 0.65rem; }
+    .wl-card-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--text-primary);
+    }
+    .wl-card.wl-disabled .wl-card-name { color: var(--text-muted); }
+    .wl-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+    .wl-role-count {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+    }
+    .wl-panel-tag {
+        font-size: 0.72rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: rgba(88, 101, 242, 0.1);
+        color: var(--accent);
+    }
+    .wl-card-detail {
+        display: none;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+        overflow: visible;
+    }
+    .wl-card.open .wl-card-detail { display: block; }
 
     .status-badge-enabled {
         background: rgba(67, 181, 129, 0.15);
@@ -201,43 +281,30 @@
         color: #72767d;
     }
 
-    /* ── Type card body ────────────────────────────────────────────────── */
-    .type-card .card-body {
-        padding: 20px;
-    }
-    .type-settings-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0 32px;
-    }
-    @media (max-width: 768px) {
-        .type-settings-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    /* ── Role mapping table ───────────────────────────────────────────── */
-    .role-section {
-        margin-top: 18px;
-        padding-top: 18px;
-        border-top: 1px solid var(--border);
-    }
+    /* ── Role Mapping Table ────────────────────────────────────────────── */
+    .role-section { margin-top: 14px; }
     .role-section h4 {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 600;
         color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
     }
-    .role-table tbody tr:nth-child(even) {
-        background: rgba(49, 51, 56, 0.4);
+    .role-table tbody tr:nth-child(even) { background: rgba(49, 51, 56, 0.4); }
+    .role-table tbody tr:nth-child(odd) { background: transparent; }
+    .role-table tbody tr:hover { background: var(--bg-tertiary); }
+    .role-math {
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        margin-bottom: 10px;
+        line-height: 1.6;
     }
-    .role-table tbody tr:nth-child(odd) {
-        background: transparent;
-    }
-    .role-table tbody tr:hover {
-        background: var(--bg-tertiary);
+    .role-math span {
+        background: rgba(88, 101, 242, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin: 0 2px;
     }
     .add-role-row {
         display: flex;
@@ -245,18 +312,11 @@
         align-items: flex-end;
         margin-top: 12px;
     }
-    .add-role-row .searchable-dropdown {
-        max-width: 220px;
-        width: 100%;
-    }
-    .add-role-row .slot-input {
-        max-width: 80px;
-    }
+    .add-role-row .searchable-dropdown { max-width: 220px; width: 100%; }
+    .add-role-row .slot-input { max-width: 80px; }
 
     /* ── Searchable Dropdown ──────────────────────────────────────────── */
-    .searchable-dropdown {
-        position: relative;
-    }
+    .searchable-dropdown { position: relative; }
     .searchable-dropdown-input {
         width: 100%;
         padding: 8px 32px 8px 12px;
@@ -270,12 +330,8 @@
         outline: none;
         cursor: pointer;
     }
-    .searchable-dropdown-input:focus {
-        border-color: var(--accent);
-    }
-    .searchable-dropdown-input::placeholder {
-        color: var(--text-muted);
-    }
+    .searchable-dropdown-input:focus { border-color: var(--accent); }
+    .searchable-dropdown-input::placeholder { color: var(--text-muted); }
     .searchable-dropdown-arrow {
         position: absolute;
         right: 10px;
@@ -298,9 +354,7 @@
         padding: 4px;
         min-width: 200px;
     }
-    .searchable-dropdown.open .searchable-dropdown-list {
-        display: block;
-    }
+    .searchable-dropdown.open .searchable-dropdown-list { display: block; }
     .searchable-dropdown-item {
         padding: 7px 10px;
         font-size: 0.85rem;
@@ -331,157 +385,267 @@
         text-align: center;
     }
 
-    /* ── Global settings card layout ──────────────────────────────────── */
-    .global-settings-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0 32px;
+    /* ── Multi-select tags ────────────────────────────────────────────── */
+    .multi-tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
     }
+    .multi-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(88, 101, 242, 0.15);
+        color: var(--accent);
+        border-radius: 12px;
+        padding: 3px 10px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+    .multi-tag-remove {
+        cursor: pointer;
+        font-size: 0.9rem;
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+        margin-left: 2px;
+    }
+    .multi-tag-remove:hover { opacity: 1; }
+
+    /* ── Custom Modal ─────────────────────────────────────────────────── */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.6);
+        z-index: 100000;
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius);
+        padding: 24px;
+        max-width: 420px;
+        width: 90%;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .modal-box h3 { margin: 0 0 10px; font-size: 1.05rem; color: var(--text-primary); }
+    .modal-box p { margin: 0 0 20px; font-size: 0.88rem; color: var(--text-secondary); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── Responsive ───────────────────────────────────────────────────── */
     @media (max-width: 768px) {
-        .global-settings-grid {
-            grid-template-columns: 1fr;
-        }
+        .panels-grid { grid-template-columns: 1fr; }
         .form-row {
             flex-direction: column;
             align-items: flex-start;
             gap: 6px;
         }
         .form-row .form-input,
-        .form-row .searchable-dropdown {
-            max-width: 100%;
-        }
+        .form-row .searchable-dropdown { max-width: 100%; }
         .add-role-row {
             flex-direction: column;
             align-items: stretch;
         }
         .add-role-row .searchable-dropdown,
-        .add-role-row .slot-input {
-            max-width: 100%;
-        }
+        .add-role-row .slot-input { max-width: 100%; }
     }
+
+    /* Ensure overflow visible on all card containers so dropdowns are never clipped */
+    .card, .card-body, .panel-card, .panel-card-body, .wl-card, .wl-card-detail,
+    .collapse-body, .collapse-section { overflow: visible; }
 </style>
 
-<!-- ================================================================== -->
-<!-- Global Settings                                                     -->
-<!-- ================================================================== -->
-<div class="setup-section">
-    <h2 class="setup-section-header">Global Settings</h2>
-    <p class="setup-section-desc">Core configuration that applies across all whitelist types.</p>
-    <div class="card">
-        <div class="card-body" id="global-settings-form">
-            <div class="global-settings-grid">
-                <div class="form-row">
-                    <div class="form-row-label">
-                        <label for="output-mode">Output Mode</label>
-                        <span class="info-tip">
-                            <span class="info-tip-icon">i</span>
-                            <span class="info-tip-text">How whitelist files are generated. 'Combined' merges all types into one file. 'Separate' creates individual files per type.</span>
-                        </span>
-                    </div>
-                    <select id="output-mode" class="form-input form-select">
-                        <option value="combined">Combined</option>
-                        <option value="separate">Separate</option>
-                    </select>
-                </div>
-                <div class="form-row">
-                    <div class="form-row-label">
-                        <label for="combined-filename">Combined Filename</label>
-                        <span class="info-tip">
-                            <span class="info-tip-icon">i</span>
-                            <span class="info-tip-text">The filename for the combined whitelist file that your Squad server will pull from (e.g., PhantomCoWhitelist.txt)</span>
-                        </span>
-                    </div>
-                    <input type="text" id="combined-filename" class="form-input" placeholder="whitelist.txt">
-                </div>
-                <div class="form-row">
-                    <div class="form-row-label">
-                        <label for="retention-period">Retention Period</label>
-                        <span class="info-tip">
-                            <span class="info-tip-icon">i</span>
-                            <span class="info-tip-text">How long whitelist entries remain active before expiring. Users will be notified before expiry.</span>
-                        </span>
-                    </div>
-                    <select id="retention-period" class="form-input form-select">
-                        <option value="30">30 days</option>
-                        <option value="60">60 days</option>
-                        <option value="90">90 days</option>
-                        <option value="180">180 days</option>
-                        <option value="365">365 days</option>
-                    </select>
-                </div>
-                <div class="form-row">
-                    <div class="form-row-label">
-                        <label for="report-frequency">Report Frequency</label>
-                        <span class="info-tip">
-                            <span class="info-tip-icon">i</span>
-                            <span class="info-tip-text">How often automated whitelist summary reports are posted to your log channels.</span>
-                        </span>
-                    </div>
-                    <select id="report-frequency" class="form-input form-select">
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="disabled">Disabled</option>
-                    </select>
-                </div>
+<!-- ===================================================================== -->
+<!-- Section 1: General Settings                                            -->
+<!-- ===================================================================== -->
+<div class="card collapse-section open" id="section-general">
+    <div class="collapse-header" onclick="toggleSection('section-general')">
+        <div class="collapse-header-left">
+            <span class="collapse-arrow">&#9654;</span>
+            <h3>General Settings</h3>
+        </div>
+    </div>
+    <div class="collapse-body">
+        <div class="form-row">
+            <div class="form-row-label">
+                <label>Mod Role(s)</label>
+                <span class="info-tip">
+                    <span class="info-tip-icon">i</span>
+                    <span class="info-tip-text">Discord roles that grant moderator access to the bot dashboard and commands.</span>
+                </span>
             </div>
-            <div class="form-actions">
-                <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Global Settings</button>
+            <div style="max-width:300px;width:100%;">
+                <div class="multi-tag-list" id="mod-roles-tags"></div>
+                <div id="mod-role-dropdown-wrap"></div>
             </div>
+        </div>
+        <div class="form-row">
+            <div class="form-row-label">
+                <label for="report-frequency">Report Frequency</label>
+                <span class="info-tip">
+                    <span class="info-tip-icon">i</span>
+                    <span class="info-tip-text">How often automated whitelist summary reports are posted to your log channels.</span>
+                </span>
+            </div>
+            <select id="report-frequency" class="form-input form-select">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="disabled">Never</option>
+            </select>
+        </div>
+        <div class="form-actions" style="margin-top:8px;">
+            <button class="btn btn-primary" onclick="saveGeneralSettings()">Save Settings</button>
         </div>
     </div>
 </div>
 
-<!-- ================================================================== -->
-<!-- Whitelist Types                                                      -->
-<!-- ================================================================== -->
-<div class="setup-section">
-    <h2 class="setup-section-header">Whitelist Configuration</h2>
-    <p class="setup-section-desc">Configure each whitelist individually &mdash; channels, slot limits, role mappings, and more.</p>
-    <div id="type-cards-container">
-        <p class="text-muted">Loading...</p>
+<!-- ===================================================================== -->
+<!-- Section 2: Panels                                                      -->
+<!-- ===================================================================== -->
+<div class="card collapse-section open" id="section-panels">
+    <div class="collapse-header" onclick="toggleSection('section-panels')">
+        <div class="collapse-header-left">
+            <span class="collapse-arrow">&#9654;</span>
+            <h3>Panels</h3>
+        </div>
+        <span style="font-size:0.8rem;color:var(--text-muted);" id="panel-count-label"></span>
+    </div>
+    <div class="collapse-body">
+        <div class="panels-grid" id="panels-grid">
+            <p class="text-muted">Loading panels...</p>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
+            + New Panel
+        </button>
+    </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Section 3: Whitelist Configuration                                     -->
+<!-- ===================================================================== -->
+<div class="card collapse-section open" id="section-whitelists">
+    <div class="collapse-header" onclick="toggleSection('section-whitelists')">
+        <div class="collapse-header-left">
+            <span class="collapse-arrow">&#9654;</span>
+            <h3>Whitelist Configuration</h3>
+        </div>
+    </div>
+    <div class="collapse-body" id="wl-cards-container">
+        <p class="text-muted">Loading whitelists...</p>
+    </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Modals                                                                 -->
+<!-- ===================================================================== -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box" id="modal-box">
+        <h3 id="modal-title">Confirm</h3>
+        <p id="modal-message">Are you sure?</p>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-danger btn-sm" id="modal-confirm-btn" onclick="closeModal()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="create-panel-modal">
+    <div class="modal-box">
+        <h3>Create New Panel</h3>
+        <p>Enter a name for the new whitelist panel.</p>
+        <input type="text" id="new-panel-name" class="form-input" placeholder="e.g. Seed Panel" style="margin-bottom:16px;width:100%;">
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="closeCreatePanelModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="createPanel()">Create</button>
+        </div>
     </div>
 </div>
 
 <script>
-let channelOptions = [];
-let roleOptions = [];
-let TYPES = []; // Populated dynamically from API
+/* ════════════════════════════════════════════════════════════════════════════
+   State
+   ════════════════════════════════════════════════════════════════════════════ */
+var channelOptions = [];
+var roleOptions = [];
+var settingsData = {};
+var TYPES = [];
+var modRoleIds = []; // array of selected mod role IDs
 
-/* ── Tooltip descriptions for type-level settings ────────────────────── */
-const TOOLTIPS = {
-    panel_channel: "The Discord channel where the whitelist submission panel will be posted for users.",
-    log_channel: "The Discord channel where whitelist changes and activity will be logged.",
-    default_slot_limit: "The number of Steam/EOS IDs each user can register by default. Role mappings can override this.",
-    stack_roles: "When enabled, users with multiple mapped roles get their highest slot limit. When disabled, slot limits don't stack.",
-    squad_group: "The Squad permission group name (e.g., 'Whitelist'). Maps to the group in your Squad RemoteAdminList.",
-    github_filename: "The filename used when publishing this whitelist type to GitHub (legacy, optional)."
-};
+/* ════════════════════════════════════════════════════════════════════════════
+   Collapsible Sections
+   ════════════════════════════════════════════════════════════════════════════ */
+function toggleSection(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.toggle('open');
+}
 
-document.addEventListener('DOMContentLoaded', function() {
-    Promise.all([
-        loadChannels(),
-        loadRoles(),
-        loadSettings()
-    ]).then(function() {
-        renderTypeCards();
-    }).catch(function() {
-        showFlash('Failed to load setup data.', 'error');
-    });
+/* ════════════════════════════════════════════════════════════════════════════
+   Modal helpers
+   ════════════════════════════════════════════════════════════════════════════ */
+var _modalCallback = null;
+function showModal(title, message, confirmLabel, callback) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-message').textContent = message;
+    var btn = document.getElementById('modal-confirm-btn');
+    btn.textContent = confirmLabel || 'Confirm';
+    btn.className = 'btn btn-danger btn-sm';
+    _modalCallback = callback;
+    btn.onclick = function() { closeModal(); if (_modalCallback) _modalCallback(); };
+    document.getElementById('modal-overlay').classList.add('active');
+}
+function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('active');
+    _modalCallback = null;
+}
+function showCreatePanelModal() {
+    document.getElementById('new-panel-name').value = '';
+    document.getElementById('create-panel-modal').classList.add('active');
+}
+function closeCreatePanelModal() {
+    document.getElementById('create-panel-modal').classList.remove('active');
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Tooltip positioning (fixed, never clipped)
+   ════════════════════════════════════════════════════════════════════════════ */
+document.addEventListener('mouseover', function(e) {
+    var tip = e.target.closest('.info-tip');
+    if (!tip) return;
+    var text = tip.querySelector('.info-tip-text');
+    if (!text) return;
+    var rect = tip.getBoundingClientRect();
+    text.style.left = Math.max(8, rect.left + rect.width / 2 - 140) + 'px';
+    text.style.top = Math.max(8, rect.top - text.offsetHeight - 8) + 'px';
 });
 
-/* ── Data loading ─────────────────────────────────────────────────────── */
-let settingsData = {};
+/* ════════════════════════════════════════════════════════════════════════════
+   Data Loading
+   ════════════════════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', function() {
+    Promise.all([loadChannels(), loadRoles(), loadSettings()])
+        .then(function() {
+            renderGeneralSettings();
+            renderPanels();
+            renderWhitelists();
+        })
+        .catch(function() {
+            showFlash('Failed to load setup data.', 'error');
+        });
+});
 
 function loadSettings() {
     return fetch('/api/admin/settings')
         .then(function(r) { return r.json(); })
         .then(function(data) {
             settingsData = data;
-            // Populate TYPES dynamically from API response
             var tc = data.type_configs || data.types || {};
             TYPES = Object.keys(tc);
-            populateGlobalSettings(data);
         });
 }
 
@@ -497,49 +661,21 @@ function loadRoles() {
         .then(function(data) { roleOptions = data.roles || data || []; });
 }
 
-/* ── Global settings ──────────────────────────────────────────────────── */
-function populateGlobalSettings(data) {
-    var bs = data.bot_settings || data;
-    if (bs.output_mode) document.getElementById('output-mode').value = bs.output_mode;
-    if (bs.combined_filename) document.getElementById('combined-filename').value = bs.combined_filename;
-    if (bs.retention_days) document.getElementById('retention-period').value = String(bs.retention_days);
-    if (bs.report_frequency) document.getElementById('report-frequency').value = bs.report_frequency;
-}
-
-function saveGlobalSettings() {
-    var payload = {
-        output_mode: document.getElementById('output-mode').value,
-        combined_filename: document.getElementById('combined-filename').value,
-        retention_days: parseInt(document.getElementById('retention-period').value, 10),
-        report_frequency: document.getElementById('report-frequency').value
-    };
-    fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-    })
-    .then(function(r) {
-        if (!r.ok) throw new Error('Failed');
-        return r.json();
-    })
-    .then(function() { showFlash('Global settings saved.', 'success'); })
-    .catch(function() { showFlash('Failed to save global settings.', 'error'); });
-}
-
-/* ── Searchable Dropdown Component ────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════════
+   Searchable Dropdown Component
+   ════════════════════════════════════════════════════════════════════════════ */
 function buildSearchableDropdown(id, options, selectedValue, placeholder) {
     var selectedLabel = '';
+    var isChannel = (options === channelOptions);
+    var prefix = isChannel ? '# ' : '';
     for (var i = 0; i < options.length; i++) {
         var val = options[i].id || options[i];
         var name = options[i].name || options[i];
         if (String(val) === String(selectedValue)) {
-            selectedLabel = (options === channelOptions ? '# ' : '') + name;
+            selectedLabel = prefix + name;
             break;
         }
     }
-
-    var prefix = (options === channelOptions) ? '# ' : '';
-
     var html = '<div class="searchable-dropdown" data-dropdown-id="' + escapeHtml(id) + '" data-selected-value="' + escapeHtml(String(selectedValue || '')) + '">';
     html += '<input type="text" class="searchable-dropdown-input" id="' + escapeHtml(id) + '"';
     html += ' placeholder="' + escapeHtml(placeholder || '-- Select --') + '"';
@@ -547,25 +683,22 @@ function buildSearchableDropdown(id, options, selectedValue, placeholder) {
     html += ' autocomplete="off">';
     html += '<span class="searchable-dropdown-arrow">&#9660;</span>';
     html += '<div class="searchable-dropdown-list">';
-
-    /* "None" / clear option */
     html += '<div class="searchable-dropdown-item' + (!selectedValue ? ' selected' : '') + '" data-value="">' + escapeHtml(placeholder || '-- None --') + '</div>';
-
     for (var j = 0; j < options.length; j++) {
         var optVal = String(options[j].id || options[j]);
         var optName = String(options[j].name || options[j]);
         var isSel = (optVal === String(selectedValue)) ? ' selected' : '';
         html += '<div class="searchable-dropdown-item' + isSel + '" data-value="' + escapeHtml(optVal) + '">' + escapeHtml(prefix + optName) + '</div>';
     }
-
     html += '</div></div>';
     return html;
 }
 
-/* Initialize searchable dropdown behaviors after DOM insertion */
 function initSearchableDropdowns(container) {
     var dropdowns = container.querySelectorAll('.searchable-dropdown');
     dropdowns.forEach(function(dd) {
+        if (dd._sdInit) return;
+        dd._sdInit = true;
         var input = dd.querySelector('.searchable-dropdown-input');
         var list = dd.querySelector('.searchable-dropdown-list');
         var items = list.querySelectorAll('.searchable-dropdown-item');
@@ -573,37 +706,28 @@ function initSearchableDropdowns(container) {
 
         function openList() {
             dd.classList.add('open');
-            // Position the fixed dropdown relative to the input
             var rect = input.getBoundingClientRect();
             var maxHeight = 220;
             var spaceBelow = window.innerHeight - rect.bottom - 8;
             var spaceAbove = rect.top - 8;
-
             list.style.left = rect.left + 'px';
             list.style.width = rect.width + 'px';
             list.style.maxHeight = Math.min(maxHeight, Math.max(spaceBelow, spaceAbove)) + 'px';
-
             if (spaceBelow < 120 && spaceAbove > spaceBelow) {
-                // Open upward
                 list.style.top = 'auto';
                 list.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
             } else {
-                // Open downward
                 list.style.top = (rect.bottom + 4) + 'px';
                 list.style.bottom = 'auto';
             }
-
             filterItems('');
             highlightIndex = -1;
         }
-
         function closeList() {
             dd.classList.remove('open');
-            /* Restore the displayed label to the selected item's text */
             var sel = list.querySelector('.searchable-dropdown-item.selected');
             input.value = (sel && sel.getAttribute('data-value')) ? sel.textContent : '';
         }
-
         function selectItem(item) {
             var value = item.getAttribute('data-value');
             dd.setAttribute('data-selected-value', value);
@@ -611,8 +735,9 @@ function initSearchableDropdowns(container) {
             item.classList.add('selected');
             input.value = value ? item.textContent : '';
             closeList();
+            /* Fire change event for multi-select hook */
+            dd.dispatchEvent(new CustomEvent('dropdown-change', { detail: { value: value, label: item.textContent } }));
         }
-
         function filterItems(query) {
             var q = query.toLowerCase();
             var visibleCount = 0;
@@ -621,7 +746,6 @@ function initSearchableDropdowns(container) {
                 if (!q || text.indexOf(q) !== -1) {
                     item.style.display = '';
                     visibleCount++;
-                    /* Highlight matching substring */
                     if (q && item.getAttribute('data-value')) {
                         var orig = item.textContent;
                         var idx = orig.toLowerCase().indexOf(q);
@@ -635,8 +759,6 @@ function initSearchableDropdowns(container) {
                     item.style.display = 'none';
                 }
             });
-
-            /* Show empty message */
             var emptyMsg = list.querySelector('.searchable-dropdown-empty');
             if (visibleCount === 0) {
                 if (!emptyMsg) {
@@ -650,53 +772,21 @@ function initSearchableDropdowns(container) {
             }
         }
 
-        input.addEventListener('focus', function() {
-            input.select();
-            openList();
-        });
-
-        input.addEventListener('input', function() {
-            if (!dd.classList.contains('open')) openList();
-            filterItems(input.value);
-        });
-
+        input.addEventListener('focus', function() { input.select(); openList(); });
+        input.addEventListener('input', function() { if (!dd.classList.contains('open')) openList(); filterItems(input.value); });
         input.addEventListener('keydown', function(e) {
             var visible = [];
             items.forEach(function(it) { if (it.style.display !== 'none') visible.push(it); });
-
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                highlightIndex = Math.min(highlightIndex + 1, visible.length - 1);
-                visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); });
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                highlightIndex = Math.max(highlightIndex - 1, 0);
-                visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); });
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (highlightIndex >= 0 && visible[highlightIndex]) {
-                    selectItem(visible[highlightIndex]);
-                }
-            } else if (e.key === 'Escape') {
-                closeList();
-                input.blur();
-            }
+            if (e.key === 'ArrowDown') { e.preventDefault(); highlightIndex = Math.min(highlightIndex + 1, visible.length - 1); visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); }); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); highlightIndex = Math.max(highlightIndex - 1, 0); visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); }); }
+            else if (e.key === 'Enter') { e.preventDefault(); if (highlightIndex >= 0 && visible[highlightIndex]) selectItem(visible[highlightIndex]); }
+            else if (e.key === 'Escape') { closeList(); input.blur(); }
         });
-
-        items.forEach(function(item) {
-            item.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                selectItem(item);
-            });
-        });
-
-        input.addEventListener('blur', function() {
-            setTimeout(function() { closeList(); }, 150);
-        });
+        items.forEach(function(item) { item.addEventListener('mousedown', function(e) { e.preventDefault(); selectItem(item); }); });
+        input.addEventListener('blur', function() { setTimeout(function() { closeList(); }, 150); });
     });
 }
 
-/* Helper to read selected value from a searchable dropdown */
 function getDropdownValue(id) {
     var dd = document.querySelector('.searchable-dropdown[data-dropdown-id="' + id + '"]');
     return dd ? (dd.getAttribute('data-selected-value') || '') : '';
@@ -705,250 +795,456 @@ function getDropdownValue(id) {
 function getDropdownLabel(id) {
     var dd = document.querySelector('.searchable-dropdown[data-dropdown-id="' + id + '"]');
     if (!dd) return '';
-    var selectedValue = dd.getAttribute('data-selected-value') || '';
-    if (!selectedValue) return '';
+    var v = dd.getAttribute('data-selected-value') || '';
+    if (!v) return '';
     var item = dd.querySelector('.searchable-dropdown-item.selected');
     return item ? item.textContent.trim() : '';
 }
 
-/* ── Tooltip builder ──────────────────────────────────────────────────── */
-function buildTooltip(text) {
-    return '<span class="info-tip"><span class="info-tip-icon">i</span><span class="info-tip-text">' + escapeHtml(text) + '</span></span>';
+/* ════════════════════════════════════════════════════════════════════════════
+   Section 1: General Settings
+   ════════════════════════════════════════════════════════════════════════════ */
+function renderGeneralSettings() {
+    var bs = settingsData.bot_settings || settingsData;
+
+    // Report frequency
+    if (bs.report_frequency) {
+        document.getElementById('report-frequency').value = bs.report_frequency;
+    }
+
+    // Mod roles (stored as comma-separated string or single ID)
+    var modVal = bs.mod_role_id || '';
+    modRoleIds = modVal ? modVal.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    renderModRoleTags();
+    renderModRoleDropdown();
 }
 
-/* ── Render type cards ────────────────────────────────────────────────── */
-function renderTypeCards() {
-    var container = document.getElementById('type-cards-container');
+function renderModRoleTags() {
+    var container = document.getElementById('mod-roles-tags');
     var html = '';
+    modRoleIds.forEach(function(rid) {
+        var name = rid;
+        for (var i = 0; i < roleOptions.length; i++) {
+            if (String(roleOptions[i].id) === String(rid)) { name = roleOptions[i].name; break; }
+        }
+        html += '<span class="multi-tag">' + escapeHtml(name);
+        html += ' <span class="multi-tag-remove" onclick="removeModRole(\'' + escapeHtml(rid) + '\')">&times;</span></span>';
+    });
+    container.innerHTML = html;
+}
 
-    TYPES.forEach(function(type) {
-        var tc = settingsData.type_configs || settingsData.types || {};
-        var rm = settingsData.role_mappings || {};
-        var cfg = tc[type] || {};
-        var enabled = cfg.enabled || false;
-        var panelChannel = String(cfg.panel_channel_id || '');
-        var logChannel = String(cfg.log_channel_id || '');
-        var slotLimit = cfg.default_slot_limit || 1;
-        var stackRoles = cfg.stack_roles || false;
-        var squadGroup = cfg.squad_group || '';
-        var ghFilename = cfg.output_filename || cfg.github_filename || '';
-        var roleMappings = rm[type] || [];
+function renderModRoleDropdown() {
+    var wrap = document.getElementById('mod-role-dropdown-wrap');
+    wrap.innerHTML = buildSearchableDropdown('mod-role-picker', roleOptions, '', '-- Add Mod Role --');
+    initSearchableDropdowns(wrap);
+    var dd = wrap.querySelector('.searchable-dropdown');
+    if (dd) {
+        dd.addEventListener('dropdown-change', function(e) {
+            var val = e.detail.value;
+            if (val && modRoleIds.indexOf(val) === -1) {
+                modRoleIds.push(val);
+                renderModRoleTags();
+            }
+            // Reset the dropdown
+            dd.setAttribute('data-selected-value', '');
+            dd.querySelector('.searchable-dropdown-input').value = '';
+            dd.querySelectorAll('.searchable-dropdown-item').forEach(function(it) { it.classList.remove('selected'); });
+        });
+    }
+}
 
-        var stateClass = enabled ? 'type-card-enabled' : 'type-card-disabled';
-        var typeName = cfg.name || (type.charAt(0).toUpperCase() + type.slice(1));
+function removeModRole(rid) {
+    modRoleIds = modRoleIds.filter(function(r) { return r !== rid; });
+    renderModRoleTags();
+}
 
-        html += '<div class="card type-card ' + stateClass + '" id="type-card-' + type + '">';
+function saveGeneralSettings() {
+    var payload = {
+        report_frequency: document.getElementById('report-frequency').value,
+        mod_role_id: modRoleIds.join(',')
+    };
+    fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function() { showFlash('General settings saved.', 'success'); })
+    .catch(function() { showFlash('Failed to save general settings.', 'error'); });
+}
 
-        /* Header with toggle */
-        html += '<div class="type-card-header">';
-        html += '<div class="type-card-header-left">';
-        html += '<h3>' + escapeHtml(typeName) + '</h3>';
-        if (enabled) {
-            html += '<span class="badge status-badge-enabled">Enabled</span>';
-        } else {
-            html += '<span class="badge status-badge-disabled">Disabled</span>';
+/* ════════════════════════════════════════════════════════════════════════════
+   Section 2: Panels
+   ════════════════════════════════════════════════════════════════════════════ */
+function renderPanels() {
+    var tc = settingsData.type_configs || {};
+    var container = document.getElementById('panels-grid');
+    var html = '';
+    var panelCount = TYPES.length;
+
+    document.getElementById('panel-count-label').textContent = panelCount + ' / 5';
+    document.getElementById('btn-create-panel').style.display = (panelCount >= 5) ? 'none' : '';
+
+    TYPES.forEach(function(slug) {
+        var cfg = tc[slug] || {};
+        var name = cfg.name || slug;
+        var isDefault = cfg.is_default || false;
+        var channelName = getChannelName(cfg.panel_channel_id);
+
+        html += '<div class="panel-card" id="panel-card-' + escapeHtml(slug) + '">';
+
+        // Header
+        html += '<div class="panel-card-header">';
+        html += '<div class="panel-card-header-left">';
+        html += '<span class="panel-card-name">' + escapeHtml(name) + '</span>';
+        if (isDefault) html += ' <span class="panel-default-badge">Default</span>';
+        html += '</div>';
+        if (channelName) {
+            html += '<span class="panel-card-channel"># ' + escapeHtml(channelName) + '</span>';
         }
         html += '</div>';
-        html += '<label class="toggle"><input type="checkbox" id="toggle-' + type + '"' + (enabled ? ' checked' : '') + ' onchange="toggleType(\'' + type + '\', this.checked)"><span class="toggle-slider"></span></label>';
+
+        // Body
+        html += '<div class="panel-card-body">';
+
+        // Panel name (editable)
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Name</label></div>';
+        html += '<input type="text" id="panel-name-' + escapeHtml(slug) + '" class="form-input" value="' + escapeHtml(name) + '" style="max-width:200px;">';
         html += '</div>';
 
-        /* Body */
-        html += '<div class="card-body">';
-        html += '<div class="type-settings-grid">';
-
-        /* Panel Channel */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>Panel Channel</label>' + buildTooltip(TOOLTIPS.panel_channel) + '</div>';
-        html += buildSearchableDropdown('panel-ch-' + type, channelOptions, panelChannel, '-- Select Channel --');
+        // Channel selector
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Channel</label></div>';
+        html += buildSearchableDropdown('panel-ch-' + slug, channelOptions, String(cfg.panel_channel_id || ''), '-- Select Channel --');
         html += '</div>';
 
-        /* Log Channel */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>Log Channel</label>' + buildTooltip(TOOLTIPS.log_channel) + '</div>';
-        html += buildSearchableDropdown('log-ch-' + type, channelOptions, logChannel, '-- Select Channel --');
+        // Log channel selector
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Log Channel</label></div>';
+        html += buildSearchableDropdown('panel-log-' + slug, channelOptions, String(cfg.log_channel_id || ''), '-- Select Log Channel --');
         html += '</div>';
 
-        /* Default Slot Limit */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>Default Slot Limit</label>' + buildTooltip(TOOLTIPS.default_slot_limit) + '</div>';
-        html += '<input type="number" id="slot-limit-' + type + '" class="form-input" min="1" max="99" value="' + slotLimit + '">';
-        html += '</div>';
-
-        /* Stack Roles */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>Stack Roles</label>' + buildTooltip(TOOLTIPS.stack_roles) + '</div>';
-        html += '<label class="toggle"><input type="checkbox" id="stack-roles-' + type + '"' + (stackRoles ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
-        html += '</div>';
-
-        /* Squad Group */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>Squad Group</label>' + buildTooltip(TOOLTIPS.squad_group) + '</div>';
-        html += '<input type="text" id="squad-group-' + type + '" class="form-input" placeholder="e.g. Whitelist" value="' + escapeHtml(squadGroup) + '">';
-        html += '</div>';
-
-        /* GitHub Filename */
-        html += '<div class="form-row">';
-        html += '<div class="form-row-label"><label>GitHub Filename</label>' + buildTooltip(TOOLTIPS.github_filename) + '</div>';
-        html += '<input type="text" id="gh-filename-' + type + '" class="form-input" placeholder="e.g. whitelist_sub.txt" value="' + escapeHtml(ghFilename) + '">';
-        html += '</div>';
-
-        html += '</div>'; /* /type-settings-grid */
-
-        html += '<div class="form-actions">';
-        html += '<button class="btn btn-primary" onclick="saveTypeSettings(\'' + type + '\')">Save ' + escapeHtml(typeName) + ' Settings</button>';
-        html += '</div>';
-
-        /* Role Mappings */
-        html += '<div class="role-section">';
-        html += '<h4>Role Mappings</h4>';
-        html += '<div class="table-responsive">';
-        html += '<table class="data-table role-table">';
-        html += '<thead><tr><th>Role Name</th><th>Slot Limit</th><th>Actions</th></tr></thead>';
-        html += '<tbody id="role-tbody-' + type + '">';
-        if (roleMappings.length === 0) {
-            html += '<tr><td colspan="3" class="text-center text-muted">No role mappings configured.</td></tr>';
-        } else {
-            roleMappings.forEach(function(rm) {
-                var roleName = rm.role_name || 'Unknown';
-                var roleDisplay = roleName;
-                if (rm.role_id && rm.role_id !== roleName) {
-                    roleDisplay += ' <span style="color:var(--text-muted); font-size:0.8em;">(' + rm.role_id + ')</span>';
-                }
-                html += '<tr>';
-                html += '<td>' + roleDisplay + '</td>';
-                html += '<td>' + (rm.slot_limit || 1) + '</td>';
-                html += '<td><button class="btn btn-sm btn-danger" onclick="removeRoleMapping(\'' + type + '\', \'' + escapeHtml(String(rm.role_id)) + '\')">Remove</button></td>';
-                html += '</tr>';
-            });
+        // Actions
+        html += '<div class="panel-card-actions">';
+        html += '<button class="btn btn-primary btn-sm" onclick="savePanelSettings(\'' + escapeHtml(slug) + '\')">Save</button>';
+        html += '<button class="btn btn-secondary btn-sm" onclick="pushPanel(\'' + escapeHtml(slug) + '\')">Push Panel</button>';
+        if (!isDefault) {
+            html += '<button class="btn btn-danger btn-sm" onclick="confirmDeletePanel(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(name) + '\')">Delete</button>';
         }
-        html += '</tbody></table></div>';
-
-        /* Add role mapping form */
-        html += '<div class="add-role-row">';
-        html += buildSearchableDropdown('add-role-select-' + type, roleOptions, '', '-- Select Role --');
-        html += '<input type="number" id="add-role-slots-' + type + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
-        html += '<button class="btn btn-primary btn-sm" onclick="addRoleMapping(\'' + type + '\')">Add</button>';
         html += '</div>';
 
-        html += '</div>'; /* /role-section */
-        html += '</div>'; /* /card-body */
-        html += '</div>'; /* /card */
+        html += '</div>'; // panel-card-body
+        html += '</div>'; // panel-card
     });
 
     container.innerHTML = html;
     initSearchableDropdowns(container);
 }
 
-/* ── Toggle type enabled/disabled ─────────────────────────────────────── */
-function toggleType(type, enabled) {
-    fetch('/api/admin/types/' + encodeURIComponent(type) + '/toggle', {
+function getChannelName(channelId) {
+    if (!channelId) return '';
+    for (var i = 0; i < channelOptions.length; i++) {
+        if (String(channelOptions[i].id) === String(channelId)) return channelOptions[i].name;
+    }
+    return '';
+}
+
+function savePanelSettings(slug) {
+    var payload = {
+        name: document.getElementById('panel-name-' + slug).value.trim(),
+        panel_channel_id: getDropdownValue('panel-ch-' + slug) || null,
+        log_channel_id: getDropdownValue('panel-log-' + slug) || null
+    };
+    if (!payload.name) {
+        showFlash('Panel name cannot be empty.', 'error');
+        return;
+    }
+    fetch('/api/admin/types/' + encodeURIComponent(slug), {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ enabled: enabled })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function() {
+        showFlash('Panel "' + payload.name + '" saved.', 'success');
+        reloadAll();
+    })
+    .catch(function() { showFlash('Failed to save panel settings.', 'error'); });
+}
+
+function pushPanel(slug) {
+    /* Trigger a resync which will send/update panels in their channels */
+    fetch('/api/admin/resync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function() { showFlash('Panel push triggered. The embed will appear shortly in the assigned channel.', 'success'); })
+    .catch(function() { showFlash('Failed to push panel.', 'error'); });
+}
+
+function confirmDeletePanel(slug, name) {
+    showModal(
+        'Delete Panel',
+        'Are you sure you want to delete "' + name + '"? This will remove all associated whitelist entries and role mappings. This cannot be undone.',
+        'Delete',
+        function() { deletePanel(slug); }
+    );
+}
+
+function deletePanel(slug) {
+    fetch('/api/admin/whitelists/' + encodeURIComponent(slug), { method: 'DELETE' })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function() {
+        showFlash('Panel deleted.', 'success');
+        reloadAll();
+    })
+    .catch(function() { showFlash('Failed to delete panel.', 'error'); });
+}
+
+function createPanel() {
+    var name = document.getElementById('new-panel-name').value.trim();
+    if (!name) {
+        showFlash('Please enter a panel name.', 'error');
+        return;
+    }
+    fetch('/api/admin/whitelists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
     })
     .then(function(r) {
-        if (!r.ok) throw new Error('Failed');
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
         return r.json();
     })
     .then(function() {
-        /* Update card visuals immediately */
-        var card = document.getElementById('type-card-' + type);
+        closeCreatePanelModal();
+        showFlash('Panel "' + name + '" created.', 'success');
+        reloadAll();
+    })
+    .catch(function(err) { showFlash(err.message || 'Failed to create panel.', 'error'); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Section 3: Whitelist Configuration
+   ════════════════════════════════════════════════════════════════════════════ */
+function renderWhitelists() {
+    var tc = settingsData.type_configs || {};
+    var rm = settingsData.role_mappings || {};
+    var container = document.getElementById('wl-cards-container');
+    var html = '';
+
+    TYPES.forEach(function(slug) {
+        var cfg = tc[slug] || {};
+        var enabled = cfg.enabled || false;
+        var roleMappings = rm[slug] || [];
+        var name = cfg.name || slug;
+        var stateClass = enabled ? 'wl-enabled' : 'wl-disabled';
+
+        // Find assigned panel channel name
+        var panelChName = getChannelName(cfg.panel_channel_id);
+
+        html += '<div class="wl-card ' + stateClass + '" id="wl-card-' + escapeHtml(slug) + '">';
+
+        // Collapsed summary row
+        html += '<div class="wl-card-summary" onclick="toggleWlCard(\'' + escapeHtml(slug) + '\')">';
+        html += '<div class="wl-card-summary-left">';
+        html += '<span class="collapse-arrow">&#9654;</span>';
+        html += '<span class="wl-card-name">' + escapeHtml(name) + '</span>';
+        if (enabled) {
+            html += '<span class="badge status-badge-enabled">Enabled</span>';
+        } else {
+            html += '<span class="badge status-badge-disabled">Disabled</span>';
+        }
+        html += '</div>';
+        html += '<div class="wl-card-meta">';
+        html += '<span class="wl-role-count">' + roleMappings.length + ' role' + (roleMappings.length !== 1 ? 's' : '') + '</span>';
+        if (panelChName) {
+            html += '<span class="wl-panel-tag"># ' + escapeHtml(panelChName) + '</span>';
+        }
+        // Toggle switch (stop propagation so clicking it doesn't expand/collapse)
+        html += '<label class="toggle" onclick="event.stopPropagation()">';
+        html += '<input type="checkbox" id="wl-toggle-' + escapeHtml(slug) + '"' + (enabled ? ' checked' : '') + ' onchange="toggleWhitelist(\'' + escapeHtml(slug) + '\', this.checked)">';
+        html += '<span class="toggle-slider"></span></label>';
+        html += '</div>';
+        html += '</div>';
+
+        // Expanded detail
+        html += '<div class="wl-card-detail">';
+
+        // Squad group
+        html += '<div class="form-row" style="margin-bottom:12px;">';
+        html += '<div class="form-row-label"><label>Squad Group</label>';
+        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
+        html += '<span class="info-tip-text">The Squad permission group name (e.g., \'Whitelist\'). Maps to the group in your Squad RemoteAdminList.</span></span>';
+        html += '</div>';
+        html += '<input type="text" id="wl-squad-' + escapeHtml(slug) + '" class="form-input" placeholder="e.g. Whitelist" value="' + escapeHtml(cfg.squad_group || '') + '" style="max-width:200px;">';
+        html += '</div>';
+
+        // Panel assignment dropdown
+        html += '<div class="form-row" style="margin-bottom:12px;">';
+        html += '<div class="form-row-label"><label>Panel</label>';
+        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
+        html += '<span class="info-tip-text">Which panel this whitelist is displayed on.</span></span>';
+        html += '</div>';
+        html += buildSearchableDropdown('wl-panel-' + slug, channelOptions, String(cfg.panel_channel_id || ''), '-- Select Panel Channel --');
+        html += '</div>';
+
+        html += '<div class="form-actions" style="margin-bottom:14px;">';
+        html += '<button class="btn btn-primary btn-sm" onclick="saveWhitelistSettings(\'' + escapeHtml(slug) + '\')">Save Settings</button>';
+        html += '</div>';
+
+        // Role mappings
+        html += '<div class="role-section">';
+        html += '<h4>Role Mappings</h4>';
+
+        // Role math summary
+        if (roleMappings.length > 0) {
+            html += '<div class="role-math">';
+            var parts = [];
+            roleMappings.forEach(function(rm) {
+                parts.push('<span>' + escapeHtml(rm.role_name || 'Unknown') + ' = ' + (rm.slot_limit || 1) + ' slot' + ((rm.slot_limit || 1) !== 1 ? 's' : '') + '</span>');
+            });
+            html += parts.join(' &nbsp;&bull;&nbsp; ');
+            html += '</div>';
+        }
+
+        html += '<div class="table-responsive"><table class="data-table role-table">';
+        html += '<thead><tr><th>Role</th><th>Slots</th><th></th></tr></thead>';
+        html += '<tbody>';
+        if (roleMappings.length === 0) {
+            html += '<tr><td colspan="3" class="text-center text-muted" style="font-size:0.85rem;">No role mappings configured.</td></tr>';
+        } else {
+            roleMappings.forEach(function(r) {
+                var roleName = r.role_name || 'Unknown';
+                var roleDisplay = escapeHtml(roleName);
+                if (r.role_id && String(r.role_id) !== roleName) {
+                    roleDisplay += ' <span style="color:var(--text-muted);font-size:0.78em;">(' + escapeHtml(String(r.role_id)) + ')</span>';
+                }
+                html += '<tr>';
+                html += '<td>' + roleDisplay + '</td>';
+                html += '<td>' + (r.slot_limit || 1) + '</td>';
+                html += '<td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="confirmRemoveRole(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(String(r.role_id)) + '\', \'' + escapeHtml(roleName) + '\')">Remove</button></td>';
+                html += '</tr>';
+            });
+        }
+        html += '</tbody></table></div>';
+
+        // Add role row
+        html += '<div class="add-role-row">';
+        html += buildSearchableDropdown('add-role-' + slug, roleOptions, '', '-- Select Role --');
+        html += '<input type="number" id="add-role-slots-' + escapeHtml(slug) + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
+        html += '<button class="btn btn-primary btn-sm" onclick="addRoleMapping(\'' + escapeHtml(slug) + '\')">Add</button>';
+        html += '</div>';
+
+        html += '</div>'; // role-section
+        html += '</div>'; // wl-card-detail
+        html += '</div>'; // wl-card
+    });
+
+    container.innerHTML = html;
+    initSearchableDropdowns(container);
+}
+
+function toggleWlCard(slug) {
+    var card = document.getElementById('wl-card-' + slug);
+    if (card) card.classList.toggle('open');
+}
+
+function toggleWhitelist(slug, enabled) {
+    fetch('/api/admin/types/' + encodeURIComponent(slug) + '/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled })
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function() {
+        var card = document.getElementById('wl-card-' + slug);
         if (card) {
-            card.classList.remove('type-card-enabled', 'type-card-disabled');
-            card.classList.add(enabled ? 'type-card-enabled' : 'type-card-disabled');
-            var badge = card.querySelector('.type-card-header-left .badge');
+            card.classList.remove('wl-enabled', 'wl-disabled');
+            card.classList.add(enabled ? 'wl-enabled' : 'wl-disabled');
+            var badge = card.querySelector('.wl-card-summary-left .badge');
             if (badge) {
                 badge.className = 'badge ' + (enabled ? 'status-badge-enabled' : 'status-badge-disabled');
                 badge.textContent = enabled ? 'Enabled' : 'Disabled';
             }
         }
-        showFlash(type.charAt(0).toUpperCase() + type.slice(1) + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
+        var name = slug.charAt(0).toUpperCase() + slug.slice(1);
+        showFlash(name + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
     })
     .catch(function() {
-        showFlash('Failed to toggle ' + type + '.', 'error');
-        /* Revert checkbox */
-        var cb = document.getElementById('toggle-' + type);
+        showFlash('Failed to toggle ' + slug + '.', 'error');
+        var cb = document.getElementById('wl-toggle-' + slug);
         if (cb) cb.checked = !enabled;
     });
 }
 
-/* ── Save type settings ───────────────────────────────────────────────── */
-function saveTypeSettings(type) {
+function saveWhitelistSettings(slug) {
     var payload = {
-        enabled: document.getElementById('toggle-' + type).checked,
-        panel_channel: getDropdownValue('panel-ch-' + type),
-        log_channel: getDropdownValue('log-ch-' + type),
-        default_slot_limit: parseInt(document.getElementById('slot-limit-' + type).value, 10) || 1,
-        stack_roles: document.getElementById('stack-roles-' + type).checked,
-        squad_group: document.getElementById('squad-group-' + type).value,
-        github_filename: document.getElementById('gh-filename-' + type).value
+        squad_group: document.getElementById('wl-squad-' + slug).value.trim(),
+        panel_channel_id: getDropdownValue('wl-panel-' + slug) || null
     };
-    fetch('/api/admin/types/' + encodeURIComponent(type), {
+    fetch('/api/admin/types/' + encodeURIComponent(slug), {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(function(r) {
-        if (!r.ok) throw new Error('Failed');
-        return r.json();
-    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash(type.charAt(0).toUpperCase() + type.slice(1) + ' settings saved.', 'success');
-        reloadTypeData();
+        showFlash('Whitelist settings saved.', 'success');
+        reloadAll();
     })
-    .catch(function() {
-        showFlash('Failed to save ' + type + ' settings.', 'error');
-    });
+    .catch(function() { showFlash('Failed to save whitelist settings.', 'error'); });
 }
 
-/* ── Role mapping actions ─────────────────────────────────────────────── */
-function addRoleMapping(type) {
-    var roleId = getDropdownValue('add-role-select-' + type);
-    var roleName = getDropdownLabel('add-role-select-' + type);
-    var slotLimit = parseInt(document.getElementById('add-role-slots-' + type).value, 10) || 1;
+function addRoleMapping(slug) {
+    var roleId = getDropdownValue('add-role-' + slug);
+    var roleName = getDropdownLabel('add-role-' + slug);
+    var slotLimit = parseInt(document.getElementById('add-role-slots-' + slug).value, 10) || 1;
     if (!roleId) {
         showFlash('Please select a role.', 'error');
         return;
     }
-    fetch('/api/admin/roles/' + encodeURIComponent(type), {
+    fetch('/api/admin/roles/' + encodeURIComponent(slug), {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
     })
-    .then(function(r) {
-        if (!r.ok) throw new Error('Failed');
-        return r.json();
-    })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
         showFlash('Role mapping added.', 'success');
-        reloadTypeData();
+        reloadAll();
     })
-    .catch(function() {
-        showFlash('Failed to add role mapping.', 'error');
-    });
+    .catch(function() { showFlash('Failed to add role mapping.', 'error'); });
 }
 
-function removeRoleMapping(type, roleId) {
-    fetch('/api/admin/roles/' + encodeURIComponent(type) + '/' + encodeURIComponent(roleId), {
-        method: 'DELETE'
-    })
-    .then(function(r) {
-        if (!r.ok) throw new Error('Failed');
-        return r.json();
-    })
+function confirmRemoveRole(slug, roleId, roleName) {
+    showModal(
+        'Remove Role Mapping',
+        'Remove "' + roleName + '" from this whitelist? Users with only this role will lose their whitelist slots.',
+        'Remove',
+        function() { removeRoleMapping(slug, roleId); }
+    );
+}
+
+function removeRoleMapping(slug, roleId) {
+    fetch('/api/admin/roles/' + encodeURIComponent(slug) + '/' + encodeURIComponent(roleId), { method: 'DELETE' })
+    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
         showFlash('Role mapping removed.', 'success');
-        reloadTypeData();
+        reloadAll();
     })
-    .catch(function() {
-        showFlash('Failed to remove role mapping.', 'error');
-    });
+    .catch(function() { showFlash('Failed to remove role mapping.', 'error'); });
 }
 
-/* ── Reload after mutations ───────────────────────────────────────────── */
-function reloadTypeData() {
+/* ════════════════════════════════════════════════════════════════════════════
+   Reload
+   ════════════════════════════════════════════════════════════════════════════ */
+function reloadAll() {
     loadSettings().then(function() {
-        renderTypeCards();
+        renderPanels();
+        renderWhitelists();
     });
 }
 </script>
