@@ -56,10 +56,11 @@
         .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2) !important; box-shadow: 0 0 0 2px rgba(88,101,242,0.3); }
         .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: #6a6d75; }
         /* Tom Select inside SweetAlert2 — fix overflow clipping */
-        .swal2-html-container { overflow: visible !important; }
+        .swal2-html-container { overflow: visible !important; padding-bottom: 200px !important; }
         .swal2-popup { overflow: visible !important; }
-        .swal2-popup .ts-wrapper .ts-dropdown { z-index: 200000 !important; }
-        .swal2-popup .ts-wrapper { z-index: 200000; position: relative; }
+        .swal2-popup .ts-wrapper .ts-dropdown { z-index: 200000 !important; position: absolute !important; }
+        .swal2-popup .ts-wrapper { z-index: 200000; position: relative; overflow: visible !important; }
+        .swal2-container { overflow: visible !important; }
         /* Form inputs consistent border — match Tom Select contrast */
         .form-input {
             border: 2px solid #4a4d58 !important;
