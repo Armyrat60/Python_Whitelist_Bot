@@ -84,6 +84,11 @@ DEFAULT_SETTINGS = {
     "allow_global_duplicates": "true",
     "duplicate_output_dedupe": "true",
     "auto_reactivate_on_role_return": "true",
+    "notification_channel_id": "",
+    "welcome_dm_enabled": "false",
+    "welcome_dm_text": "",
+    "timezone": "UTC",
+    "bot_status_message": "",
 }
 
 # Legacy: hardcoded type definitions (used by Discord slash command cogs as fallback).

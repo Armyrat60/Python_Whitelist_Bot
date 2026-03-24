@@ -299,17 +299,30 @@ async def admin_import_export_page(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template("admin_import_export.html", request, context)
 
 
-async def admin_whitelists_page(request: web.Request) -> web.Response:
-    """Render the admin whitelists management page."""
+async def admin_dashboard(request: web.Request) -> web.Response:
+    """Render the admin dashboard overview page."""
     context = await _get_admin_context(request)
-    return aiohttp_jinja2.render_template("admin_whitelists.html", request, context)
+    return aiohttp_jinja2.render_template("admin.html", request, context)
+
+
+async def admin_whitelists_page(request: web.Request) -> web.Response:
+    """Redirect to setup page whitelists tab."""
+    raise web.HTTPFound("/admin/setup?tab=whitelists")
+
+
+async def admin_settings_page(request: web.Request) -> web.Response:
+    """Render the admin general settings page."""
+    context = await _get_admin_context(request)
+    return aiohttp_jinja2.render_template("admin_settings.html", request, context)
 
 
 def setup_routes(app: web.Application):
     app.router.add_get("/", index)
     app.router.add_get("/dashboard", dashboard)
     app.router.add_get("/my-whitelist", my_whitelist)
+    app.router.add_get("/admin", admin_dashboard)
     app.router.add_get("/admin/setup", admin_setup_page)
+    app.router.add_get("/admin/settings", admin_settings_page)
     app.router.add_get("/admin/whitelists", admin_whitelists_page)
     app.router.add_get("/admin/users", admin_users_page)
     app.router.add_get("/admin/audit", admin_audit_page)

@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Squad Whitelister{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+    <p class="text-muted">General bot configuration for this server.</p>
+</div>
+
+<style>
+    .settings-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+    .settings-section h3 {
+        margin: 0 0 16px 0;
+        font-size: 1.1rem;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 10px;
+    }
+    .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        gap: 20px;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label {
+        flex: 1;
+        min-width: 200px;
+    }
+    .setting-label h4 {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .setting-label p {
+        margin: 2px 0 0;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    .setting-control {
+        flex-shrink: 0;
+        min-width: 250px;
+        max-width: 350px;
+    }
+    .setting-control select,
+    .setting-control input[type="text"],
+    .setting-control textarea {
+        width: 100%;
+    }
+    .setting-control textarea {
+        min-height: 80px;
+        resize: vertical;
+    }
+    .toggle { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top:0;left:0;right:0;bottom:0; background: var(--border-light); border-radius: 24px; transition: background 0.25s; }
+    .toggle-slider::before { content:""; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition: transform 0.25s; }
+    .toggle input:checked + .toggle-slider { background: #43b581; }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+    .mod-roles-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .mod-role-tag { background: var(--accent); color: #fff; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; }
+    .mod-role-tag .remove { cursor: pointer; opacity: 0.7; font-size: 1rem; }
+    .mod-role-tag .remove:hover { opacity: 1; }
+</style>
+
+<div class="settings-section">
+    <h3>Moderation</h3>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Moderator Roles</h4>
+            <p>Discord roles that have admin access to this bot and dashboard.</p>
+        </div>
+        <div class="setting-control">
+            <div class="mod-roles-container" id="mod-roles-tags"></div>
+            <select id="mod-role-picker" placeholder="Add a mod role..."></select>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h3>Notifications</h3>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Notification Channel</h4>
+            <p>Channel where the bot posts system alerts, sync errors, and status updates.</p>
+        </div>
+        <div class="setting-control">
+            <select id="notification-channel" placeholder="Select channel..."></select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Welcome DM</h4>
+            <p>Automatically DM new whitelist users with instructions when they first get whitelisted.</p>
+        </div>
+        <div class="setting-control">
+            <label class="toggle">
+                <input type="checkbox" id="welcome-dm-enabled">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <div class="setting-row" id="welcome-dm-text-row" style="display:none;">
+        <div class="setting-label">
+            <h4>Welcome Message</h4>
+            <p>Custom message sent to new whitelist users. Use {name} for their Discord name, {slots} for slot count.</p>
+        </div>
+        <div class="setting-control">
+            <textarea id="welcome-dm-text" class="form-input" placeholder="Welcome {name}! You have {slots} whitelist slot(s). Use /whitelist to submit your Steam ID."></textarea>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h3>Behavior</h3>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Auto-Remove on Role Loss</h4>
+            <p>Automatically deactivate a user's whitelist when they lose their mapped Discord role.</p>
+        </div>
+        <div class="setting-control">
+            <label class="toggle">
+                <input type="checkbox" id="auto-remove-on-role-loss" checked>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Duplicate ID Policy</h4>
+            <p>Whether the same Steam/EOS ID can be used across multiple whitelists.</p>
+        </div>
+        <div class="setting-control">
+            <select id="duplicate-policy">
+                <option value="allow">Allow (same ID in multiple lists)</option>
+                <option value="block">Block (unique ID per server)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Report Frequency</h4>
+            <p>How often to generate whitelist summary reports.</p>
+        </div>
+        <div class="setting-control">
+            <select id="report-frequency">
+                <option value="never">Never</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h3>Bot Presence</h3>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Timezone</h4>
+            <p>Used for displaying times in reports and audit logs.</p>
+        </div>
+        <div class="setting-control">
+            <select id="timezone">
+                <option value="UTC">UTC</option>
+                <option value="US/Eastern">US Eastern</option>
+                <option value="US/Central">US Central</option>
+                <option value="US/Mountain">US Mountain</option>
+                <option value="US/Pacific">US Pacific</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            <h4>Bot Status Message</h4>
+            <p>Custom "Playing..." text shown on the bot's Discord profile.</p>
+        </div>
+        <div class="setting-control">
+            <input type="text" id="bot-status" class="form-input" placeholder="e.g. Managing whitelists">
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary" onclick="saveSettings()" style="margin-top:8px; padding: 10px 24px; font-size: 0.95rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer;">
+    Save All Settings
+</button>
+
+<script>
+var roleOptions = [];
+var channelOptions = [];
+var modRoleIds = [];
+
+function loadData() {
+    return Promise.all([
+        fetch('/api/admin/roles').then(r => r.json()).then(d => { roleOptions = d.roles || []; }),
+        fetch('/api/admin/channels').then(r => r.json()).then(d => { channelOptions = d.channels || []; }),
+        fetch('/api/admin/settings').then(r => r.json()).then(d => { applySettings(d); }),
+    ]);
+}
+
+function applySettings(data) {
+    var bs = data.bot_settings || {};
+
+    // Mod roles
+    var modVal = bs.mod_role_id || '';
+    modRoleIds = modVal ? modVal.split(',').map(s => s.trim()).filter(Boolean) : [];
+    renderModRoleTags();
+
+    // Report frequency
+    var rf = document.getElementById('report-frequency');
+    if (rf) rf.value = bs.report_frequency || 'weekly';
+
+    // Duplicate policy
+    var dp = document.getElementById('duplicate-policy');
+    if (dp) dp.value = bs.allow_global_duplicates === 'false' ? 'block' : 'allow';
+
+    // Auto remove
+    var ar = document.getElementById('auto-remove-on-role-loss');
+    if (ar) ar.checked = bs.auto_reactivate_on_role_return !== 'false';
+
+    // Welcome DM
+    var wd = document.getElementById('welcome-dm-enabled');
+    if (wd) {
+        wd.checked = bs.welcome_dm_enabled === 'true';
+        document.getElementById('welcome-dm-text-row').style.display = wd.checked ? 'flex' : 'none';
+        wd.addEventListener('change', function() {
+            document.getElementById('welcome-dm-text-row').style.display = this.checked ? 'flex' : 'none';
+        });
+    }
+    var wt = document.getElementById('welcome-dm-text');
+    if (wt) wt.value = bs.welcome_dm_text || '';
+
+    // Notification channel
+    // (will be set after Tom Select init)
+
+    // Timezone
+    var tz = document.getElementById('timezone');
+    if (tz && bs.timezone) tz.value = bs.timezone;
+
+    // Bot status
+    var bst = document.getElementById('bot-status');
+    if (bst) bst.value = bs.bot_status_message || '';
+}
+
+function renderModRoleTags() {
+    var container = document.getElementById('mod-roles-tags');
+    var html = '';
+    modRoleIds.forEach(function(rid) {
+        var name = rid;
+        for (var i = 0; i < roleOptions.length; i++) {
+            if (String(roleOptions[i].id) === String(rid)) { name = roleOptions[i].name; break; }
+        }
+        html += '<span class="mod-role-tag">' + name + ' <span class="remove" onclick="removeModRole(\'' + rid + '\')">&times;</span></span>';
+    });
+    container.innerHTML = html;
+}
+
+function removeModRole(rid) {
+    modRoleIds = modRoleIds.filter(r => r !== rid);
+    renderModRoleTags();
+}
+
+function initDropdowns() {
+    // Mod role picker
+    var modPicker = new TomSelect('#mod-role-picker', {
+        create: false,
+        sortField: { field: 'text', direction: 'asc' },
+        maxOptions: 200,
+        placeholder: 'Add a mod role...',
+        options: roleOptions.map(r => ({ value: String(r.id), text: r.name })),
+        onChange: function(val) {
+            if (val && modRoleIds.indexOf(val) === -1) {
+                modRoleIds.push(val);
+                renderModRoleTags();
+            }
+            this.clear(true);
+        }
+    });
+
+    // Notification channel
+    new TomSelect('#notification-channel', {
+        create: false,
+        sortField: { field: 'text', direction: 'asc' },
+        maxOptions: 200,
+        placeholder: 'Select channel...',
+        options: channelOptions.map(c => ({ value: String(c.id), text: '# ' + c.name })),
+    });
+
+    // Timezone, report frequency, duplicate policy — use Tom Select for consistency
+    new TomSelect('#timezone', { create: false });
+    new TomSelect('#report-frequency', { create: false });
+    new TomSelect('#duplicate-policy', { create: false });
+}
+
+function saveSettings() {
+    var payload = {
+        mod_role_id: modRoleIds.join(','),
+        report_frequency: document.getElementById('report-frequency').value,
+        allow_global_duplicates: document.getElementById('duplicate-policy').value === 'allow' ? 'true' : 'false',
+        auto_reactivate_on_role_return: document.getElementById('auto-remove-on-role-loss').checked ? 'true' : 'false',
+        welcome_dm_enabled: document.getElementById('welcome-dm-enabled').checked ? 'true' : 'false',
+        welcome_dm_text: document.getElementById('welcome-dm-text').value,
+        timezone: document.getElementById('timezone').value,
+        bot_status_message: document.getElementById('bot-status').value,
+    };
+
+    var notifChannel = document.getElementById('notification-channel');
+    if (notifChannel && notifChannel.tomselect) {
+        payload.notification_channel_id = notifChannel.tomselect.getValue() || '';
+    }
+
+    fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+    .then(r => {
+        if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
+    .then(() => toast('Settings saved successfully.', 'success'))
+    .catch(err => toast(err.message || 'Failed to save settings.', 'error'));
+}
+
+// Init
+loadData().then(() => {
+    initDropdowns();
+    tippy('[data-tippy-content]');
+});
+</script>
+{% endblock %}
