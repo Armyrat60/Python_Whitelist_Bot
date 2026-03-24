@@ -120,14 +120,13 @@ async def _get_whitelist_data(request, session):
         if not user_record:
             # Create new user record with matched tier
             now = _utcnow()
-            is_active_val = True if bot.db.engine == "postgres" else 1
             await bot.db.execute(
                 "INSERT INTO whitelist_users "
                 "(guild_id, discord_id, whitelist_type, whitelist_id, discord_name, "
-                "status, effective_slot_limit, last_plan_name, is_active, created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "status, effective_slot_limit, last_plan_name, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (guild_id, discord_id, wl_slug, wl_id, discord_name,
-                 "active", matched_slot_limit, matched_role_name or "", is_active_val, now, now),
+                 "active", matched_slot_limit, matched_role_name or "", now, now),
             )
             user_record = await bot.db.get_user_record(guild_id, discord_id, wl_id)
         else:
