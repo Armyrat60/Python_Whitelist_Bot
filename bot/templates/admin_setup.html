@@ -964,6 +964,29 @@ function buildWhitelistDropdownOptions() {
     return opts;
 }
 
+function getTierDisplayForPanel(whitelistId) {
+    if (!whitelistId || !settingsData || !settingsData.type_configs || !settingsData.role_mappings) return '';
+    // Find the whitelist slug matching this ID
+    var slug = null;
+    var configs = settingsData.type_configs;
+    for (var key in configs) {
+        if (String(configs[key].id) === String(whitelistId)) {
+            slug = key;
+            break;
+        }
+    }
+    if (!slug) return '';
+    var mappings = settingsData.role_mappings[slug];
+    if (!mappings || mappings.length === 0) return '<span style="color:var(--text-muted); font-size:0.8rem;">No role mappings configured</span>';
+    var parts = [];
+    for (var i = 0; i < mappings.length; i++) {
+        var m = mappings[i];
+        var name = m.role_name || m.role_id;
+        parts.push('<span style="color:var(--text-primary); font-size:0.85rem;">@' + escapeHtml(name) + ' <span style="color:var(--accent); font-weight:600;">= ' + m.slot_limit + ' slot' + (m.slot_limit !== 1 ? 's' : '') + '</span></span>');
+    }
+    return parts.join('<span style="color:var(--text-muted); margin:0 6px;">·</span>');
+}
+
 function renderPanels() {
     var container = document.getElementById('panels-grid');
     var html = '';
@@ -1032,6 +1055,15 @@ function renderPanels() {
         html += '</div>';
         html += buildSearchableDropdown('panel-wl-' + panelId, wlOptions, String(panel.whitelist_id || ''), '-- Select Whitelist --');
         html += '</div>';
+
+        // Tier/role info from linked whitelist
+        var tierHtml = getTierDisplayForPanel(panel.whitelist_id);
+        if (tierHtml) {
+            html += '<div class="panel-tiers" style="margin-bottom:10px; padding:8px 12px; background:var(--bg-tertiary); border-radius:var(--radius-sm); border-left:3px solid var(--accent);">';
+            html += '<span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:600; display:block; margin-bottom:4px;">Tiers</span>';
+            html += tierHtml;
+            html += '</div>';
+        }
 
         // Actions
         html += '<div class="panel-card-actions">';
