@@ -911,12 +911,19 @@ function showRoleMappingModal(panelId) {
         customClass: { popup: 'swal2-dark' },
         didOpen: function() {
             destroyTom('modal-add-role');
-            initTomSelect('modal-add-role', {
-                create: false,
-                sortField: { field: 'text', direction: 'asc' },
-                maxOptions: 200,
-                plugins: ['remove_button']
-            });
+            var sel = document.getElementById('modal-add-role');
+            if (sel) {
+                console.log('Tom Select init: found select with ' + sel.options.length + ' options');
+                initTomSelect('modal-add-role', {
+                    create: false,
+                    sortField: { field: 'text', direction: 'asc' },
+                    maxOptions: 200,
+                    plugins: ['remove_button'],
+                    placeholder: 'Search and select roles...'
+                });
+            } else {
+                console.error('Tom Select init: #modal-add-role not found in DOM');
+            }
         },
         willClose: function() {
             destroyTom('modal-add-role');

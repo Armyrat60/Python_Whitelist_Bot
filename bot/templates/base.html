@@ -25,15 +25,20 @@
     <!-- Dark theme overrides for libraries -->
     <style>
         /* Tom Select dark theme */
-        .ts-wrapper .ts-control { background: var(--bg-input, #1a1d23); border-color: var(--border, #2a2d35); color: var(--text-primary, #e0e0e0); min-height: 38px; }
+        .ts-wrapper .ts-control { background: #12141a; border: 2px solid #3a3d45; color: var(--text-primary, #e0e0e0); min-height: 38px; border-radius: 6px; }
         .ts-wrapper .ts-control input { color: var(--text-primary, #e0e0e0); }
         .ts-wrapper .ts-control .item { background: var(--accent, #5865f2); color: #fff; border-radius: 4px; padding: 2px 8px; }
-        .ts-wrapper .ts-dropdown { background: var(--bg-secondary, #1e2028); border-color: var(--border, #2a2d35); color: var(--text-primary, #e0e0e0); z-index: 100000; }
-        .ts-wrapper .ts-dropdown .option { color: var(--text-primary, #e0e0e0); }
-        .ts-wrapper .ts-dropdown .option:hover, .ts-wrapper .ts-dropdown .active { background: var(--bg-tertiary, #252830); color: #fff; }
+        .ts-wrapper .ts-dropdown { background: #12141a; border: 2px solid #3a3d45; color: var(--text-primary, #e0e0e0); z-index: 100000; border-radius: 6px; margin-top: 2px; }
+        .ts-wrapper .ts-dropdown .option { color: var(--text-primary, #e0e0e0); padding: 8px 12px; }
+        .ts-wrapper .ts-dropdown .option:hover, .ts-wrapper .ts-dropdown .active { background: #252830; color: #fff; }
         .ts-wrapper .ts-dropdown .option.selected { background: var(--accent, #5865f2); color: #fff; }
         .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2); box-shadow: 0 0 0 2px rgba(88,101,242,0.25); }
-        .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: var(--text-muted, #8a8d95); }
+        .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: #6a6d75; }
+        /* Tom Select inside SweetAlert2 — ensure dropdown renders above modal */
+        .swal2-popup .ts-wrapper .ts-dropdown { z-index: 200000 !important; }
+        .swal2-popup .ts-wrapper { z-index: 200000; }
+        /* Form inputs consistent border */
+        .form-input { border: 2px solid #3a3d45 !important; background: #12141a !important; color: var(--text-primary, #e0e0e0) !important; border-radius: 6px !important; }
         /* SweetAlert2 dark theme */
         .swal2-popup { background: var(--bg-secondary, #1e2028) !important; color: var(--text-primary, #e0e0e0) !important; border: 1px solid var(--border, #2a2d35) !important; }
         .swal2-title { color: var(--text-primary, #e0e0e0) !important; }
