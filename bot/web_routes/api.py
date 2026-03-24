@@ -2490,6 +2490,137 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "panel_id": panel_id})
 
 
+# ── Admin Squad Groups API routes ─────────────────────────────────────────────
+
+MAX_GROUPS_PER_GUILD = 20
+
+
+@require_admin
+async def admin_get_groups(request: web.Request) -> web.Response:
+    """Return all squad groups for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    rows = await db.get_squad_groups(guild_id)
+    groups = []
+    for row in (rows or []):
+        groups.append({
+            "group_name": row[0],
+            "permissions": row[1] or "",
+            "is_default": bool(row[2]),
+        })
+    return web.json_response({"groups": groups})
+
+
+@require_admin
+async def admin_create_group(request: web.Request) -> web.Response:
+    """Create a new squad group for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    group_name = (body.get("group_name") or "").strip()
+    if not group_name or len(group_name) > 100:
+        return web.json_response({"error": "Group name is required (max 100 chars)."}, status=400)
+
+    # Check for duplicates
+    existing = await db.get_squad_group(guild_id, group_name)
+    if existing:
+        return web.json_response({"error": f"Group '{group_name}' already exists."}, status=409)
+
+    # Check limit
+    all_groups = await db.get_squad_groups(guild_id)
+    if len(all_groups or []) >= MAX_GROUPS_PER_GUILD:
+        return web.json_response(
+            {"error": f"Maximum of {MAX_GROUPS_PER_GUILD} groups per community."},
+            status=400,
+        )
+
+    permissions = (body.get("permissions") or "").strip()
+    await db.create_squad_group(guild_id, group_name, permissions, is_default=False)
+
+    log.info("Guild %s: admin created squad group '%s'", guild_id, group_name)
+    return web.json_response({"ok": True, "group_name": group_name})
+
+
+@require_admin
+async def admin_update_group(request: web.Request) -> web.Response:
+    """Update a squad group's name and/or permissions."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    group_name = request.match_info["group_name"]
+    existing = await db.get_squad_group(guild_id, group_name)
+    if not existing:
+        return web.json_response({"error": "Group not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    new_name = (body.get("group_name") or "").strip()
+    permissions = (body.get("permissions") or "").strip()
+
+    # If renaming, delete old and create new
+    if new_name and new_name != group_name:
+        if len(new_name) > 100:
+            return web.json_response({"error": "Group name max 100 chars."}, status=400)
+        dup = await db.get_squad_group(guild_id, new_name)
+        if dup:
+            return web.json_response({"error": f"Group '{new_name}' already exists."}, status=409)
+        is_default = bool(existing[2])
+        await db.delete_squad_group(guild_id, group_name)
+        await db.create_squad_group(guild_id, new_name, permissions, is_default=is_default)
+        # Update whitelists referencing the old group name
+        whitelists = await db.get_whitelists(guild_id)
+        for wl in whitelists:
+            if wl.get("squad_group") == group_name:
+                await db.update_whitelist(wl["id"], squad_group=new_name)
+        log.info("Guild %s: admin renamed squad group '%s' -> '%s'", guild_id, group_name, new_name)
+    else:
+        await db.update_squad_group(guild_id, group_name, permissions)
+        log.info("Guild %s: admin updated squad group '%s'", guild_id, group_name)
+
+    return web.json_response({"ok": True})
+
+
+@require_admin
+async def admin_delete_group(request: web.Request) -> web.Response:
+    """Delete a squad group (cannot delete the default one)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    group_name = request.match_info["group_name"]
+    existing = await db.get_squad_group(guild_id, group_name)
+    if not existing:
+        return web.json_response({"error": "Group not found."}, status=404)
+    if bool(existing[2]):
+        return web.json_response({"error": "Cannot delete the default group."}, status=400)
+
+    await db.delete_squad_group(guild_id, group_name)
+    log.info("Guild %s: admin deleted squad group '%s'", guild_id, group_name)
+    return web.json_response({"ok": True, "deleted": group_name})
+
+
+@require_admin
+async def admin_get_permissions(request: web.Request) -> web.Response:
+    """Return the list of available Squad permissions."""
+    return web.json_response({"permissions": SQUAD_PERMISSIONS})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2527,6 +2658,12 @@ def setup_routes(app: web.Application):
     app.router.add_put("/api/admin/panels/{panel_id}", admin_update_panel)
     app.router.add_delete("/api/admin/panels/{panel_id}", admin_delete_panel)
     app.router.add_post("/api/admin/panels/{panel_id}/push", admin_push_panel)
+    # Admin Squad Groups CRUD
+    app.router.add_get("/api/admin/groups", admin_get_groups)
+    app.router.add_post("/api/admin/groups", admin_create_group)
+    app.router.add_put("/api/admin/groups/{group_name}", admin_update_group)
+    app.router.add_delete("/api/admin/groups/{group_name}", admin_delete_group)
+    app.router.add_get("/api/admin/permissions", admin_get_permissions)
     # Admin Import / Export
     app.router.add_post("/api/admin/import/headers", admin_import_headers)
     app.router.add_post("/api/admin/import/preview", admin_import_preview)

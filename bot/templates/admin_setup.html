@@ -5,10 +5,52 @@
 {% block content %}
 <div class="page-header">
     <h1>Community Setup</h1>
-    <p class="text-muted">Configure general settings, panels, and whitelist types for this server.</p>
+    <p class="text-muted">Configure panels, whitelists, and permission groups for this server.</p>
 </div>
 
 <style>
+    /* ── Tab Bar ────────────────────────────────────────────────────────── */
+    .tab-bar {
+        display: flex;
+        gap: 0;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius) var(--radius) 0 0;
+        overflow: hidden;
+        margin-bottom: 0;
+    }
+    .tab-bar .tab {
+        flex: 1;
+        padding: 12px 20px;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: color 0.2s, border-color 0.2s, background 0.2s;
+        text-align: center;
+    }
+    .tab-bar .tab:hover {
+        color: var(--text-secondary);
+        background: rgba(255,255,255,0.02);
+    }
+    .tab-bar .tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        background: rgba(88, 101, 242, 0.05);
+    }
+    .tab-content {
+        display: none;
+        border: 1px solid var(--border);
+        border-top: none;
+        border-radius: 0 0 var(--radius) var(--radius);
+        background: var(--bg-secondary);
+        padding: 20px;
+    }
+    .tab-content.active { display: block; }
+
     /* ── Tooltip (fixed positioning, never clipped) ───────────────────── */
     .info-tip {
         position: relative;
@@ -56,9 +98,7 @@
         z-index: 99999;
         pointer-events: none;
     }
-    .info-tip:hover .info-tip-text {
-        display: block;
-    }
+    .info-tip:hover .info-tip-text { display: block; }
 
     /* ── Toggle Switch ──────────────────────────────────────────────── */
     .toggle {
@@ -91,43 +131,18 @@
     .toggle input:checked + .toggle-slider { background: #43b581; }
     .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
-    /* ── Collapsible Section ──────────────────────────────────────────── */
-    .collapse-section { margin-bottom: 24px; }
-    .collapse-header {
+    /* ── Summary Badges ────────────────────────────────────────────────── */
+    .summary-badges {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        cursor: pointer;
-        user-select: none;
-        border-bottom: 1px solid var(--border);
-        transition: background 0.15s;
-    }
-    .collapse-header:hover { background: rgba(255,255,255,0.02); }
-    .collapse-header-left {
-        display: flex;
-        align-items: center;
         gap: 10px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
     }
-    .collapse-arrow {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-        transition: transform 0.2s ease;
-        width: 14px;
-        text-align: center;
+    .summary-badges .badge {
+        font-size: 0.78rem;
+        padding: 3px 10px;
+        border-radius: 10px;
     }
-    .collapse-section.open .collapse-arrow { transform: rotate(90deg); }
-    .collapse-header h3 {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text-primary);
-        margin: 0;
-    }
-    .collapse-body {
-        display: none;
-        padding: 20px;
-    }
-    .collapse-section.open .collapse-body { display: block; }
 
     /* ── Form Row (label + control) ───────────────────────────────────── */
     .form-row {
@@ -156,63 +171,57 @@
     .form-row .form-input,
     .form-row .searchable-dropdown { max-width: 300px; width: 100%; }
 
-    /* ── Panels Grid ──────────────────────────────────────────────────── */
-    .panels-summary-badges {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 14px;
-    }
-    .panels-summary-badges .badge {
-        font-size: 0.78rem;
-        padding: 3px 10px;
-        border-radius: 10px;
-    }
-    .panels-grid {
+    /* ── Cards Grid ────────────────────────────────────────────────────── */
+    .cards-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
         gap: 16px;
         margin-bottom: 16px;
     }
-    .panel-card {
+    .setup-card {
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         overflow: visible;
         transition: border-color 0.2s;
     }
-    .panel-card:hover { border-color: var(--border-light); }
-    .panel-card-header {
+    .setup-card:hover { border-color: var(--border-light); }
+    .setup-card-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 12px 16px;
         border-bottom: 1px solid var(--border);
     }
-    .panel-card-header-left {
+    .setup-card-header-left {
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-wrap: wrap;
+        min-width: 0;
     }
-    .panel-card-name {
+    .setup-card-name {
         font-weight: 600;
         font-size: 0.95rem;
         color: var(--text-primary);
     }
-    .panel-card-channel {
+    .setup-card-tag {
         font-size: 0.8rem;
         color: var(--text-muted);
     }
-    .panel-card-body {
+    .setup-card-body {
         padding: 14px 16px;
         overflow: visible;
     }
-    .panel-card-actions {
+    .setup-card-actions {
         display: flex;
         gap: 8px;
         margin-top: 12px;
         flex-wrap: wrap;
     }
-    .panel-default-badge {
+
+    /* ── Badge Variants ────────────────────────────────────────────────── */
+    .badge-default {
         font-size: 0.7rem;
         padding: 2px 8px;
         border-radius: 10px;
@@ -222,8 +231,26 @@
         text-transform: uppercase;
         letter-spacing: 0.03em;
     }
+    .badge-enabled {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: rgba(67, 181, 129, 0.15);
+        color: #43b581;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .badge-disabled {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: rgba(114, 118, 125, 0.15);
+        color: #72767d;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
 
-    /* ── Button styles for panel actions ──────────────────────────────── */
+    /* ── Button styles ──────────────────────────────────────────────────── */
     .btn-push {
         background: var(--success, #43b581);
         color: #fff;
@@ -272,108 +299,18 @@
         transition: opacity 0.15s, filter 0.15s;
     }
     .btn-create:hover { filter: brightness(1.1); opacity: 0.92; }
-
-    /* ── Whitelist Config Cards ─────────────────────────────────────── */
-    .wl-card {
-        margin-bottom: 12px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background: var(--bg-secondary);
-        overflow: visible;
-        transition: border-color 0.2s;
-    }
-    .wl-card.wl-enabled { border-left: 3px solid #43b581; }
-    .wl-card.wl-disabled { border-left: 3px solid #72767d; }
-    .wl-card-summary {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        cursor: pointer;
-        user-select: none;
-        transition: background 0.15s;
-    }
-    .wl-card-summary:hover { background: rgba(255,255,255,0.02); }
-    .wl-card-summary-left {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-    }
-    .wl-card-summary-left .collapse-arrow { font-size: 0.65rem; }
-    .wl-card-name {
-        font-weight: 600;
-        font-size: 0.95rem;
-        color: var(--text-primary);
-    }
-    .wl-card.wl-disabled .wl-card-name { color: var(--text-muted); }
-    .wl-card-meta {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-shrink: 0;
-    }
-    .wl-role-count {
-        font-size: 0.78rem;
-        color: var(--text-muted);
-    }
-    .wl-squad-tag {
-        font-size: 0.72rem;
-        padding: 2px 8px;
-        border-radius: 10px;
-        background: rgba(88, 101, 242, 0.1);
+    .btn-roles {
+        background: rgba(88, 101, 242, 0.15);
         color: var(--accent);
-    }
-    .wl-card-detail {
-        display: none;
-        padding: 16px;
-        border-top: 1px solid var(--border);
-        overflow: visible;
-    }
-    .wl-card.open .wl-card-detail { display: block; }
-
-    .status-badge-enabled {
-        background: rgba(67, 181, 129, 0.15);
-        color: #43b581;
-    }
-    .status-badge-disabled {
-        background: rgba(114, 118, 125, 0.15);
-        color: #72767d;
-    }
-
-    /* ── Role Mapping Table ────────────────────────────────────────────── */
-    .role-section { margin-top: 14px; }
-    .role-section h4 {
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        margin-bottom: 10px;
-    }
-    .role-table tbody tr:nth-child(even) { background: rgba(49, 51, 56, 0.4); }
-    .role-table tbody tr:nth-child(odd) { background: transparent; }
-    .role-table tbody tr:hover { background: var(--bg-tertiary); }
-    .role-math {
+        border: 1px solid rgba(88, 101, 242, 0.3);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm, 4px);
         font-size: 0.82rem;
-        color: var(--text-secondary);
-        margin-bottom: 10px;
-        line-height: 1.6;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, filter 0.15s, background 0.15s;
     }
-    .role-math span {
-        background: rgba(88, 101, 242, 0.1);
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin: 0 2px;
-    }
-    .add-role-row {
-        display: flex;
-        gap: 10px;
-        align-items: flex-end;
-        margin-top: 12px;
-    }
-    .add-role-row .searchable-dropdown { max-width: 220px; width: 100%; }
-    .add-role-row .slot-input { max-width: 80px; }
+    .btn-roles:hover { background: rgba(88, 101, 242, 0.25); }
 
     /* ── Searchable Dropdown ──────────────────────────────────────────── */
     .searchable-dropdown { position: relative; }
@@ -445,34 +382,6 @@
         text-align: center;
     }
 
-    /* ── Multi-select tags ────────────────────────────────────────────── */
-    .multi-tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-bottom: 8px;
-    }
-    .multi-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: rgba(88, 101, 242, 0.15);
-        color: var(--accent);
-        border-radius: 12px;
-        padding: 3px 10px;
-        font-size: 0.8rem;
-        font-weight: 500;
-    }
-    .multi-tag-remove {
-        cursor: pointer;
-        font-size: 0.9rem;
-        line-height: 1;
-        opacity: 0.7;
-        transition: opacity 0.15s;
-        margin-left: 2px;
-    }
-    .multi-tag-remove:hover { opacity: 1; }
-
     /* ── Custom Modal ─────────────────────────────────────────────────── */
     .modal-overlay {
         display: none;
@@ -489,17 +398,125 @@
         border: 1px solid var(--border-light);
         border-radius: var(--radius);
         padding: 24px;
-        max-width: 420px;
+        max-width: 600px;
         width: 90%;
         box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        max-height: 80vh;
+        overflow-y: auto;
     }
     .modal-box h3 { margin: 0 0 10px; font-size: 1.05rem; color: var(--text-primary); }
     .modal-box p { margin: 0 0 20px; font-size: 0.88rem; color: var(--text-secondary); }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
+    /* ── Role Mapping Table inside Modal ──────────────────────────────── */
+    .role-table { width: 100%; }
+    .role-table tbody tr:nth-child(even) { background: rgba(49, 51, 56, 0.4); }
+    .role-table tbody tr:nth-child(odd) { background: transparent; }
+    .role-table tbody tr:hover { background: var(--bg-tertiary); }
+    .role-math {
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        margin-bottom: 10px;
+        line-height: 1.6;
+    }
+    .role-math span {
+        background: rgba(88, 101, 242, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin: 0 2px;
+    }
+    .add-role-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        margin-top: 12px;
+    }
+    .add-role-row .searchable-dropdown { max-width: 220px; width: 100%; }
+    .add-role-row .slot-input { max-width: 80px; }
+
+    /* ── Permissions Grid ──────────────────────────────────────────────── */
+    .perms-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 6px 16px;
+        margin-bottom: 8px;
+    }
+    .perm-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 0;
+    }
+    .perm-item input[type="checkbox"] {
+        accent-color: var(--accent);
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+    .perm-item label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    /* ── Whitelist URL + Copy ──────────────────────────────────────────── */
+    .url-copy-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .url-copy-row input {
+        flex: 1;
+        font-size: 0.82rem;
+        padding: 6px 10px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        font-family: monospace;
+    }
+    .url-copy-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: color 0.15s, border-color 0.15s;
+    }
+    .url-copy-btn:hover { color: var(--text-primary); border-color: var(--border-light); }
+
+    /* ── Stats Row ─────────────────────────────────────────────────────── */
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin-top: 6px;
+    }
+
+    /* ── Create Whitelist Inline Row ───────────────────────────────────── */
+    .create-wl-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    .create-wl-row input { max-width: 200px; }
+
+    /* ── Limit Text ────────────────────────────────────────────────────── */
+    .limit-text {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-top: 8px;
+    }
+
     /* ── Responsive ───────────────────────────────────────────────────── */
     @media (max-width: 768px) {
-        .panels-grid { grid-template-columns: 1fr; }
+        .cards-grid { grid-template-columns: 1fr; }
         .form-row {
             flex-direction: column;
             align-items: flex-start;
@@ -513,100 +530,66 @@
         }
         .add-role-row .searchable-dropdown,
         .add-role-row .slot-input { max-width: 100%; }
+        .perms-grid { grid-template-columns: 1fr 1fr; }
+        .create-wl-row { flex-direction: column; }
+        .create-wl-row input { max-width: 100%; }
     }
 
-    /* Ensure overflow visible on all card containers so dropdowns are never clipped */
-    .card, .card-body, .panel-card, .panel-card-body, .wl-card, .wl-card-detail,
-    .collapse-body, .collapse-section { overflow: visible; }
-
-    .panels-limit-text {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        margin-top: 8px;
-    }
+    /* Ensure overflow visible so dropdowns are never clipped */
+    .card, .card-body, .setup-card, .setup-card-body,
+    .tab-content { overflow: visible; }
 </style>
 
 <!-- ===================================================================== -->
-<!-- Section 1: General Settings                                            -->
+<!-- Tab Bar                                                                -->
 <!-- ===================================================================== -->
-<div class="card collapse-section open" id="section-general">
-    <div class="collapse-header" onclick="toggleSection('section-general')">
-        <div class="collapse-header-left">
-            <span class="collapse-arrow">&#9654;</span>
-            <h3>General Settings</h3>
-        </div>
-    </div>
-    <div class="collapse-body">
-        <div class="form-row">
-            <div class="form-row-label">
-                <label>Mod Role(s)</label>
-                <span class="info-tip">
-                    <span class="info-tip-icon">i</span>
-                    <span class="info-tip-text">Discord roles that grant moderator access to the bot dashboard and commands.</span>
-                </span>
-            </div>
-            <div style="max-width:300px;width:100%;">
-                <div class="multi-tag-list" id="mod-roles-tags"></div>
-                <div id="mod-role-dropdown-wrap"></div>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-row-label">
-                <label for="report-frequency">Report Frequency</label>
-                <span class="info-tip">
-                    <span class="info-tip-icon">i</span>
-                    <span class="info-tip-text">How often automated whitelist summary reports are posted to your log channels.</span>
-                </span>
-            </div>
-            <select id="report-frequency" class="form-input form-select">
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="disabled">Never</option>
-            </select>
-        </div>
-        <div class="form-actions" style="margin-top:8px;">
-            <button class="btn btn-primary" onclick="saveGeneralSettings()">Save Settings</button>
-        </div>
-    </div>
+<div class="tab-bar">
+    <button class="tab active" data-tab="panels" onclick="switchTab('panels')">Panels</button>
+    <button class="tab" data-tab="whitelists" onclick="switchTab('whitelists')">Whitelists</button>
+    <button class="tab" data-tab="groups" onclick="switchTab('groups')">Groups</button>
 </div>
 
 <!-- ===================================================================== -->
-<!-- Section 2: Panels                                                      -->
+<!-- Tab 1: Panels                                                          -->
 <!-- ===================================================================== -->
-<div class="card collapse-section open" id="section-panels">
-    <div class="collapse-header" onclick="toggleSection('section-panels')">
-        <div class="collapse-header-left">
-            <span class="collapse-arrow">&#9654;</span>
-            <h3>Panels</h3>
-        </div>
-        <span style="font-size:0.8rem;color:var(--text-muted);" id="panel-count-label"></span>
+<div class="tab-content active" id="tab-panels">
+    <div class="summary-badges" id="panels-badges"></div>
+    <div class="cards-grid" id="panels-grid">
+        <p class="text-muted">Loading panels...</p>
     </div>
-    <div class="collapse-body">
-        <div class="panels-summary-badges" id="panels-summary-badges"></div>
-        <div class="panels-grid" id="panels-grid">
-            <p class="text-muted">Loading panels...</p>
-        </div>
-        <button class="btn-create btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
-            + Create Panel
-        </button>
-        <div class="panels-limit-text">Maximum 5 panels per community</div>
-    </div>
+    <button class="btn-create btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
+        + Create Panel
+    </button>
+    <div class="limit-text">Maximum 5 panels per community</div>
 </div>
 
 <!-- ===================================================================== -->
-<!-- Section 3: Whitelist Configuration                                     -->
+<!-- Tab 2: Whitelists                                                      -->
 <!-- ===================================================================== -->
-<div class="card collapse-section" id="section-whitelists">
-    <div class="collapse-header" onclick="toggleSection('section-whitelists')">
-        <div class="collapse-header-left">
-            <span class="collapse-arrow">&#9654;</span>
-            <h3>Whitelist Configuration</h3>
-        </div>
-    </div>
-    <div class="collapse-body" id="wl-cards-container">
+<div class="tab-content" id="tab-whitelists">
+    <div class="summary-badges" id="whitelists-badges"></div>
+    <div class="cards-grid" id="whitelists-grid">
         <p class="text-muted">Loading whitelists...</p>
     </div>
+    <div class="create-wl-row">
+        <input type="text" id="new-wl-name" class="form-input" placeholder="New whitelist name">
+        <input type="text" id="new-wl-filename" class="form-input" placeholder="Filename (optional)">
+        <button class="btn-create btn-sm" onclick="createWhitelist()">+ Create Whitelist</button>
+    </div>
+    <div class="limit-text">Maximum 5 whitelists per community</div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Tab 3: Groups                                                          -->
+<!-- ===================================================================== -->
+<div class="tab-content" id="tab-groups">
+    <div class="summary-badges" id="groups-badges"></div>
+    <div class="cards-grid" id="groups-grid">
+        <p class="text-muted">Loading groups...</p>
+    </div>
+    <button class="btn-create btn-sm" id="btn-create-group" onclick="showCreateGroupModal()" style="margin-top:4px;">
+        + Create Group
+    </button>
 </div>
 
 <!-- ===================================================================== -->
@@ -635,6 +618,28 @@
     </div>
 </div>
 
+<div class="modal-overlay" id="create-group-modal">
+    <div class="modal-box">
+        <h3>Create New Group</h3>
+        <p>Enter a name for the new permission group.</p>
+        <input type="text" id="new-group-name" class="form-input" placeholder="e.g. Moderators" style="margin-bottom:16px;width:100%;">
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="closeCreateGroupModal()">Cancel</button>
+            <button class="btn-create btn-sm" onclick="createGroup()">Create</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="role-mapping-modal">
+    <div class="modal-box" style="max-width:650px;">
+        <h3 id="role-modal-title">Role Mappings</h3>
+        <div id="role-modal-content"></div>
+        <div class="modal-actions" style="margin-top:16px;">
+            <button class="btn btn-secondary btn-sm" onclick="closeRoleMappingModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
 /* ════════════════════════════════════════════════════════════════════════════
    State
@@ -642,16 +647,22 @@
 var channelOptions = [];
 var roleOptions = [];
 var settingsData = {};
-var panelsData = [];   // panels from /api/admin/panels
+var panelsData = [];
+var groupsData = [];
+var permissionsDef = {};  // { permission_name: description }
+var whitelistUrlData = [];
 var TYPES = [];
-var modRoleIds = [];    // array of selected mod role IDs
 
 /* ════════════════════════════════════════════════════════════════════════════
-   Collapsible Sections
+   Tab Switching
    ════════════════════════════════════════════════════════════════════════════ */
-function toggleSection(id) {
-    var el = document.getElementById(id);
-    if (el) el.classList.toggle('open');
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-bar .tab').forEach(function(t) {
+        t.classList.toggle('active', t.getAttribute('data-tab') === tabName);
+    });
+    document.querySelectorAll('.tab-content').forEach(function(tc) {
+        tc.classList.toggle('active', tc.id === 'tab-' + tabName);
+    });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -679,6 +690,16 @@ function showCreatePanelModal() {
 function closeCreatePanelModal() {
     document.getElementById('create-panel-modal').classList.remove('active');
 }
+function showCreateGroupModal() {
+    document.getElementById('new-group-name').value = '';
+    document.getElementById('create-group-modal').classList.add('active');
+}
+function closeCreateGroupModal() {
+    document.getElementById('create-group-modal').classList.remove('active');
+}
+function closeRoleMappingModal() {
+    document.getElementById('role-mapping-modal').classList.remove('active');
+}
 
 /* ════════════════════════════════════════════════════════════════════════════
    Tooltip positioning (fixed, never clipped)
@@ -697,11 +718,11 @@ document.addEventListener('mouseover', function(e) {
    Data Loading
    ════════════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
-    Promise.all([loadChannels(), loadRoles(), loadSettings(), loadPanels()])
+    Promise.all([loadChannels(), loadRoles(), loadSettings(), loadPanels(), loadGroups(), loadPermissions(), loadWhitelistUrls()])
         .then(function() {
-            renderGeneralSettings();
             renderPanels();
             renderWhitelists();
+            renderGroups();
         })
         .catch(function() {
             showFlash('Failed to load setup data.', 'error');
@@ -736,6 +757,24 @@ function loadRoles() {
     return fetch('/api/admin/roles')
         .then(function(r) { return r.json(); })
         .then(function(data) { roleOptions = data.roles || data || []; });
+}
+
+function loadGroups() {
+    return fetch('/api/admin/groups')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { groupsData = data.groups || []; });
+}
+
+function loadPermissions() {
+    return fetch('/api/admin/permissions')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { permissionsDef = data.permissions || {}; });
+}
+
+function loadWhitelistUrls() {
+    return fetch('/api/admin/whitelist-urls')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { whitelistUrlData = data.urls || []; });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -812,7 +851,6 @@ function initSearchableDropdowns(container) {
             item.classList.add('selected');
             input.value = value ? item.textContent : '';
             closeList();
-            /* Fire change event for multi-select hook */
             dd.dispatchEvent(new CustomEvent('dropdown-change', { detail: { value: value, label: item.textContent } }));
         }
         function filterItems(query) {
@@ -879,80 +917,16 @@ function getDropdownLabel(id) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   Section 1: General Settings
+   Helpers
    ════════════════════════════════════════════════════════════════════════════ */
-function renderGeneralSettings() {
-    var bs = settingsData.bot_settings || settingsData;
-
-    // Report frequency
-    if (bs.report_frequency) {
-        document.getElementById('report-frequency').value = bs.report_frequency;
+function getChannelName(channelId) {
+    if (!channelId) return '';
+    for (var i = 0; i < channelOptions.length; i++) {
+        if (String(channelOptions[i].id) === String(channelId)) return channelOptions[i].name;
     }
-
-    // Mod roles (stored as comma-separated string or single ID)
-    var modVal = bs.mod_role_id || '';
-    modRoleIds = modVal ? modVal.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
-    renderModRoleTags();
-    renderModRoleDropdown();
+    return '';
 }
 
-function renderModRoleTags() {
-    var container = document.getElementById('mod-roles-tags');
-    var html = '';
-    modRoleIds.forEach(function(rid) {
-        var name = rid;
-        for (var i = 0; i < roleOptions.length; i++) {
-            if (String(roleOptions[i].id) === String(rid)) { name = roleOptions[i].name; break; }
-        }
-        html += '<span class="multi-tag">' + escapeHtml(name);
-        html += ' <span class="multi-tag-remove" onclick="removeModRole(\'' + escapeHtml(rid) + '\')">&times;</span></span>';
-    });
-    container.innerHTML = html;
-}
-
-function renderModRoleDropdown() {
-    var wrap = document.getElementById('mod-role-dropdown-wrap');
-    wrap.innerHTML = buildSearchableDropdown('mod-role-picker', roleOptions, '', '-- Add Mod Role --');
-    initSearchableDropdowns(wrap);
-    var dd = wrap.querySelector('.searchable-dropdown');
-    if (dd) {
-        dd.addEventListener('dropdown-change', function(e) {
-            var val = e.detail.value;
-            if (val && modRoleIds.indexOf(val) === -1) {
-                modRoleIds.push(val);
-                renderModRoleTags();
-            }
-            // Reset the dropdown
-            dd.setAttribute('data-selected-value', '');
-            dd.querySelector('.searchable-dropdown-input').value = '';
-            dd.querySelectorAll('.searchable-dropdown-item').forEach(function(it) { it.classList.remove('selected'); });
-        });
-    }
-}
-
-function removeModRole(rid) {
-    modRoleIds = modRoleIds.filter(function(r) { return r !== rid; });
-    renderModRoleTags();
-}
-
-function saveGeneralSettings() {
-    var payload = {
-        report_frequency: document.getElementById('report-frequency').value,
-        mod_role_id: modRoleIds.join(',')
-    };
-    fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
-    .then(function() { showFlash('General settings saved.', 'success'); })
-    .catch(function() { showFlash('Failed to save general settings.', 'error'); });
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   Section 2: Panels (uses /api/admin/panels)
-   ════════════════════════════════════════════════════════════════════════════ */
 function buildWhitelistDropdownOptions() {
     var tc = settingsData.type_configs || {};
     var opts = [];
@@ -964,29 +938,41 @@ function buildWhitelistDropdownOptions() {
     return opts;
 }
 
-function getTierDisplayForPanel(whitelistId) {
-    if (!whitelistId || !settingsData || !settingsData.type_configs || !settingsData.role_mappings) return '';
-    // Find the whitelist slug matching this ID
-    var slug = null;
-    var configs = settingsData.type_configs;
-    for (var key in configs) {
-        if (String(configs[key].id) === String(whitelistId)) {
-            slug = key;
-            break;
-        }
+function buildGroupDropdownOptions() {
+    var opts = [];
+    for (var i = 0; i < groupsData.length; i++) {
+        opts.push({ id: groupsData[i].group_name, name: groupsData[i].group_name });
     }
-    if (!slug) return '';
-    var mappings = settingsData.role_mappings[slug];
-    if (!mappings || mappings.length === 0) return '<span style="color:var(--text-muted); font-size:0.8rem;">No role mappings configured</span>';
-    var parts = [];
-    for (var i = 0; i < mappings.length; i++) {
-        var m = mappings[i];
-        var name = m.role_name || m.role_id;
-        parts.push('<span style="color:var(--text-primary); font-size:0.85rem;">@' + escapeHtml(name) + ' <span style="color:var(--accent); font-weight:600;">= ' + m.slot_limit + ' slot' + (m.slot_limit !== 1 ? 's' : '') + '</span></span>');
-    }
-    return parts.join('<span style="color:var(--text-muted); margin:0 6px;">·</span>');
+    return opts;
 }
 
+function getWhitelistSlugById(whitelistId) {
+    var tc = settingsData.type_configs || {};
+    for (var key in tc) {
+        if (String(tc[key].id) === String(whitelistId)) return key;
+    }
+    return null;
+}
+
+function copyToClipboard(text) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            showFlash('URL copied to clipboard.', 'success');
+        });
+    } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        showFlash('URL copied to clipboard.', 'success');
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Tab 1: Panels
+   ════════════════════════════════════════════════════════════════════════════ */
 function renderPanels() {
     var container = document.getElementById('panels-grid');
     var html = '';
@@ -996,12 +982,11 @@ function renderPanels() {
         if (panelsData[a].channel_id) activeCount++;
     }
 
-    document.getElementById('panel-count-label').textContent = panelCount + ' / 5';
-
     // Summary badges
-    var badgesHtml = '<span class="badge status-badge-enabled">' + panelCount + ' panel' + (panelCount !== 1 ? 's' : '') + '</span>';
-    badgesHtml += '<span class="badge status-badge-enabled">' + activeCount + ' active</span>';
-    document.getElementById('panels-summary-badges').innerHTML = badgesHtml;
+    var badgesHtml = '<span class="badge badge-enabled">' + panelCount + ' panel' + (panelCount !== 1 ? 's' : '') + '</span>';
+    badgesHtml += '<span class="badge badge-enabled">' + activeCount + ' active</span>';
+    badgesHtml += '<span class="badge badge-disabled">max 5</span>';
+    document.getElementById('panels-badges').innerHTML = badgesHtml;
 
     document.getElementById('btn-create-panel').style.display = (panelCount >= 5) ? 'none' : '';
 
@@ -1013,41 +998,41 @@ function renderPanels() {
         var isDefault = panel.is_default || false;
         var channelName = getChannelName(panel.channel_id);
 
-        html += '<div class="panel-card" id="panel-card-' + panelId + '">';
+        html += '<div class="setup-card" id="panel-card-' + panelId + '">';
 
         // Header
-        html += '<div class="panel-card-header">';
-        html += '<div class="panel-card-header-left">';
-        html += '<span class="panel-card-name">' + escapeHtml(name) + '</span>';
-        if (isDefault) html += ' <span class="panel-default-badge">Default</span>';
+        html += '<div class="setup-card-header">';
+        html += '<div class="setup-card-header-left">';
+        html += '<span class="setup-card-name">' + escapeHtml(name) + '</span>';
+        if (isDefault) html += ' <span class="badge-default">Default</span>';
         html += '</div>';
         if (channelName) {
-            html += '<span class="panel-card-channel"># ' + escapeHtml(channelName) + '</span>';
+            html += '<span class="setup-card-tag"># ' + escapeHtml(channelName) + '</span>';
         }
         html += '</div>';
 
         // Body
-        html += '<div class="panel-card-body">';
+        html += '<div class="setup-card-body">';
 
-        // Panel name (editable)
+        // Panel name
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Name</label></div>';
         html += '<input type="text" id="panel-name-' + panelId + '" class="form-input" value="' + escapeHtml(name) + '" style="max-width:200px;">';
         html += '</div>';
 
-        // Channel selector
+        // Channel
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Channel</label></div>';
         html += buildSearchableDropdown('panel-ch-' + panelId, channelOptions, String(panel.channel_id || ''), '-- Select Channel --');
         html += '</div>';
 
-        // Log channel selector
+        // Log Channel
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Log Channel</label></div>';
         html += buildSearchableDropdown('panel-log-' + panelId, channelOptions, String(panel.log_channel_id || ''), '-- Select Log Channel --');
         html += '</div>';
 
-        // Linked whitelist selector
+        // Linked Whitelist
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Whitelist</label>';
         html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
@@ -1056,38 +1041,46 @@ function renderPanels() {
         html += buildSearchableDropdown('panel-wl-' + panelId, wlOptions, String(panel.whitelist_id || ''), '-- Select Whitelist --');
         html += '</div>';
 
-        // Tier/role info from linked whitelist
+        // Tier display from linked whitelist
         var tierHtml = getTierDisplayForPanel(panel.whitelist_id);
         if (tierHtml) {
-            html += '<div class="panel-tiers" style="margin-bottom:10px; padding:8px 12px; background:var(--bg-tertiary); border-radius:var(--radius-sm); border-left:3px solid var(--accent);">';
+            html += '<div style="margin-bottom:10px; padding:8px 12px; background:var(--bg-tertiary); border-radius:var(--radius-sm); border-left:3px solid var(--accent);">';
             html += '<span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:600; display:block; margin-bottom:4px;">Tiers</span>';
             html += tierHtml;
             html += '</div>';
         }
 
         // Actions
-        html += '<div class="panel-card-actions">';
+        html += '<div class="setup-card-actions">';
         html += '<button class="btn-push btn-sm" onclick="pushPanel(' + panelId + ')">Push Panel</button>';
         html += '<button class="btn-save btn-sm" onclick="savePanelSettings(' + panelId + ')">Save</button>';
+        html += '<button class="btn-roles btn-sm" onclick="showRoleMappingModal(' + panelId + ')">Manage Roles</button>';
         if (!isDefault) {
-            html += '<button class="btn-delete btn-sm" onclick="confirmDeletePanel(' + panelId + ', \'' + escapeHtml(name) + '\')">Delete</button>';
+            html += '<button class="btn-delete btn-sm" onclick="confirmDeletePanel(' + panelId + ', \'' + escapeHtml(name).replace(/'/g, "\\'") + '\')">Delete</button>';
         }
         html += '</div>';
 
-        html += '</div>'; // panel-card-body
-        html += '</div>'; // panel-card
+        html += '</div>'; // body
+        html += '</div>'; // card
     });
 
     container.innerHTML = html;
     initSearchableDropdowns(container);
 }
 
-function getChannelName(channelId) {
-    if (!channelId) return '';
-    for (var i = 0; i < channelOptions.length; i++) {
-        if (String(channelOptions[i].id) === String(channelId)) return channelOptions[i].name;
+function getTierDisplayForPanel(whitelistId) {
+    if (!whitelistId || !settingsData || !settingsData.type_configs || !settingsData.role_mappings) return '';
+    var slug = getWhitelistSlugById(whitelistId);
+    if (!slug) return '';
+    var mappings = settingsData.role_mappings[slug];
+    if (!mappings || mappings.length === 0) return '<span style="color:var(--text-muted); font-size:0.8rem;">No role mappings configured</span>';
+    var parts = [];
+    for (var i = 0; i < mappings.length; i++) {
+        var m = mappings[i];
+        var mname = m.role_name || m.role_id;
+        parts.push('<span style="color:var(--text-primary); font-size:0.85rem;">@' + escapeHtml(mname) + ' <span style="color:var(--accent); font-weight:600;">= ' + m.slot_limit + ' slot' + (m.slot_limit !== 1 ? 's' : '') + '</span></span>');
     }
-    return '';
+    return parts.join('<span style="color:var(--text-muted); margin:0 6px;">&#183;</span>');
 }
 
 function savePanelSettings(panelId) {
@@ -1169,118 +1162,222 @@ function createPanel() {
     .catch(function(err) { showFlash(err.message || 'Failed to create panel.', 'error'); });
 }
 
+/* ── Role Mapping Modal ─────────────────────────────────────────────────── */
+function showRoleMappingModal(panelId) {
+    var panel = null;
+    for (var i = 0; i < panelsData.length; i++) {
+        if (panelsData[i].id === panelId) { panel = panelsData[i]; break; }
+    }
+    if (!panel) { showFlash('Panel not found.', 'error'); return; }
+    if (!panel.whitelist_id) { showFlash('This panel has no linked whitelist. Please assign a whitelist first.', 'error'); return; }
+
+    var slug = getWhitelistSlugById(panel.whitelist_id);
+    if (!slug) { showFlash('Linked whitelist not found.', 'error'); return; }
+
+    document.getElementById('role-modal-title').textContent = 'Role Mappings for ' + (panel.name || 'Panel');
+
+    var rm = (settingsData.role_mappings || {})[slug] || [];
+    var html = '';
+
+    // Math summary
+    if (rm.length > 0) {
+        html += '<div class="role-math">';
+        var parts = [];
+        var total = 0;
+        rm.forEach(function(r) {
+            parts.push('<span>@' + escapeHtml(r.role_name || 'Unknown') + ' = ' + (r.slot_limit || 1) + '</span>');
+            total += (r.slot_limit || 1);
+        });
+        html += parts.join(' + ');
+        html += ' = <strong>Total: ' + total + ' slot' + (total !== 1 ? 's' : '') + '</strong>';
+        html += '</div>';
+    }
+
+    // Table
+    html += '<div class="table-responsive"><table class="data-table role-table">';
+    html += '<thead><tr><th>Role</th><th>Slots</th><th></th></tr></thead>';
+    html += '<tbody>';
+    if (rm.length === 0) {
+        html += '<tr><td colspan="3" class="text-center text-muted" style="font-size:0.85rem;">No role mappings configured.</td></tr>';
+    } else {
+        rm.forEach(function(r) {
+            var roleName = r.role_name || 'Unknown';
+            var roleDisplay = escapeHtml(roleName);
+            if (r.role_id && String(r.role_id) !== roleName) {
+                roleDisplay += ' <span style="color:var(--text-muted);font-size:0.78em;">(' + escapeHtml(String(r.role_id)) + ')</span>';
+            }
+            html += '<tr>';
+            html += '<td>' + roleDisplay + '</td>';
+            html += '<td>' + (r.slot_limit || 1) + '</td>';
+            html += '<td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="removeRoleMappingFromModal(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(String(r.role_id)) + '\', \'' + escapeHtml(roleName).replace(/'/g, "\\'") + '\')">Remove</button></td>';
+            html += '</tr>';
+        });
+    }
+    html += '</tbody></table></div>';
+
+    // Add role row
+    html += '<div class="add-role-row">';
+    html += buildSearchableDropdown('modal-add-role-' + slug, roleOptions, '', '-- Select Role --');
+    html += '<input type="number" id="modal-add-role-slots-' + escapeHtml(slug) + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
+    html += '<button class="btn-save btn-sm" onclick="addRoleMappingFromModal(\'' + escapeHtml(slug) + '\')">Add</button>';
+    html += '</div>';
+
+    document.getElementById('role-modal-content').innerHTML = html;
+    initSearchableDropdowns(document.getElementById('role-modal-content'));
+    document.getElementById('role-mapping-modal').classList.add('active');
+}
+
+function addRoleMappingFromModal(slug) {
+    var roleId = getDropdownValue('modal-add-role-' + slug);
+    var roleName = getDropdownLabel('modal-add-role-' + slug);
+    var slotLimit = parseInt(document.getElementById('modal-add-role-slots-' + slug).value, 10) || 1;
+    if (!roleId) {
+        showFlash('Please select a role.', 'error');
+        return;
+    }
+    fetch('/api/admin/roles/' + encodeURIComponent(slug), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Role mapping added.', 'success');
+        closeRoleMappingModal();
+        reloadAll();
+    })
+    .catch(function(err) { showFlash(err.message || 'Failed to add role mapping.', 'error'); });
+}
+
+function removeRoleMappingFromModal(slug, roleId, roleName) {
+    showModal(
+        'Remove Role Mapping',
+        'Remove "' + roleName + '" from this whitelist? Users with only this role will lose their whitelist slots.',
+        'Remove',
+        function() {
+            fetch('/api/admin/roles/' + encodeURIComponent(slug) + '/' + encodeURIComponent(roleId), { method: 'DELETE' })
+            .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+            .then(function() {
+                showFlash('Role mapping removed.', 'success');
+                closeRoleMappingModal();
+                reloadAll();
+            })
+            .catch(function() { showFlash('Failed to remove role mapping.', 'error'); });
+        }
+    );
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
-   Section 3: Whitelist Configuration
+   Tab 2: Whitelists
    ════════════════════════════════════════════════════════════════════════════ */
 function renderWhitelists() {
     var tc = settingsData.type_configs || {};
     var rm = settingsData.role_mappings || {};
-    var container = document.getElementById('wl-cards-container');
+    var container = document.getElementById('whitelists-grid');
     var html = '';
+    var enabledCount = 0;
+    var totalCount = TYPES.length;
+
+    TYPES.forEach(function(slug) {
+        var cfg = tc[slug] || {};
+        if (cfg.enabled) enabledCount++;
+    });
+
+    // Summary badges
+    var badgesHtml = '<span class="badge badge-enabled">' + totalCount + ' list' + (totalCount !== 1 ? 's' : '') + '</span>';
+    badgesHtml += '<span class="badge badge-enabled">' + enabledCount + ' enabled</span>';
+    badgesHtml += '<span class="badge badge-disabled">max 5</span>';
+    document.getElementById('whitelists-badges').innerHTML = badgesHtml;
+
+    var groupOptions = buildGroupDropdownOptions();
 
     TYPES.forEach(function(slug) {
         var cfg = tc[slug] || {};
         var enabled = cfg.enabled || false;
-        var roleMappings = rm[slug] || [];
         var name = cfg.name || slug;
-        var stateClass = enabled ? 'wl-enabled' : 'wl-disabled';
+        var isDefault = cfg.is_default || false;
+        var roleMappings = rm[slug] || [];
 
-        html += '<div class="wl-card ' + stateClass + '" id="wl-card-' + escapeHtml(slug) + '">';
+        // Find URL data
+        var urlInfo = null;
+        for (var u = 0; u < whitelistUrlData.length; u++) {
+            if (whitelistUrlData[u].slug === slug) { urlInfo = whitelistUrlData[u]; break; }
+        }
 
-        // Collapsed summary row
-        html += '<div class="wl-card-summary" onclick="toggleWlCard(\'' + escapeHtml(slug) + '\')">';
-        html += '<div class="wl-card-summary-left">';
-        html += '<span class="collapse-arrow">&#9654;</span>';
-        html += '<span class="wl-card-name">' + escapeHtml(name) + '</span>';
+        html += '<div class="setup-card" id="wl-card-' + escapeHtml(slug) + '">';
+
+        // Header
+        html += '<div class="setup-card-header">';
+        html += '<div class="setup-card-header-left">';
+        html += '<span class="setup-card-name">' + escapeHtml(name) + '</span>';
+        if (isDefault) html += ' <span class="badge-default">Default</span>';
         if (enabled) {
-            html += '<span class="badge status-badge-enabled">Enabled</span>';
+            html += ' <span class="badge-enabled">Enabled</span>';
         } else {
-            html += '<span class="badge status-badge-disabled">Disabled</span>';
+            html += ' <span class="badge-disabled">Disabled</span>';
         }
         html += '</div>';
-        html += '<div class="wl-card-meta">';
-        html += '<span class="wl-role-count">' + roleMappings.length + ' role' + (roleMappings.length !== 1 ? 's' : '') + '</span>';
-        if (cfg.squad_group) {
-            html += '<span class="wl-squad-tag">' + escapeHtml(cfg.squad_group) + '</span>';
-        }
-        // Toggle switch (stop propagation so clicking it doesn't expand/collapse)
-        html += '<label class="toggle" onclick="event.stopPropagation()">';
+        html += '</div>';
+
+        // Body
+        html += '<div class="setup-card-body">';
+
+        // Enabled toggle
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Enabled</label></div>';
+        html += '<label class="toggle">';
         html += '<input type="checkbox" id="wl-toggle-' + escapeHtml(slug) + '"' + (enabled ? ' checked' : '') + ' onchange="toggleWhitelist(\'' + escapeHtml(slug) + '\', this.checked)">';
         html += '<span class="toggle-slider"></span></label>';
         html += '</div>';
-        html += '</div>';
 
-        // Expanded detail
-        html += '<div class="wl-card-detail">';
-
-        // Squad group
-        html += '<div class="form-row" style="margin-bottom:12px;">';
+        // Squad Group dropdown
+        html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Squad Group</label>';
         html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
-        html += '<span class="info-tip-text">The Squad permission group name (e.g., \'Whitelist\'). Maps to the group in your Squad RemoteAdminList.</span></span>';
+        html += '<span class="info-tip-text">The Squad permission group this whitelist outputs to (defined in the Groups tab).</span></span>';
         html += '</div>';
-        html += '<input type="text" id="wl-squad-' + escapeHtml(slug) + '" class="form-input" placeholder="e.g. Whitelist" value="' + escapeHtml(cfg.squad_group || '') + '" style="max-width:200px;">';
-        html += '</div>';
-
-        html += '<div class="form-actions" style="margin-bottom:14px;">';
-        html += '<button class="btn-save btn-sm" onclick="saveWhitelistSettings(\'' + escapeHtml(slug) + '\')">Save Settings</button>';
+        html += buildSearchableDropdown('wl-group-' + slug, groupOptions, cfg.squad_group || '', '-- Select Group --');
         html += '</div>';
 
-        // Role mappings
-        html += '<div class="role-section">';
-        html += '<h4>Role Mappings</h4>';
+        // Output filename
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Filename</label></div>';
+        html += '<input type="text" id="wl-filename-' + escapeHtml(slug) + '" class="form-input" value="' + escapeHtml(cfg.output_filename || '') + '" placeholder="whitelist.txt" style="max-width:200px;">';
+        html += '</div>';
 
-        // Role math summary
-        if (roleMappings.length > 0) {
-            html += '<div class="role-math">';
-            var parts = [];
-            roleMappings.forEach(function(rm) {
-                parts.push('<span>' + escapeHtml(rm.role_name || 'Unknown') + ' = ' + (rm.slot_limit || 1) + ' slot' + ((rm.slot_limit || 1) !== 1 ? 's' : '') + '</span>');
-            });
-            html += parts.join(' &nbsp;&bull;&nbsp; ');
+        // URL with copy button
+        if (urlInfo && urlInfo.url) {
+            html += '<div class="form-row" style="margin-bottom:10px;">';
+            html += '<div class="form-row-label"><label>URL</label></div>';
+            html += '<div class="url-copy-row" style="max-width:300px;width:100%;">';
+            html += '<input type="text" readonly value="' + escapeHtml(urlInfo.url) + '" id="wl-url-' + escapeHtml(slug) + '">';
+            html += '<button class="url-copy-btn" onclick="copyToClipboard(document.getElementById(\'wl-url-' + escapeHtml(slug) + '\').value)">Copy</button>';
+            html += '</div>';
             html += '</div>';
         }
 
-        html += '<div class="table-responsive"><table class="data-table role-table">';
-        html += '<thead><tr><th>Role</th><th>Slots</th><th></th></tr></thead>';
-        html += '<tbody>';
-        if (roleMappings.length === 0) {
-            html += '<tr><td colspan="3" class="text-center text-muted" style="font-size:0.85rem;">No role mappings configured.</td></tr>';
-        } else {
-            roleMappings.forEach(function(r) {
-                var roleName = r.role_name || 'Unknown';
-                var roleDisplay = escapeHtml(roleName);
-                if (r.role_id && String(r.role_id) !== roleName) {
-                    roleDisplay += ' <span style="color:var(--text-muted);font-size:0.78em;">(' + escapeHtml(String(r.role_id)) + ')</span>';
-                }
-                html += '<tr>';
-                html += '<td>' + roleDisplay + '</td>';
-                html += '<td>' + (r.slot_limit || 1) + '</td>';
-                html += '<td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="confirmRemoveRole(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(String(r.role_id)) + '\', \'' + escapeHtml(roleName) + '\')">Remove</button></td>';
-                html += '</tr>';
-            });
-        }
-        html += '</tbody></table></div>';
-
-        // Add role row
-        html += '<div class="add-role-row">';
-        html += buildSearchableDropdown('add-role-' + slug, roleOptions, '', '-- Select Role --');
-        html += '<input type="number" id="add-role-slots-' + escapeHtml(slug) + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
-        html += '<button class="btn-save btn-sm" onclick="addRoleMapping(\'' + escapeHtml(slug) + '\')">Add</button>';
+        // Stats
+        html += '<div class="stats-row">';
+        html += '<span>' + roleMappings.length + ' role' + (roleMappings.length !== 1 ? 's' : '') + '</span>';
         html += '</div>';
 
-        html += '</div>'; // role-section
-        html += '</div>'; // wl-card-detail
-        html += '</div>'; // wl-card
+        // Actions
+        html += '<div class="setup-card-actions">';
+        html += '<button class="btn-save btn-sm" onclick="saveWhitelistSettings(\'' + escapeHtml(slug) + '\')">Save</button>';
+        if (!isDefault) {
+            html += '<button class="btn-delete btn-sm" onclick="confirmDeleteWhitelist(\'' + escapeHtml(slug) + '\', \'' + escapeHtml(name).replace(/'/g, "\\'") + '\')">Delete</button>';
+        }
+        html += '</div>';
+
+        html += '</div>'; // body
+        html += '</div>'; // card
     });
 
     container.innerHTML = html;
     initSearchableDropdowns(container);
-}
-
-function toggleWlCard(slug) {
-    var card = document.getElementById('wl-card-' + slug);
-    if (card) card.classList.toggle('open');
 }
 
 function toggleWhitelist(slug, enabled) {
@@ -1291,18 +1388,8 @@ function toggleWhitelist(slug, enabled) {
     })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        var card = document.getElementById('wl-card-' + slug);
-        if (card) {
-            card.classList.remove('wl-enabled', 'wl-disabled');
-            card.classList.add(enabled ? 'wl-enabled' : 'wl-disabled');
-            var badge = card.querySelector('.wl-card-summary-left .badge');
-            if (badge) {
-                badge.className = 'badge ' + (enabled ? 'status-badge-enabled' : 'status-badge-disabled');
-                badge.textContent = enabled ? 'Enabled' : 'Disabled';
-            }
-        }
-        var name = slug.charAt(0).toUpperCase() + slug.slice(1);
-        showFlash(name + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
+        showFlash(slug + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
+        reloadAll();
     })
     .catch(function() {
         showFlash('Failed to toggle ' + slug + '.', 'error');
@@ -1313,7 +1400,8 @@ function toggleWhitelist(slug, enabled) {
 
 function saveWhitelistSettings(slug) {
     var payload = {
-        squad_group: document.getElementById('wl-squad-' + slug).value.trim()
+        squad_group: getDropdownValue('wl-group-' + slug) || '',
+        output_filename: document.getElementById('wl-filename-' + slug).value.trim()
     };
     fetch('/api/admin/types/' + encodeURIComponent(slug), {
         method: 'POST',
@@ -1328,53 +1416,221 @@ function saveWhitelistSettings(slug) {
     .catch(function() { showFlash('Failed to save whitelist settings.', 'error'); });
 }
 
-function addRoleMapping(slug) {
-    var roleId = getDropdownValue('add-role-' + slug);
-    var roleName = getDropdownLabel('add-role-' + slug);
-    var slotLimit = parseInt(document.getElementById('add-role-slots-' + slug).value, 10) || 1;
-    if (!roleId) {
-        showFlash('Please select a role.', 'error');
+function createWhitelist() {
+    var name = document.getElementById('new-wl-name').value.trim();
+    var filename = document.getElementById('new-wl-filename').value.trim();
+    if (!name) {
+        showFlash('Please enter a whitelist name.', 'error');
         return;
     }
-    fetch('/api/admin/roles/' + encodeURIComponent(slug), {
+    var payload = { name: name };
+    if (filename) payload.output_filename = filename;
+    fetch('/api/admin/whitelists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
+        body: JSON.stringify(payload)
     })
-    .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
     .then(function() {
-        showFlash('Role mapping added.', 'success');
+        document.getElementById('new-wl-name').value = '';
+        document.getElementById('new-wl-filename').value = '';
+        showFlash('Whitelist "' + name + '" created.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to add role mapping.', 'error'); });
+    .catch(function(err) { showFlash(err.message || 'Failed to create whitelist.', 'error'); });
 }
 
-function confirmRemoveRole(slug, roleId, roleName) {
+function confirmDeleteWhitelist(slug, name) {
     showModal(
-        'Remove Role Mapping',
-        'Remove "' + roleName + '" from this whitelist? Users with only this role will lose their whitelist slots.',
-        'Remove',
-        function() { removeRoleMapping(slug, roleId); }
+        'Delete Whitelist',
+        'Are you sure you want to delete "' + name + '"? All users and role mappings will be removed. This cannot be undone.',
+        'Delete',
+        function() { deleteWhitelist(slug); }
     );
 }
 
-function removeRoleMapping(slug, roleId) {
-    fetch('/api/admin/roles/' + encodeURIComponent(slug) + '/' + encodeURIComponent(roleId), { method: 'DELETE' })
+function deleteWhitelist(slug) {
+    fetch('/api/admin/whitelists/' + encodeURIComponent(slug), { method: 'DELETE' })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash('Role mapping removed.', 'success');
+        showFlash('Whitelist deleted.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to remove role mapping.', 'error'); });
+    .catch(function() { showFlash('Failed to delete whitelist.', 'error'); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Tab 3: Groups
+   ════════════════════════════════════════════════════════════════════════════ */
+/* Priority ordering for permissions: show common ones at top */
+var PERM_PRIORITY = ['reserve', 'kick', 'ban', 'chat', 'cameraman', 'immune', 'changemap', 'balance', 'teamchange', 'forceteamchange', 'canseeadminchat'];
+
+function getSortedPermissions() {
+    var keys = Object.keys(permissionsDef);
+    keys.sort(function(a, b) {
+        var ai = PERM_PRIORITY.indexOf(a);
+        var bi = PERM_PRIORITY.indexOf(b);
+        if (ai === -1) ai = 999;
+        if (bi === -1) bi = 999;
+        if (ai !== bi) return ai - bi;
+        return a.localeCompare(b);
+    });
+    return keys;
+}
+
+function renderGroups() {
+    var container = document.getElementById('groups-grid');
+    var html = '';
+    var groupCount = groupsData.length;
+
+    // Summary badges
+    var badgesHtml = '<span class="badge badge-enabled">' + groupCount + ' group' + (groupCount !== 1 ? 's' : '') + '</span>';
+    document.getElementById('groups-badges').innerHTML = badgesHtml;
+
+    var sortedPerms = getSortedPermissions();
+
+    groupsData.forEach(function(group) {
+        var gName = group.group_name;
+        var isDefault = group.is_default || false;
+        var currentPerms = (group.permissions || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+
+        html += '<div class="setup-card" id="group-card-' + escapeHtml(gName) + '">';
+
+        // Header
+        html += '<div class="setup-card-header">';
+        html += '<div class="setup-card-header-left">';
+        html += '<span class="setup-card-name">' + escapeHtml(gName) + '</span>';
+        if (isDefault) html += ' <span class="badge-default">Default</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Body
+        html += '<div class="setup-card-body">';
+
+        // Name (editable)
+        html += '<div class="form-row" style="margin-bottom:10px;">';
+        html += '<div class="form-row-label"><label>Name</label></div>';
+        html += '<input type="text" id="group-name-' + escapeHtml(gName) + '" class="form-input" value="' + escapeHtml(gName) + '" style="max-width:200px;">';
+        html += '</div>';
+
+        // Permissions grid
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div class="form-row-label" style="margin-bottom:8px;"><label>Permissions</label></div>';
+        html += '<div class="perms-grid">';
+        sortedPerms.forEach(function(perm) {
+            var desc = permissionsDef[perm] || '';
+            var checked = currentPerms.indexOf(perm) !== -1;
+            html += '<div class="perm-item">';
+            html += '<input type="checkbox" id="grp-perm-' + escapeHtml(gName) + '-' + escapeHtml(perm) + '" data-group="' + escapeHtml(gName) + '" data-perm="' + escapeHtml(perm) + '"' + (checked ? ' checked' : '') + '>';
+            html += '<label for="grp-perm-' + escapeHtml(gName) + '-' + escapeHtml(perm) + '" title="' + escapeHtml(desc) + '">' + escapeHtml(perm) + '</label>';
+            html += '</div>';
+        });
+        html += '</div>';
+        html += '</div>';
+
+        // Actions
+        html += '<div class="setup-card-actions">';
+        html += '<button class="btn-save btn-sm" onclick="saveGroup(\'' + escapeHtml(gName).replace(/'/g, "\\'") + '\')">Save</button>';
+        if (!isDefault) {
+            html += '<button class="btn-delete btn-sm" onclick="confirmDeleteGroup(\'' + escapeHtml(gName).replace(/'/g, "\\'") + '\')">Delete</button>';
+        }
+        html += '</div>';
+
+        html += '</div>'; // body
+        html += '</div>'; // card
+    });
+
+    container.innerHTML = html;
+}
+
+function getGroupPermissions(groupName) {
+    var checkboxes = document.querySelectorAll('input[data-group="' + groupName + '"][data-perm]');
+    var perms = [];
+    checkboxes.forEach(function(cb) {
+        if (cb.checked) perms.push(cb.getAttribute('data-perm'));
+    });
+    return perms.join(',');
+}
+
+function saveGroup(originalName) {
+    var newName = document.getElementById('group-name-' + originalName).value.trim();
+    var permissions = getGroupPermissions(originalName);
+    if (!newName) {
+        showFlash('Group name cannot be empty.', 'error');
+        return;
+    }
+    fetch('/api/admin/groups/' + encodeURIComponent(originalName), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_name: newName, permissions: permissions })
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Group "' + newName + '" saved.', 'success');
+        reloadAll();
+    })
+    .catch(function(err) { showFlash(err.message || 'Failed to save group.', 'error'); });
+}
+
+function createGroup() {
+    var name = document.getElementById('new-group-name').value.trim();
+    if (!name) {
+        showFlash('Please enter a group name.', 'error');
+        return;
+    }
+    fetch('/api/admin/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_name: name })
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
+    .then(function() {
+        closeCreateGroupModal();
+        showFlash('Group "' + name + '" created.', 'success');
+        reloadAll();
+    })
+    .catch(function(err) { showFlash(err.message || 'Failed to create group.', 'error'); });
+}
+
+function confirmDeleteGroup(groupName) {
+    showModal(
+        'Delete Group',
+        'Are you sure you want to delete "' + groupName + '"? This cannot be undone.',
+        'Delete',
+        function() { deleteGroup(groupName); }
+    );
+}
+
+function deleteGroup(groupName) {
+    fetch('/api/admin/groups/' + encodeURIComponent(groupName), { method: 'DELETE' })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+        return r.json();
+    })
+    .then(function() {
+        showFlash('Group deleted.', 'success');
+        reloadAll();
+    })
+    .catch(function(err) { showFlash(err.message || 'Failed to delete group.', 'error'); });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
    Reload
    ════════════════════════════════════════════════════════════════════════════ */
 function reloadAll() {
-    Promise.all([loadSettings(), loadPanels()]).then(function() {
+    Promise.all([loadSettings(), loadPanels(), loadGroups(), loadWhitelistUrls()]).then(function() {
         renderPanels();
         renderWhitelists();
+        renderGroups();
     });
 }
 </script>
