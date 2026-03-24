@@ -42,63 +42,12 @@
         background: rgba(88, 101, 242, 0.05);
     }
     .tab-content {
-        display: none;
         border: 1px solid var(--border);
         border-top: none;
         border-radius: 0 0 var(--radius) var(--radius);
         background: var(--bg-secondary);
         padding: 20px;
     }
-    .tab-content.active { display: block; }
-
-    /* ── Tooltip (fixed positioning, never clipped) ───────────────────── */
-    .info-tip {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        margin-left: 6px;
-        cursor: help;
-    }
-    .info-tip-icon {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--bg-tertiary);
-        border: 1px solid var(--border-light);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.65rem;
-        font-weight: 700;
-        color: var(--text-muted);
-        transition: all var(--transition);
-        flex-shrink: 0;
-    }
-    .info-tip:hover .info-tip-icon {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-    }
-    .info-tip-text {
-        display: none;
-        position: fixed;
-        background: var(--bg-primary);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-sm);
-        padding: 8px 12px;
-        font-size: 0.78rem;
-        font-weight: 400;
-        line-height: 1.45;
-        white-space: normal;
-        width: 280px;
-        text-transform: none;
-        letter-spacing: normal;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        z-index: 99999;
-        pointer-events: none;
-    }
-    .info-tip:hover .info-tip-text { display: block; }
 
     /* ── Toggle Switch ──────────────────────────────────────────────── */
     .toggle {
@@ -168,8 +117,6 @@
         white-space: nowrap;
         margin-bottom: 0;
     }
-    .form-row .form-input,
-    .form-row .searchable-dropdown { max-width: 300px; width: 100%; }
 
     /* ── Cards Grid ────────────────────────────────────────────────────── */
     .cards-grid {
@@ -312,103 +259,10 @@
     }
     .btn-roles:hover { background: rgba(88, 101, 242, 0.25); }
 
-    /* ── Searchable Dropdown ──────────────────────────────────────────── */
-    .searchable-dropdown { position: relative; }
-    .searchable-dropdown-input {
-        width: 100%;
-        padding: 8px 32px 8px 12px;
-        background: var(--bg-input);
-        color: var(--text-primary);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        font-size: 0.9rem;
-        font-family: inherit;
-        transition: border-color var(--transition);
-        outline: none;
-        cursor: pointer;
-    }
-    .searchable-dropdown-input:focus { border-color: var(--accent); }
-    .searchable-dropdown-input::placeholder { color: var(--text-muted); }
-    .searchable-dropdown-arrow {
-        position: absolute;
-        right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        pointer-events: none;
-        color: var(--text-muted);
-        font-size: 0.65rem;
-    }
-    .searchable-dropdown-list {
-        display: none;
-        position: fixed;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-sm);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-        z-index: 99999;
-        max-height: 220px;
-        overflow-y: auto;
-        padding: 4px;
-        min-width: 200px;
-    }
-    .searchable-dropdown.open .searchable-dropdown-list { display: block; }
-    .searchable-dropdown-item {
-        padding: 7px 10px;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-        border-radius: 3px;
-        cursor: pointer;
-        transition: background 0.1s, color 0.1s;
-    }
-    .searchable-dropdown-item:hover,
-    .searchable-dropdown-item.highlighted {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-    }
-    .searchable-dropdown-item.selected {
-        background: rgba(88, 101, 242, 0.2);
-        color: var(--accent);
-    }
-    .searchable-dropdown-item mark {
-        background: rgba(88, 101, 242, 0.3);
-        color: inherit;
-        border-radius: 2px;
-        padding: 0 1px;
-    }
-    .searchable-dropdown-empty {
-        padding: 10px;
-        font-size: 0.82rem;
-        color: var(--text-muted);
-        text-align: center;
-    }
+    /* ── Tom Select sizing inside form rows ─────────────────────────── */
+    .form-row .ts-wrapper { max-width: 300px; width: 100%; }
 
-    /* ── Custom Modal ─────────────────────────────────────────────────── */
-    .modal-overlay {
-        display: none;
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.6);
-        z-index: 100000;
-        align-items: center;
-        justify-content: center;
-    }
-    .modal-overlay.active { display: flex; }
-    .modal-box {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius);
-        padding: 24px;
-        max-width: 600px;
-        width: 90%;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        max-height: 80vh;
-        overflow-y: auto;
-    }
-    .modal-box h3 { margin: 0 0 10px; font-size: 1.05rem; color: var(--text-primary); }
-    .modal-box p { margin: 0 0 20px; font-size: 0.88rem; color: var(--text-secondary); }
-    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-
-    /* ── Role Mapping Table inside Modal ──────────────────────────────── */
+    /* ── Role Mapping Table inside SweetAlert ───────────────────────── */
     .role-table { width: 100%; }
     .role-table tbody tr:nth-child(even) { background: rgba(49, 51, 56, 0.4); }
     .role-table tbody tr:nth-child(odd) { background: transparent; }
@@ -431,7 +285,7 @@
         align-items: flex-end;
         margin-top: 12px;
     }
-    .add-role-row .searchable-dropdown { max-width: 220px; width: 100%; }
+    .add-role-row .ts-wrapper { max-width: 280px; width: 100%; }
     .add-role-row .slot-input { max-width: 80px; }
 
     /* ── Permissions Grid ──────────────────────────────────────────────── */
@@ -514,6 +368,10 @@
         margin-top: 8px;
     }
 
+    /* ── SweetAlert Tom Select z-index fix ──────────────────────────── */
+    .swal2-container { z-index: 100000 !important; }
+    .swal2-popup .ts-dropdown { z-index: 100001 !important; }
+
     /* ── Responsive ───────────────────────────────────────────────────── */
     @media (max-width: 768px) {
         .cards-grid { grid-template-columns: 1fr; }
@@ -522,13 +380,12 @@
             align-items: flex-start;
             gap: 6px;
         }
-        .form-row .form-input,
-        .form-row .searchable-dropdown { max-width: 100%; }
+        .form-row .ts-wrapper { max-width: 100%; }
         .add-role-row {
             flex-direction: column;
             align-items: stretch;
         }
-        .add-role-row .searchable-dropdown,
+        .add-role-row .ts-wrapper,
         .add-role-row .slot-input { max-width: 100%; }
         .perms-grid { grid-template-columns: 1fr 1fr; }
         .create-wl-row { flex-direction: column; }
@@ -541,104 +398,60 @@
 </style>
 
 <!-- ===================================================================== -->
-<!-- Tab Bar                                                                -->
+<!-- Alpine.js Tab Wrapper                                                   -->
 <!-- ===================================================================== -->
-<div class="tab-bar">
-    <button class="tab active" data-tab="panels" onclick="switchTab('panels')">Panels</button>
-    <button class="tab" data-tab="whitelists" onclick="switchTab('whitelists')">Whitelists</button>
-    <button class="tab" data-tab="groups" onclick="switchTab('groups')">Groups</button>
-</div>
+<div x-data="{ tab: 'panels' }">
 
-<!-- ===================================================================== -->
-<!-- Tab 1: Panels                                                          -->
-<!-- ===================================================================== -->
-<div class="tab-content active" id="tab-panels">
-    <div class="summary-badges" id="panels-badges"></div>
-    <div class="cards-grid" id="panels-grid">
-        <p class="text-muted">Loading panels...</p>
+    <div class="tab-bar">
+        <button class="tab" :class="{ active: tab === 'panels' }" @click="tab = 'panels'">Panels</button>
+        <button class="tab" :class="{ active: tab === 'whitelists' }" @click="tab = 'whitelists'">Whitelists</button>
+        <button class="tab" :class="{ active: tab === 'groups' }" @click="tab = 'groups'">Groups</button>
     </div>
-    <button class="btn-create btn-sm" id="btn-create-panel" onclick="showCreatePanelModal()" style="margin-top:4px;">
-        + Create Panel
-    </button>
-    <div class="limit-text">Maximum 5 panels per community</div>
-</div>
 
-<!-- ===================================================================== -->
-<!-- Tab 2: Whitelists                                                      -->
-<!-- ===================================================================== -->
-<div class="tab-content" id="tab-whitelists">
-    <div class="summary-badges" id="whitelists-badges"></div>
-    <div class="cards-grid" id="whitelists-grid">
-        <p class="text-muted">Loading whitelists...</p>
-    </div>
-    <div class="create-wl-row">
-        <input type="text" id="new-wl-name" class="form-input" placeholder="New whitelist name">
-        <input type="text" id="new-wl-filename" class="form-input" placeholder="Filename (optional)">
-        <button class="btn-create btn-sm" onclick="createWhitelist()">+ Create Whitelist</button>
-    </div>
-    <div class="limit-text">Maximum 5 whitelists per community</div>
-</div>
-
-<!-- ===================================================================== -->
-<!-- Tab 3: Groups                                                          -->
-<!-- ===================================================================== -->
-<div class="tab-content" id="tab-groups">
-    <div class="summary-badges" id="groups-badges"></div>
-    <div class="cards-grid" id="groups-grid">
-        <p class="text-muted">Loading groups...</p>
-    </div>
-    <button class="btn-create btn-sm" id="btn-create-group" onclick="showCreateGroupModal()" style="margin-top:4px;">
-        + Create Group
-    </button>
-</div>
-
-<!-- ===================================================================== -->
-<!-- Modals                                                                 -->
-<!-- ===================================================================== -->
-<div class="modal-overlay" id="modal-overlay">
-    <div class="modal-box" id="modal-box">
-        <h3 id="modal-title">Confirm</h3>
-        <p id="modal-message">Are you sure?</p>
-        <div class="modal-actions">
-            <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-danger btn-sm" id="modal-confirm-btn" onclick="closeModal()">Confirm</button>
+    <!-- ================================================================= -->
+    <!-- Tab 1: Panels                                                       -->
+    <!-- ================================================================= -->
+    <div class="tab-content" x-show="tab === 'panels'">
+        <div class="summary-badges" id="panels-badges"></div>
+        <div class="cards-grid" id="panels-grid">
+            <p class="text-muted">Loading panels...</p>
         </div>
+        <button class="btn-create btn-sm" id="btn-create-panel" onclick="createPanelPrompt()" style="margin-top:4px;">
+            + Create Panel
+        </button>
+        <div class="limit-text">Maximum 5 panels per community</div>
     </div>
-</div>
 
-<div class="modal-overlay" id="create-panel-modal">
-    <div class="modal-box">
-        <h3>Create New Panel</h3>
-        <p>Enter a name for the new whitelist panel.</p>
-        <input type="text" id="new-panel-name" class="form-input" placeholder="e.g. Seed Panel" style="margin-bottom:16px;width:100%;">
-        <div class="modal-actions">
-            <button class="btn btn-secondary btn-sm" onclick="closeCreatePanelModal()">Cancel</button>
-            <button class="btn-create btn-sm" onclick="createPanel()">Create</button>
+    <!-- ================================================================= -->
+    <!-- Tab 2: Whitelists                                                   -->
+    <!-- ================================================================= -->
+    <div class="tab-content" x-show="tab === 'whitelists'" x-cloak>
+        <div class="summary-badges" id="whitelists-badges"></div>
+        <div class="cards-grid" id="whitelists-grid">
+            <p class="text-muted">Loading whitelists...</p>
         </div>
+        <div class="create-wl-row">
+            <input type="text" id="new-wl-name" class="form-input" placeholder="New whitelist name">
+            <input type="text" id="new-wl-filename" class="form-input" placeholder="Filename (optional)">
+            <button class="btn-create btn-sm" onclick="createWhitelist()">+ Create Whitelist</button>
+        </div>
+        <div class="limit-text">Maximum 5 whitelists per community</div>
     </div>
-</div>
 
-<div class="modal-overlay" id="create-group-modal">
-    <div class="modal-box">
-        <h3>Create New Group</h3>
-        <p>Enter a name for the new permission group.</p>
-        <input type="text" id="new-group-name" class="form-input" placeholder="e.g. Moderators" style="margin-bottom:16px;width:100%;">
-        <div class="modal-actions">
-            <button class="btn btn-secondary btn-sm" onclick="closeCreateGroupModal()">Cancel</button>
-            <button class="btn-create btn-sm" onclick="createGroup()">Create</button>
+    <!-- ================================================================= -->
+    <!-- Tab 3: Groups                                                       -->
+    <!-- ================================================================= -->
+    <div class="tab-content" x-show="tab === 'groups'" x-cloak>
+        <div class="summary-badges" id="groups-badges"></div>
+        <div class="cards-grid" id="groups-grid">
+            <p class="text-muted">Loading groups...</p>
         </div>
+        <button class="btn-create btn-sm" id="btn-create-group" onclick="createGroupPrompt()" style="margin-top:4px;">
+            + Create Group
+        </button>
     </div>
-</div>
 
-<div class="modal-overlay" id="role-mapping-modal">
-    <div class="modal-box" style="max-width:650px;">
-        <h3 id="role-modal-title">Role Mappings</h3>
-        <div id="role-modal-content"></div>
-        <div class="modal-actions" style="margin-top:16px;">
-            <button class="btn btn-secondary btn-sm" onclick="closeRoleMappingModal()">Close</button>
-        </div>
-    </div>
-</div>
+</div><!-- end Alpine x-data -->
 
 <script>
 /* ════════════════════════════════════════════════════════════════════════════
@@ -649,70 +462,48 @@ var roleOptions = [];
 var settingsData = {};
 var panelsData = [];
 var groupsData = [];
-var permissionsDef = {};  // { permission_name: description }
+var permissionsDef = {};
 var whitelistUrlData = [];
 var TYPES = [];
 
-/* ════════════════════════════════════════════════════════════════════════════
-   Tab Switching
-   ════════════════════════════════════════════════════════════════════════════ */
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-bar .tab').forEach(function(t) {
-        t.classList.toggle('active', t.getAttribute('data-tab') === tabName);
-    });
-    document.querySelectorAll('.tab-content').forEach(function(tc) {
-        tc.classList.toggle('active', tc.id === 'tab-' + tabName);
-    });
+/* Track Tom Select instances for cleanup */
+var _tomInstances = {};
+
+function destroyTom(id) {
+    if (_tomInstances[id]) {
+        _tomInstances[id].destroy();
+        delete _tomInstances[id];
+    }
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   Modal helpers
-   ════════════════════════════════════════════════════════════════════════════ */
-var _modalCallback = null;
-function showModal(title, message, confirmLabel, callback) {
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-message').textContent = message;
-    var btn = document.getElementById('modal-confirm-btn');
-    btn.textContent = confirmLabel || 'Confirm';
-    btn.className = 'btn btn-danger btn-sm';
-    _modalCallback = callback;
-    btn.onclick = function() { closeModal(); if (_modalCallback) _modalCallback(); };
-    document.getElementById('modal-overlay').classList.add('active');
-}
-function closeModal() {
-    document.getElementById('modal-overlay').classList.remove('active');
-    _modalCallback = null;
-}
-function showCreatePanelModal() {
-    document.getElementById('new-panel-name').value = '';
-    document.getElementById('create-panel-modal').classList.add('active');
-}
-function closeCreatePanelModal() {
-    document.getElementById('create-panel-modal').classList.remove('active');
-}
-function showCreateGroupModal() {
-    document.getElementById('new-group-name').value = '';
-    document.getElementById('create-group-modal').classList.add('active');
-}
-function closeCreateGroupModal() {
-    document.getElementById('create-group-modal').classList.remove('active');
-}
-function closeRoleMappingModal() {
-    document.getElementById('role-mapping-modal').classList.remove('active');
+function destroyAllToms() {
+    for (var id in _tomInstances) {
+        if (_tomInstances[id]) {
+            try { _tomInstances[id].destroy(); } catch(e) {}
+        }
+    }
+    _tomInstances = {};
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   Tooltip positioning (fixed, never clipped)
-   ════════════════════════════════════════════════════════════════════════════ */
-document.addEventListener('mouseover', function(e) {
-    var tip = e.target.closest('.info-tip');
-    if (!tip) return;
-    var text = tip.querySelector('.info-tip-text');
-    if (!text) return;
-    var rect = tip.getBoundingClientRect();
-    text.style.left = Math.max(8, rect.left + rect.width / 2 - 140) + 'px';
-    text.style.top = Math.max(8, rect.top - text.offsetHeight - 8) + 'px';
-});
+function initTomSelect(id, opts) {
+    destroyTom(id);
+    var el = document.getElementById(id);
+    if (!el) return null;
+    var settings = Object.assign({
+        create: false,
+        sortField: { field: 'text', direction: 'asc' },
+        maxOptions: 200
+    }, opts || {});
+    var ts = new TomSelect('#' + id, settings);
+    _tomInstances[id] = ts;
+    return ts;
+}
+
+function getTomValue(id) {
+    if (_tomInstances[id]) return _tomInstances[id].getValue();
+    var el = document.getElementById(id);
+    return el ? el.value : '';
+}
 
 /* ════════════════════════════════════════════════════════════════════════════
    Data Loading
@@ -725,7 +516,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderGroups();
         })
         .catch(function() {
-            showFlash('Failed to load setup data.', 'error');
+            toast('Failed to load setup data.', 'error');
         });
 });
 
@@ -778,145 +569,6 @@ function loadWhitelistUrls() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   Searchable Dropdown Component
-   ════════════════════════════════════════════════════════════════════════════ */
-function buildSearchableDropdown(id, options, selectedValue, placeholder) {
-    var selectedLabel = '';
-    var isChannel = (options === channelOptions);
-    var prefix = isChannel ? '# ' : '';
-    for (var i = 0; i < options.length; i++) {
-        var val = options[i].id || options[i];
-        var name = options[i].name || options[i];
-        if (String(val) === String(selectedValue)) {
-            selectedLabel = prefix + name;
-            break;
-        }
-    }
-    var html = '<div class="searchable-dropdown" data-dropdown-id="' + escapeHtml(id) + '" data-selected-value="' + escapeHtml(String(selectedValue || '')) + '">';
-    html += '<input type="text" class="searchable-dropdown-input" id="' + escapeHtml(id) + '"';
-    html += ' placeholder="' + escapeHtml(placeholder || '-- Select --') + '"';
-    html += ' value="' + escapeHtml(selectedLabel) + '"';
-    html += ' autocomplete="off">';
-    html += '<span class="searchable-dropdown-arrow">&#9660;</span>';
-    html += '<div class="searchable-dropdown-list">';
-    html += '<div class="searchable-dropdown-item' + (!selectedValue ? ' selected' : '') + '" data-value="">' + escapeHtml(placeholder || '-- None --') + '</div>';
-    for (var j = 0; j < options.length; j++) {
-        var optVal = String(options[j].id || options[j]);
-        var optName = String(options[j].name || options[j]);
-        var isSel = (optVal === String(selectedValue)) ? ' selected' : '';
-        html += '<div class="searchable-dropdown-item' + isSel + '" data-value="' + escapeHtml(optVal) + '">' + escapeHtml(prefix + optName) + '</div>';
-    }
-    html += '</div></div>';
-    return html;
-}
-
-function initSearchableDropdowns(container) {
-    var dropdowns = container.querySelectorAll('.searchable-dropdown');
-    dropdowns.forEach(function(dd) {
-        if (dd._sdInit) return;
-        dd._sdInit = true;
-        var input = dd.querySelector('.searchable-dropdown-input');
-        var list = dd.querySelector('.searchable-dropdown-list');
-        var items = list.querySelectorAll('.searchable-dropdown-item');
-        var highlightIndex = -1;
-
-        function openList() {
-            dd.classList.add('open');
-            var rect = input.getBoundingClientRect();
-            var maxHeight = 220;
-            var spaceBelow = window.innerHeight - rect.bottom - 8;
-            var spaceAbove = rect.top - 8;
-            list.style.left = rect.left + 'px';
-            list.style.width = rect.width + 'px';
-            list.style.maxHeight = Math.min(maxHeight, Math.max(spaceBelow, spaceAbove)) + 'px';
-            if (spaceBelow < 120 && spaceAbove > spaceBelow) {
-                list.style.top = 'auto';
-                list.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
-            } else {
-                list.style.top = (rect.bottom + 4) + 'px';
-                list.style.bottom = 'auto';
-            }
-            filterItems('');
-            highlightIndex = -1;
-        }
-        function closeList() {
-            dd.classList.remove('open');
-            var sel = list.querySelector('.searchable-dropdown-item.selected');
-            input.value = (sel && sel.getAttribute('data-value')) ? sel.textContent : '';
-        }
-        function selectItem(item) {
-            var value = item.getAttribute('data-value');
-            dd.setAttribute('data-selected-value', value);
-            items.forEach(function(it) { it.classList.remove('selected'); });
-            item.classList.add('selected');
-            input.value = value ? item.textContent : '';
-            closeList();
-            dd.dispatchEvent(new CustomEvent('dropdown-change', { detail: { value: value, label: item.textContent } }));
-        }
-        function filterItems(query) {
-            var q = query.toLowerCase();
-            var visibleCount = 0;
-            items.forEach(function(item) {
-                var text = item.textContent.toLowerCase();
-                if (!q || text.indexOf(q) !== -1) {
-                    item.style.display = '';
-                    visibleCount++;
-                    if (q && item.getAttribute('data-value')) {
-                        var orig = item.textContent;
-                        var idx = orig.toLowerCase().indexOf(q);
-                        if (idx !== -1) {
-                            item.innerHTML = escapeHtml(orig.substring(0, idx)) + '<mark>' + escapeHtml(orig.substring(idx, idx + q.length)) + '</mark>' + escapeHtml(orig.substring(idx + q.length));
-                        }
-                    } else {
-                        item.innerHTML = escapeHtml(item.textContent);
-                    }
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-            var emptyMsg = list.querySelector('.searchable-dropdown-empty');
-            if (visibleCount === 0) {
-                if (!emptyMsg) {
-                    emptyMsg = document.createElement('div');
-                    emptyMsg.className = 'searchable-dropdown-empty';
-                    emptyMsg.textContent = 'No matches found';
-                    list.appendChild(emptyMsg);
-                }
-            } else if (emptyMsg) {
-                emptyMsg.remove();
-            }
-        }
-
-        input.addEventListener('focus', function() { input.select(); openList(); });
-        input.addEventListener('input', function() { if (!dd.classList.contains('open')) openList(); filterItems(input.value); });
-        input.addEventListener('keydown', function(e) {
-            var visible = [];
-            items.forEach(function(it) { if (it.style.display !== 'none') visible.push(it); });
-            if (e.key === 'ArrowDown') { e.preventDefault(); highlightIndex = Math.min(highlightIndex + 1, visible.length - 1); visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); }); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); highlightIndex = Math.max(highlightIndex - 1, 0); visible.forEach(function(it, i) { it.classList.toggle('highlighted', i === highlightIndex); }); }
-            else if (e.key === 'Enter') { e.preventDefault(); if (highlightIndex >= 0 && visible[highlightIndex]) selectItem(visible[highlightIndex]); }
-            else if (e.key === 'Escape') { closeList(); input.blur(); }
-        });
-        items.forEach(function(item) { item.addEventListener('mousedown', function(e) { e.preventDefault(); selectItem(item); }); });
-        input.addEventListener('blur', function() { setTimeout(function() { closeList(); }, 150); });
-    });
-}
-
-function getDropdownValue(id) {
-    var dd = document.querySelector('.searchable-dropdown[data-dropdown-id="' + id + '"]');
-    return dd ? (dd.getAttribute('data-selected-value') || '') : '';
-}
-
-function getDropdownLabel(id) {
-    var dd = document.querySelector('.searchable-dropdown[data-dropdown-id="' + id + '"]');
-    if (!dd) return '';
-    var v = dd.getAttribute('data-selected-value') || '';
-    if (!v) return '';
-    var item = dd.querySelector('.searchable-dropdown-item.selected');
-    return item ? item.textContent.trim() : '';
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
    Helpers
    ════════════════════════════════════════════════════════════════════════════ */
 function getChannelName(channelId) {
@@ -957,7 +609,7 @@ function getWhitelistSlugById(whitelistId) {
 function copyToClipboard(text) {
     if (navigator.clipboard) {
         navigator.clipboard.writeText(text).then(function() {
-            showFlash('URL copied to clipboard.', 'success');
+            toast('URL copied to clipboard.', 'success');
         });
     } else {
         var ta = document.createElement('textarea');
@@ -966,8 +618,20 @@ function copyToClipboard(text) {
         ta.select();
         document.execCommand('copy');
         ta.remove();
-        showFlash('URL copied to clipboard.', 'success');
+        toast('URL copied to clipboard.', 'success');
     }
+}
+
+/** Build <option> HTML for a select from an array of {id, name} */
+function buildOptions(options, selectedValue, placeholder, prefix) {
+    var html = '<option value="">' + escapeHtml(placeholder || '-- Select --') + '</option>';
+    for (var i = 0; i < options.length; i++) {
+        var val = String(options[i].id || options[i]);
+        var name = String(options[i].name || options[i]);
+        var sel = (val === String(selectedValue || '')) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(val) + '"' + sel + '>' + escapeHtml((prefix || '') + name) + '</option>';
+    }
+    return html;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -991,6 +655,13 @@ function renderPanels() {
     document.getElementById('btn-create-panel').style.display = (panelCount >= 5) ? 'none' : '';
 
     var wlOptions = buildWhitelistDropdownOptions();
+
+    // Destroy old Tom Select instances for panels
+    panelsData.forEach(function(p) {
+        destroyTom('panel-ch-' + p.id);
+        destroyTom('panel-log-' + p.id);
+        destroyTom('panel-wl-' + p.id);
+    });
 
     panelsData.forEach(function(panel) {
         var panelId = panel.id;
@@ -1023,22 +694,21 @@ function renderPanels() {
         // Channel
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Channel</label></div>';
-        html += buildSearchableDropdown('panel-ch-' + panelId, channelOptions, String(panel.channel_id || ''), '-- Select Channel --');
+        html += '<select id="panel-ch-' + panelId + '">' + buildOptions(channelOptions, String(panel.channel_id || ''), '-- Select Channel --', '# ') + '</select>';
         html += '</div>';
 
         // Log Channel
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Log Channel</label></div>';
-        html += buildSearchableDropdown('panel-log-' + panelId, channelOptions, String(panel.log_channel_id || ''), '-- Select Log Channel --');
+        html += '<select id="panel-log-' + panelId + '">' + buildOptions(channelOptions, String(panel.log_channel_id || ''), '-- Select Log Channel --', '# ') + '</select>';
         html += '</div>';
 
         // Linked Whitelist
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Whitelist</label>';
-        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
-        html += '<span class="info-tip-text">Link a whitelist to this panel. The panel embed will display this whitelist\'s data.</span></span>';
+        html += ' <span data-tippy-content="Link a whitelist to this panel. The panel embed will display this whitelist\'s data.">&#x2139;&#xFE0F;</span>';
         html += '</div>';
-        html += buildSearchableDropdown('panel-wl-' + panelId, wlOptions, String(panel.whitelist_id || ''), '-- Select Whitelist --');
+        html += '<select id="panel-wl-' + panelId + '">' + buildOptions(wlOptions, String(panel.whitelist_id || ''), '-- Select Whitelist --') + '</select>';
         html += '</div>';
 
         // Tier display from linked whitelist
@@ -1065,7 +735,17 @@ function renderPanels() {
     });
 
     container.innerHTML = html;
-    initSearchableDropdowns(container);
+
+    // Init Tom Select on all panel dropdowns
+    panelsData.forEach(function(panel) {
+        var pid = panel.id;
+        initTomSelect('panel-ch-' + pid);
+        initTomSelect('panel-log-' + pid);
+        initTomSelect('panel-wl-' + pid);
+    });
+
+    // Init Tippy tooltips
+    tippy('[data-tippy-content]', { theme: 'light', placement: 'top', animation: 'fade', delay: [200, 0] });
 }
 
 function getTierDisplayForPanel(whitelistId) {
@@ -1086,12 +766,12 @@ function getTierDisplayForPanel(whitelistId) {
 function savePanelSettings(panelId) {
     var payload = {
         name: document.getElementById('panel-name-' + panelId).value.trim(),
-        channel_id: getDropdownValue('panel-ch-' + panelId) || null,
-        log_channel_id: getDropdownValue('panel-log-' + panelId) || null,
-        whitelist_id: getDropdownValue('panel-wl-' + panelId) || null
+        channel_id: getTomValue('panel-ch-' + panelId) || null,
+        log_channel_id: getTomValue('panel-log-' + panelId) || null,
+        whitelist_id: getTomValue('panel-wl-' + panelId) || null
     };
     if (!payload.name) {
-        showFlash('Panel name cannot be empty.', 'error');
+        toast('Panel name cannot be empty.', 'error');
         return;
     }
     fetch('/api/admin/panels/' + panelId, {
@@ -1101,10 +781,10 @@ function savePanelSettings(panelId) {
     })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash('Panel "' + payload.name + '" saved.', 'success');
+        toast('Panel "' + payload.name + '" saved.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to save panel settings.', 'error'); });
+    .catch(function() { toast('Failed to save panel settings.', 'error'); });
 }
 
 function pushPanel(panelId) {
@@ -1116,65 +796,59 @@ function pushPanel(panelId) {
         if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
         return r.json();
     })
-    .then(function() { showFlash('Panel push triggered. The embed will appear shortly in the assigned channel.', 'success'); })
-    .catch(function(err) { showFlash(err.message || 'Failed to push panel.', 'error'); });
+    .then(function() { toast('Panel push triggered. The embed will appear shortly in the assigned channel.', 'success'); })
+    .catch(function(err) { toast(err.message || 'Failed to push panel.', 'error'); });
 }
 
 function confirmDeletePanel(panelId, name) {
-    showModal(
-        'Delete Panel',
-        'Are you sure you want to delete "' + name + '"? This cannot be undone.',
-        'Delete',
-        function() { deletePanel(panelId); }
-    );
+    confirm2('Delete Panel', 'Are you sure you want to delete "' + escapeHtml(name) + '"? This cannot be undone.', 'Delete')
+    .then(function(result) {
+        if (result.isConfirmed) deletePanel(panelId);
+    });
 }
 
 function deletePanel(panelId) {
     fetch('/api/admin/panels/' + panelId, { method: 'DELETE' })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash('Panel deleted.', 'success');
+        toast('Panel deleted.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to delete panel.', 'error'); });
+    .catch(function() { toast('Failed to delete panel.', 'error'); });
 }
 
-function createPanel() {
-    var name = document.getElementById('new-panel-name').value.trim();
-    if (!name) {
-        showFlash('Please enter a panel name.', 'error');
-        return;
-    }
-    fetch('/api/admin/panels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name })
-    })
-    .then(function(r) {
-        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
-        return r.json();
-    })
-    .then(function() {
-        closeCreatePanelModal();
-        showFlash('Panel "' + name + '" created.', 'success');
-        reloadAll();
-    })
-    .catch(function(err) { showFlash(err.message || 'Failed to create panel.', 'error'); });
+function createPanelPrompt() {
+    promptInput('Create Panel', 'Panel name...').then(function(result) {
+        if (!result.isConfirmed || !result.value) return;
+        var name = result.value.trim();
+        fetch('/api/admin/panels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+            return r.json();
+        })
+        .then(function() {
+            toast('Panel "' + name + '" created.', 'success');
+            reloadAll();
+        })
+        .catch(function(err) { toast(err.message || 'Failed to create panel.', 'error'); });
+    });
 }
 
-/* ── Role Mapping Modal ─────────────────────────────────────────────────── */
+/* ── Role Mapping Modal (SweetAlert2) ──────────────────────────────────── */
 function showRoleMappingModal(panelId) {
     var panel = null;
     for (var i = 0; i < panelsData.length; i++) {
         if (panelsData[i].id === panelId) { panel = panelsData[i]; break; }
     }
-    if (!panel) { showFlash('Panel not found.', 'error'); return; }
-    if (!panel.whitelist_id) { showFlash('This panel has no linked whitelist. Please assign a whitelist first.', 'error'); return; }
+    if (!panel) { toast('Panel not found.', 'error'); return; }
+    if (!panel.whitelist_id) { toast('This panel has no linked whitelist. Please assign a whitelist first.', 'error'); return; }
 
     var slug = getWhitelistSlugById(panel.whitelist_id);
-    if (!slug) { showFlash('Linked whitelist not found.', 'error'); return; }
-
-    document.getElementById('role-modal-title').textContent = 'Role Mappings for ' + (panel.name || 'Panel');
+    if (!slug) { toast('Linked whitelist not found.', 'error'); return; }
 
     var rm = (settingsData.role_mappings || {})[slug] || [];
     var html = '';
@@ -1215,59 +889,120 @@ function showRoleMappingModal(panelId) {
     }
     html += '</tbody></table></div>';
 
-    // Add role row
+    // Add role row with multi-select dropdown
     html += '<div class="add-role-row">';
-    html += buildSearchableDropdown('modal-add-role-' + slug, roleOptions, '', '-- Select Role --');
-    html += '<input type="number" id="modal-add-role-slots-' + escapeHtml(slug) + '" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
-    html += '<button class="btn-save btn-sm" onclick="addRoleMappingFromModal(\'' + escapeHtml(slug) + '\')">Add</button>';
+    html += '<select id="modal-add-role" multiple placeholder="Select roles...">';
+    for (var j = 0; j < roleOptions.length; j++) {
+        var rv = String(roleOptions[j].id || roleOptions[j]);
+        var rn = String(roleOptions[j].name || roleOptions[j]);
+        html += '<option value="' + escapeHtml(rv) + '">' + escapeHtml(rn) + '</option>';
+    }
+    html += '</select>';
+    html += '<input type="number" id="modal-add-role-slots" class="form-input slot-input" min="1" max="99" value="1" placeholder="Slots">';
+    html += '<button class="btn-save btn-sm" onclick="addRoleMappingsFromModal(\'' + escapeHtml(slug) + '\')">Add Selected</button>';
     html += '</div>';
 
-    document.getElementById('role-modal-content').innerHTML = html;
-    initSearchableDropdowns(document.getElementById('role-modal-content'));
-    document.getElementById('role-mapping-modal').classList.add('active');
+    Swal.fire({
+        title: 'Role Mappings for ' + escapeHtml(panel.name || 'Panel'),
+        html: html,
+        showConfirmButton: false,
+        showCloseButton: true,
+        width: '700px',
+        customClass: { popup: 'swal2-dark' },
+        didOpen: function() {
+            destroyTom('modal-add-role');
+            initTomSelect('modal-add-role', {
+                create: false,
+                sortField: { field: 'text', direction: 'asc' },
+                maxOptions: 200,
+                plugins: ['remove_button']
+            });
+        },
+        willClose: function() {
+            destroyTom('modal-add-role');
+            reloadAll();
+        }
+    });
 }
 
-function addRoleMappingFromModal(slug) {
-    var roleId = getDropdownValue('modal-add-role-' + slug);
-    var roleName = getDropdownLabel('modal-add-role-' + slug);
-    var slotLimit = parseInt(document.getElementById('modal-add-role-slots-' + slug).value, 10) || 1;
-    if (!roleId) {
-        showFlash('Please select a role.', 'error');
+function addRoleMappingsFromModal(slug) {
+    var ts = _tomInstances['modal-add-role'];
+    if (!ts) { toast('Please select a role.', 'error'); return; }
+    var selectedIds = ts.getValue();
+    if (!selectedIds || selectedIds.length === 0) {
+        toast('Please select at least one role.', 'error');
         return;
     }
-    fetch('/api/admin/roles/' + encodeURIComponent(slug), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
-    })
-    .then(function(r) {
-        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
-        return r.json();
-    })
+    if (typeof selectedIds === 'string') selectedIds = [selectedIds];
+
+    var slotLimit = parseInt(document.getElementById('modal-add-role-slots').value, 10) || 1;
+
+    // Find role names for selected IDs
+    var promises = selectedIds.map(function(roleId) {
+        var roleName = '';
+        for (var i = 0; i < roleOptions.length; i++) {
+            if (String(roleOptions[i].id) === String(roleId)) {
+                roleName = roleOptions[i].name;
+                break;
+            }
+        }
+        return fetch('/api/admin/roles/' + encodeURIComponent(slug), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role_id: roleId, role_name: roleName, slot_limit: slotLimit })
+        }).then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+            return r.json();
+        });
+    });
+
+    Promise.all(promises)
     .then(function() {
-        showFlash('Role mapping added.', 'success');
-        closeRoleMappingModal();
-        reloadAll();
+        toast(selectedIds.length + ' role mapping(s) added.', 'success');
+        // Reload settings then refresh modal content
+        loadSettings().then(function() {
+            // Re-show the modal with updated data
+            var panelId = null;
+            for (var i = 0; i < panelsData.length; i++) {
+                if (getWhitelistSlugById(panelsData[i].whitelist_id) === slug) {
+                    panelId = panelsData[i].id;
+                    break;
+                }
+            }
+            Swal.close();
+            if (panelId) {
+                setTimeout(function() { showRoleMappingModal(panelId); }, 200);
+            }
+        });
     })
-    .catch(function(err) { showFlash(err.message || 'Failed to add role mapping.', 'error'); });
+    .catch(function(err) { toast(err.message || 'Failed to add role mapping(s).', 'error'); });
 }
 
 function removeRoleMappingFromModal(slug, roleId, roleName) {
-    showModal(
-        'Remove Role Mapping',
-        'Remove "' + roleName + '" from this whitelist? Users with only this role will lose their whitelist slots.',
-        'Remove',
-        function() {
-            fetch('/api/admin/roles/' + encodeURIComponent(slug) + '/' + encodeURIComponent(roleId), { method: 'DELETE' })
-            .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
-            .then(function() {
-                showFlash('Role mapping removed.', 'success');
-                closeRoleMappingModal();
-                reloadAll();
-            })
-            .catch(function() { showFlash('Failed to remove role mapping.', 'error'); });
-        }
-    );
+    confirm2('Remove Role Mapping', 'Remove "' + escapeHtml(roleName) + '" from this whitelist? Users with only this role will lose their whitelist slots.', 'Remove')
+    .then(function(result) {
+        if (!result.isConfirmed) return;
+        fetch('/api/admin/roles/' + encodeURIComponent(slug) + '/' + encodeURIComponent(roleId), { method: 'DELETE' })
+        .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+        .then(function() {
+            toast('Role mapping removed.', 'success');
+            // Reload settings then refresh modal
+            loadSettings().then(function() {
+                var panelId = null;
+                for (var i = 0; i < panelsData.length; i++) {
+                    if (getWhitelistSlugById(panelsData[i].whitelist_id) === slug) {
+                        panelId = panelsData[i].id;
+                        break;
+                    }
+                }
+                Swal.close();
+                if (panelId) {
+                    setTimeout(function() { showRoleMappingModal(panelId); }, 200);
+                }
+            });
+        })
+        .catch(function() { toast('Failed to remove role mapping.', 'error'); });
+    });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -1293,6 +1028,11 @@ function renderWhitelists() {
     document.getElementById('whitelists-badges').innerHTML = badgesHtml;
 
     var groupOptions = buildGroupDropdownOptions();
+
+    // Destroy old Tom Select instances for whitelists
+    TYPES.forEach(function(slug) {
+        destroyTom('wl-group-' + slug);
+    });
 
     TYPES.forEach(function(slug) {
         var cfg = tc[slug] || {};
@@ -1336,10 +1076,9 @@ function renderWhitelists() {
         // Squad Group dropdown
         html += '<div class="form-row" style="margin-bottom:10px;">';
         html += '<div class="form-row-label"><label>Squad Group</label>';
-        html += '<span class="info-tip"><span class="info-tip-icon">i</span>';
-        html += '<span class="info-tip-text">The Squad permission group this whitelist outputs to (defined in the Groups tab).</span></span>';
+        html += ' <span data-tippy-content="The Squad permission group this whitelist outputs to (defined in the Groups tab).">&#x2139;&#xFE0F;</span>';
         html += '</div>';
-        html += buildSearchableDropdown('wl-group-' + slug, groupOptions, cfg.squad_group || '', '-- Select Group --');
+        html += '<select id="wl-group-' + escapeHtml(slug) + '">' + buildOptions(groupOptions, cfg.squad_group || '', '-- Select Group --') + '</select>';
         html += '</div>';
 
         // Output filename
@@ -1377,7 +1116,14 @@ function renderWhitelists() {
     });
 
     container.innerHTML = html;
-    initSearchableDropdowns(container);
+
+    // Init Tom Select on all whitelist dropdowns
+    TYPES.forEach(function(slug) {
+        initTomSelect('wl-group-' + slug);
+    });
+
+    // Init Tippy tooltips
+    tippy('[data-tippy-content]', { theme: 'light', placement: 'top', animation: 'fade', delay: [200, 0] });
 }
 
 function toggleWhitelist(slug, enabled) {
@@ -1388,11 +1134,11 @@ function toggleWhitelist(slug, enabled) {
     })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash(slug + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
+        toast(slug + ' ' + (enabled ? 'enabled' : 'disabled') + '.', 'success');
         reloadAll();
     })
     .catch(function() {
-        showFlash('Failed to toggle ' + slug + '.', 'error');
+        toast('Failed to toggle ' + slug + '.', 'error');
         var cb = document.getElementById('wl-toggle-' + slug);
         if (cb) cb.checked = !enabled;
     });
@@ -1400,7 +1146,7 @@ function toggleWhitelist(slug, enabled) {
 
 function saveWhitelistSettings(slug) {
     var payload = {
-        squad_group: getDropdownValue('wl-group-' + slug) || '',
+        squad_group: getTomValue('wl-group-' + slug) || '',
         output_filename: document.getElementById('wl-filename-' + slug).value.trim()
     };
     fetch('/api/admin/types/' + encodeURIComponent(slug), {
@@ -1410,17 +1156,17 @@ function saveWhitelistSettings(slug) {
     })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash('Whitelist settings saved.', 'success');
+        toast('Whitelist settings saved.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to save whitelist settings.', 'error'); });
+    .catch(function() { toast('Failed to save whitelist settings.', 'error'); });
 }
 
 function createWhitelist() {
     var name = document.getElementById('new-wl-name').value.trim();
     var filename = document.getElementById('new-wl-filename').value.trim();
     if (!name) {
-        showFlash('Please enter a whitelist name.', 'error');
+        toast('Please enter a whitelist name.', 'error');
         return;
     }
     var payload = { name: name };
@@ -1437,35 +1183,32 @@ function createWhitelist() {
     .then(function() {
         document.getElementById('new-wl-name').value = '';
         document.getElementById('new-wl-filename').value = '';
-        showFlash('Whitelist "' + name + '" created.', 'success');
+        toast('Whitelist "' + name + '" created.', 'success');
         reloadAll();
     })
-    .catch(function(err) { showFlash(err.message || 'Failed to create whitelist.', 'error'); });
+    .catch(function(err) { toast(err.message || 'Failed to create whitelist.', 'error'); });
 }
 
 function confirmDeleteWhitelist(slug, name) {
-    showModal(
-        'Delete Whitelist',
-        'Are you sure you want to delete "' + name + '"? All users and role mappings will be removed. This cannot be undone.',
-        'Delete',
-        function() { deleteWhitelist(slug); }
-    );
+    confirm2('Delete Whitelist', 'Are you sure you want to delete "' + escapeHtml(name) + '"? All users and role mappings will be removed. This cannot be undone.', 'Delete')
+    .then(function(result) {
+        if (result.isConfirmed) deleteWhitelist(slug);
+    });
 }
 
 function deleteWhitelist(slug) {
     fetch('/api/admin/whitelists/' + encodeURIComponent(slug), { method: 'DELETE' })
     .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
     .then(function() {
-        showFlash('Whitelist deleted.', 'success');
+        toast('Whitelist deleted.', 'success');
         reloadAll();
     })
-    .catch(function() { showFlash('Failed to delete whitelist.', 'error'); });
+    .catch(function() { toast('Failed to delete whitelist.', 'error'); });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
    Tab 3: Groups
    ════════════════════════════════════════════════════════════════════════════ */
-/* Priority ordering for permissions: show common ones at top */
 var PERM_PRIORITY = ['reserve', 'kick', 'ban', 'chat', 'cameraman', 'immune', 'changemap', 'balance', 'teamchange', 'forceteamchange', 'canseeadminchat'];
 
 function getSortedPermissions() {
@@ -1525,7 +1268,7 @@ function renderGroups() {
             var checked = currentPerms.indexOf(perm) !== -1;
             html += '<div class="perm-item">';
             html += '<input type="checkbox" id="grp-perm-' + escapeHtml(gName) + '-' + escapeHtml(perm) + '" data-group="' + escapeHtml(gName) + '" data-perm="' + escapeHtml(perm) + '"' + (checked ? ' checked' : '') + '>';
-            html += '<label for="grp-perm-' + escapeHtml(gName) + '-' + escapeHtml(perm) + '" title="' + escapeHtml(desc) + '">' + escapeHtml(perm) + '</label>';
+            html += '<label for="grp-perm-' + escapeHtml(gName) + '-' + escapeHtml(perm) + '" data-tippy-content="' + escapeHtml(desc) + '">' + escapeHtml(perm) + '</label>';
             html += '</div>';
         });
         html += '</div>';
@@ -1544,6 +1287,9 @@ function renderGroups() {
     });
 
     container.innerHTML = html;
+
+    // Init Tippy tooltips for permission descriptions
+    tippy('[data-tippy-content]', { theme: 'light', placement: 'top', animation: 'fade', delay: [200, 0] });
 }
 
 function getGroupPermissions(groupName) {
@@ -1559,7 +1305,7 @@ function saveGroup(originalName) {
     var newName = document.getElementById('group-name-' + originalName).value.trim();
     var permissions = getGroupPermissions(originalName);
     if (!newName) {
-        showFlash('Group name cannot be empty.', 'error');
+        toast('Group name cannot be empty.', 'error');
         return;
     }
     fetch('/api/admin/groups/' + encodeURIComponent(originalName), {
@@ -1572,42 +1318,38 @@ function saveGroup(originalName) {
         return r.json();
     })
     .then(function() {
-        showFlash('Group "' + newName + '" saved.', 'success');
+        toast('Group "' + newName + '" saved.', 'success');
         reloadAll();
     })
-    .catch(function(err) { showFlash(err.message || 'Failed to save group.', 'error'); });
+    .catch(function(err) { toast(err.message || 'Failed to save group.', 'error'); });
 }
 
-function createGroup() {
-    var name = document.getElementById('new-group-name').value.trim();
-    if (!name) {
-        showFlash('Please enter a group name.', 'error');
-        return;
-    }
-    fetch('/api/admin/groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ group_name: name })
-    })
-    .then(function(r) {
-        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
-        return r.json();
-    })
-    .then(function() {
-        closeCreateGroupModal();
-        showFlash('Group "' + name + '" created.', 'success');
-        reloadAll();
-    })
-    .catch(function(err) { showFlash(err.message || 'Failed to create group.', 'error'); });
+function createGroupPrompt() {
+    promptInput('Create Group', 'Group name...').then(function(result) {
+        if (!result.isConfirmed || !result.value) return;
+        var name = result.value.trim();
+        fetch('/api/admin/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_name: name })
+        })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); });
+            return r.json();
+        })
+        .then(function() {
+            toast('Group "' + name + '" created.', 'success');
+            reloadAll();
+        })
+        .catch(function(err) { toast(err.message || 'Failed to create group.', 'error'); });
+    });
 }
 
 function confirmDeleteGroup(groupName) {
-    showModal(
-        'Delete Group',
-        'Are you sure you want to delete "' + groupName + '"? This cannot be undone.',
-        'Delete',
-        function() { deleteGroup(groupName); }
-    );
+    confirm2('Delete Group', 'Are you sure you want to delete "' + escapeHtml(groupName) + '"? This cannot be undone.', 'Delete')
+    .then(function(result) {
+        if (result.isConfirmed) deleteGroup(groupName);
+    });
 }
 
 function deleteGroup(groupName) {
@@ -1617,16 +1359,17 @@ function deleteGroup(groupName) {
         return r.json();
     })
     .then(function() {
-        showFlash('Group deleted.', 'success');
+        toast('Group deleted.', 'success');
         reloadAll();
     })
-    .catch(function(err) { showFlash(err.message || 'Failed to delete group.', 'error'); });
+    .catch(function(err) { toast(err.message || 'Failed to delete group.', 'error'); });
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
    Reload
    ════════════════════════════════════════════════════════════════════════════ */
 function reloadAll() {
+    destroyAllToms();
     Promise.all([loadSettings(), loadPanels(), loadGroups(), loadWhitelistUrls()]).then(function() {
         renderPanels();
         renderWhitelists();

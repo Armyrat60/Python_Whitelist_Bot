@@ -5,6 +5,73 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Squad Whitelister{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Tom Select (searchable dropdowns, multi-select) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    <!-- Tippy.js (tooltips, popovers) -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/themes/light.css">
+    <!-- SweetAlert2 (modals, confirmations) -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+    <!-- Toastify (toast notifications) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
+    <!-- Chart.js (future-proof for dashboard stats) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <!-- Alpine.js (reactive UI) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+    <!-- Dark theme overrides for libraries -->
+    <style>
+        /* Tom Select dark theme */
+        .ts-wrapper .ts-control { background: var(--bg-input, #1a1d23); border-color: var(--border, #2a2d35); color: var(--text-primary, #e0e0e0); min-height: 38px; }
+        .ts-wrapper .ts-control input { color: var(--text-primary, #e0e0e0); }
+        .ts-wrapper .ts-control .item { background: var(--accent, #5865f2); color: #fff; border-radius: 4px; padding: 2px 8px; }
+        .ts-wrapper .ts-dropdown { background: var(--bg-secondary, #1e2028); border-color: var(--border, #2a2d35); color: var(--text-primary, #e0e0e0); z-index: 100000; }
+        .ts-wrapper .ts-dropdown .option { color: var(--text-primary, #e0e0e0); }
+        .ts-wrapper .ts-dropdown .option:hover, .ts-wrapper .ts-dropdown .active { background: var(--bg-tertiary, #252830); color: #fff; }
+        .ts-wrapper .ts-dropdown .option.selected { background: var(--accent, #5865f2); color: #fff; }
+        .ts-wrapper.focus .ts-control { border-color: var(--accent, #5865f2); box-shadow: 0 0 0 2px rgba(88,101,242,0.25); }
+        .ts-wrapper .ts-control > .ts-input-wrap > input::placeholder { color: var(--text-muted, #8a8d95); }
+        /* SweetAlert2 dark theme */
+        .swal2-popup { background: var(--bg-secondary, #1e2028) !important; color: var(--text-primary, #e0e0e0) !important; border: 1px solid var(--border, #2a2d35) !important; }
+        .swal2-title { color: var(--text-primary, #e0e0e0) !important; }
+        .swal2-html-container { color: var(--text-secondary, #b0b3b8) !important; }
+        .swal2-input, .swal2-select, .swal2-textarea { background: var(--bg-input, #1a1d23) !important; color: var(--text-primary, #e0e0e0) !important; border-color: var(--border, #2a2d35) !important; }
+        .swal2-confirm { background: var(--accent, #5865f2) !important; }
+        .swal2-cancel { background: var(--bg-tertiary, #252830) !important; color: var(--text-primary, #e0e0e0) !important; }
+        .swal2-deny { background: var(--danger, #ed4245) !important; }
+        /* Toastify dark theme */
+        .toastify { background: var(--bg-secondary, #1e2028) !important; border: 1px solid var(--border, #2a2d35) !important; border-radius: 8px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important; }
+    </style>
+    <!-- Helper functions using the libraries -->
+    <script>
+        // Toast notification helper
+        function toast(message, type) {
+            var bg = type === 'success' ? '#43b581' : type === 'error' ? '#ed4245' : type === 'warning' ? '#faa61a' : '#5865f2';
+            Toastify({ text: message, duration: 4000, gravity: 'top', position: 'right',
+                style: { background: bg, color: '#fff', borderRadius: '8px', padding: '12px 20px', fontSize: '0.9rem' },
+                stopOnFocus: true }).showToast();
+        }
+        // Confirmation dialog helper
+        function confirm2(title, text, confirmText) {
+            return Swal.fire({ title: title, html: text, icon: 'warning', showCancelButton: true,
+                confirmButtonText: confirmText || 'Confirm', cancelButtonText: 'Cancel',
+                customClass: { popup: 'swal2-dark' } });
+        }
+        // Input dialog helper
+        function promptInput(title, placeholder) {
+            return Swal.fire({ title: title, input: 'text', inputPlaceholder: placeholder || '',
+                showCancelButton: true, confirmButtonText: 'Create', customClass: { popup: 'swal2-dark' },
+                inputValidator: function(v) { if (!v || !v.trim()) return 'Please enter a value'; }
+            });
+        }
+        // Init tippy tooltips on elements with data-tippy-content
+        document.addEventListener('DOMContentLoaded', function() {
+            tippy('[data-tippy-content]', { theme: 'light', placement: 'top', animation: 'fade', delay: [200, 0] });
+        });
+    </script>
     <style>
         /* ── Guild Selector ──────────────────────────────────────────────── */
         .guild-selector {
