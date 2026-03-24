@@ -587,6 +587,10 @@ class Database:
     async def execute_returning(self, query: str, params: tuple = ()) -> Optional[tuple]:
         return await self._adapter.execute_returning(query, params)
 
+    async def execute_transaction(self, queries: list):
+        """Execute multiple queries atomically in a single transaction."""
+        return await self._adapter.execute_transaction(queries)
+
     async def fetchone(self, query: str, params: tuple = ()) -> Optional[tuple]:
         return await self._adapter.fetchone(query, params)
 

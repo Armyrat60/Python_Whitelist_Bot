@@ -2245,13 +2245,49 @@ async def admin_delete_whitelist(request: web.Request) -> web.Response:
 
     wl_id = wl["id"]
 
-    # Delete related data
-    await db.execute("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
-    await db.execute("DELETE FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
-    await db.execute("DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id))
-    await db.delete_whitelist(wl_id)
+    # Count affected data before deletion for audit trail
+    id_count = await db.fetchone(
+        "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl_id),
+    )
+    user_count = await db.fetchone(
+        "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl_id),
+    )
+    role_count = await db.fetchone(
+        "SELECT COUNT(*) FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl_id),
+    )
 
-    log.info("Guild %s: admin deleted whitelist '%s' (id=%s)", guild_id, wl_slug, wl_id)
+    # Write audit log BEFORE deletion so we have a record
+    actor_id = int(session.get("user_id", 0))
+    await db.audit(
+        guild_id=guild_id,
+        action_type="delete_whitelist",
+        actor=actor_id,
+        target=None,
+        details=(
+            f"Deleted whitelist '{wl['name']}' (slug={wl_slug}). "
+            f"Removed {user_count[0] if user_count else 0} users, "
+            f"{id_count[0] if id_count else 0} identifiers, "
+            f"{role_count[0] if role_count else 0} role mappings."
+        ),
+        whitelist_id=wl_id,
+    )
+
+    # Delete all related data in a transaction to prevent orphaned records
+    await db.execute_transaction([
+        ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id)),
+        ("DELETE FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id)),
+        ("DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s", (guild_id, wl_id)),
+        ("DELETE FROM whitelists WHERE id=%s", (wl_id,)),
+    ])
+
+    log.info("Guild %s: admin deleted whitelist '%s' (id=%s) — %s users, %s ids, %s roles removed",
+             guild_id, wl_slug, wl_id,
+             user_count[0] if user_count else 0,
+             id_count[0] if id_count else 0,
+             role_count[0] if role_count else 0)
     return web.json_response({"ok": True, "deleted": wl_slug})
 
 
