@@ -2343,45 +2343,35 @@ async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
 
     urls = []
 
-    if output_mode == "combined":
-        # In combined mode, show one URL for the combined file
-        url = ""
+    # Always show the combined file URL first (this is what Squad servers read)
+    if output_mode in ("combined", "hybrid"):
+        combined_url = ""
         if web_server and combined_filename:
-            url = web_server.get_file_url(guild_id, combined_filename)
+            combined_url = web_server.get_file_url(guild_id, combined_filename)
         urls.append({
             "slug": "_combined",
             "name": "Combined Whitelist",
-            "filename": combined_filename,
-            "url": url,
+            "filename": combined_filename or "whitelist.txt",
+            "url": combined_url,
             "enabled": True,
-            "note": "All enabled whitelists combined into one file",
+            "note": "Add this URL to your Squad server's RemoteAdminListHosts.cfg",
         })
-    else:
-        # Separate or hybrid mode: show per-whitelist URLs
-        for wl in whitelists:
-            url = ""
-            if web_server and wl.get("output_filename"):
-                url = web_server.get_file_url(guild_id, wl["output_filename"])
-            urls.append({
-                "slug": wl["slug"],
-                "name": wl["name"],
-                "filename": wl.get("output_filename", ""),
-                "url": url,
-                "enabled": wl["enabled"],
-            })
 
-    # In hybrid mode, also show the combined URL
-    if output_mode == "hybrid":
-        url = ""
-        if web_server and combined_filename:
-            url = web_server.get_file_url(guild_id, combined_filename)
-        urls.insert(0, {
-            "slug": "_combined",
-            "name": "Combined Whitelist",
-            "filename": combined_filename,
-            "url": url,
-            "enabled": True,
-            "note": "All enabled whitelists combined",
+    # Always show per-whitelist URLs (for whitelist cards and separate mode)
+    for wl in whitelists:
+        wl_url = ""
+        # In combined mode, point to the combined file; in separate mode, per-file
+        if web_server:
+            if output_mode == "combined" and combined_filename:
+                wl_url = web_server.get_file_url(guild_id, combined_filename)
+            elif wl.get("output_filename"):
+                wl_url = web_server.get_file_url(guild_id, wl["output_filename"])
+        urls.append({
+            "slug": wl["slug"],
+            "name": wl["name"],
+            "filename": wl.get("output_filename", ""),
+            "url": wl_url,
+            "enabled": wl["enabled"],
         })
 
     return web.json_response({"urls": urls})
