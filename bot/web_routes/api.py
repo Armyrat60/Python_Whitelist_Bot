@@ -2553,11 +2553,61 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     if not panel["channel_id"]:
         return web.json_response({"error": "Panel has no channel assigned."}, status=400)
 
-    # Trigger a resync which will send/update panels in their channels
-    await _trigger_sync(request, guild_id)
+    if not panel["whitelist_id"]:
+        return web.json_response({"error": "Panel has no whitelist linked."}, status=400)
 
-    log.info("Guild %s: admin pushed panel %s to channel %s", guild_id, panel_id, panel["channel_id"])
-    return web.json_response({"ok": True, "panel_id": panel_id})
+    # Build the panel embed
+    wl = await db.get_whitelist(panel["whitelist_id"])
+    wl_name = wl["name"] if wl else "Whitelist"
+
+    # Get role mappings for tier info
+    role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
+    tier_lines = []
+    for rm in role_mappings:
+        rm_dict = {"role_name": rm[3], "slot_limit": rm[4]} if isinstance(rm, tuple) else rm
+        name = rm_dict.get("role_name", "Unknown")
+        slots = rm_dict.get("slot_limit", 1)
+        tier_lines.append(f"**@{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
+
+    description = f"Submit your Steam64 ID to get whitelisted on the server.\n\n"
+    if tier_lines:
+        description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
+    description += "Use the `/whitelist` command or visit the [web dashboard](https://squadwhitelister.com/my-whitelist) to manage your IDs."
+
+    embed = {
+        "title": f"🛡️ {panel['name']} — {wl_name}",
+        "description": description,
+        "color": 0xF97316,  # Orange
+        "footer": {"text": "Squad Whitelister • squadwhitelister.com"},
+    }
+
+    # Try to send or edit the message
+    discord_client = getattr(bot, "_discord", None)
+    if not discord_client:
+        # Fallback: just trigger sync (bot-worker mode)
+        await _trigger_sync(request, guild_id)
+        return web.json_response({"ok": True, "panel_id": panel_id, "note": "Sync triggered (use /whitelist_panel in Discord for full embed)"})
+
+    channel_id = int(panel["channel_id"])
+    message_id = int(panel["panel_message_id"]) if panel.get("panel_message_id") else None
+
+    if message_id:
+        # Try to edit existing message
+        result = await discord_client.edit_message(channel_id, message_id, embed=embed)
+        if result:
+            log.info("Guild %s: edited panel embed in channel %s message %s", guild_id, channel_id, message_id)
+            return web.json_response({"ok": True, "panel_id": panel_id, "action": "edited"})
+
+    # Send new message
+    result = await discord_client.send_message(channel_id, embed=embed)
+    if result:
+        new_message_id = result.get("id")
+        if new_message_id:
+            await db.update_panel(panel_id, panel_message_id=int(new_message_id))
+        log.info("Guild %s: sent panel embed to channel %s", guild_id, channel_id)
+        return web.json_response({"ok": True, "panel_id": panel_id, "action": "sent", "message_id": new_message_id})
+
+    return web.json_response({"error": "Failed to send message. Check bot permissions in the channel."}, status=500)
 
 
 # ── Admin Squad Groups API routes ─────────────────────────────────────────────

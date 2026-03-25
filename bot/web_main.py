@@ -91,6 +91,46 @@ class DiscordRESTClient:
             # Exclude @everyone
             return [r for r in data if r.get("name") != "@everyone"]
 
+    async def send_message(self, channel_id: int, content: str = None, embed: dict = None, components: list = None) -> dict | None:
+        """Send a message to a channel via REST API."""
+        await self._ensure_session()
+        payload = {}
+        if content:
+            payload["content"] = content
+        if embed:
+            payload["embeds"] = [embed]
+        if components:
+            payload["components"] = components
+        async with self._session.post(
+            f"{self.API_BASE}/channels/{channel_id}/messages",
+            headers={**self._headers, "Content-Type": "application/json"},
+            json=payload,
+        ) as resp:
+            if resp.status in (200, 201):
+                return await resp.json()
+            log.warning("Failed to send message to channel %s: %s %s", channel_id, resp.status, await resp.text())
+            return None
+
+    async def edit_message(self, channel_id: int, message_id: int, content: str = None, embed: dict = None, components: list = None) -> dict | None:
+        """Edit an existing message via REST API."""
+        await self._ensure_session()
+        payload = {}
+        if content is not None:
+            payload["content"] = content
+        if embed:
+            payload["embeds"] = [embed]
+        if components:
+            payload["components"] = components
+        async with self._session.patch(
+            f"{self.API_BASE}/channels/{channel_id}/messages/{message_id}",
+            headers={**self._headers, "Content-Type": "application/json"},
+            json=payload,
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            log.warning("Failed to edit message %s in channel %s: %s", message_id, channel_id, resp.status)
+            return None
+
     async def fetch_guild_member(self, guild_id: int, user_id: int) -> dict | None:
         """Fetch a specific guild member."""
         await self._ensure_session()
