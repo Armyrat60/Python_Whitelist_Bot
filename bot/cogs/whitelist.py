@@ -62,23 +62,8 @@ class WhitelistPanelView(discord.ui.View):
         start_btn.callback = self._start_callback
         self.add_item(start_btn)
 
-        mod_btn = discord.ui.Button(
-            label="Moderator Tools",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"panel:mod:{whitelist_type}",
-        )
-        mod_btn.callback = self._mod_callback
-        self.add_item(mod_btn)
-
     async def _start_callback(self, interaction: discord.Interaction):
         await self.bot.start_whitelist_flow(interaction, self.whitelist_type)
-
-    async def _mod_callback(self, interaction: discord.Interaction):
-        if not await self.bot.user_is_mod(interaction.guild.id, interaction.user):
-            await interaction.response.send_message("You do not have permission.", ephemeral=True)
-            return
-        from bot.cogs.modtools import ModToolsView
-        await interaction.response.send_message("Moderator tools", view=ModToolsView(self.bot, self.whitelist_type), ephemeral=True)
 
 
 class WhitelistCog(commands.Cog):
