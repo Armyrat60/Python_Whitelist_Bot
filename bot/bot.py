@@ -265,30 +265,50 @@ class WhitelistBot(commands.Bot):
 
     async def start_whitelist_flow(self, interaction: discord.Interaction, whitelist_type: str):
         """Start the whitelist submission flow. whitelist_type is a slug string (for cog compat)."""
-        from bot.cogs.whitelist import IdentifierModal
-        guild_id = interaction.guild.id
-        wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
-        if not wl or not wl["enabled"]:
-            await interaction.response.send_message(f"{whitelist_type.title()} whitelist is disabled.", ephemeral=True)
-            return
-        whitelist_id = wl["id"]
-        member = interaction.guild.get_member(interaction.user.id)
+        try:
+            from bot.cogs.whitelist import IdentifierModal
+            guild_id = interaction.guild.id
+            wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
+            if not wl or not wl["enabled"]:
+                await interaction.response.send_message(f"{whitelist_type.title()} whitelist is disabled.", ephemeral=True)
+                return
+            whitelist_id = wl["id"]
+            member = interaction.guild.get_member(interaction.user.id)
 
-        # Find panel for this whitelist to get tier_category_id
-        panels = await self.db.get_panels(guild_id)
-        panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
+            # Find panel for this whitelist to get tier_category_id
+            panels = await self.db.get_panels(guild_id)
+            panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
 
-        slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
-        if slots <= 0:
-            await interaction.response.send_message("You are not eligible for this whitelist.", ephemeral=True)
-            return
-        existing = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
-        if wl.get("input_mode", "modal") == "thread":
-            await interaction.response.send_message("Thread mode is not enabled in this build. Use modal mode.", ephemeral=True)
-            return
-        await interaction.response.send_modal(IdentifierModal(self, whitelist_type, slots, existing))
+            slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
+            if slots <= 0:
+                await interaction.response.send_message("You don't have a role that grants whitelist access. Contact your server admin.", ephemeral=True)
+                return
+            existing = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
+            await interaction.response.send_modal(IdentifierModal(self, whitelist_type, slots, existing))
+        except Exception:
+            log.exception("Error starting whitelist flow for %s (type=%s)", interaction.user, whitelist_type)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("Something went wrong. Please try again.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("Something went wrong. Please try again.", ephemeral=True)
+            except Exception:
+                pass
 
     async def handle_identifier_submission(self, interaction: discord.Interaction, whitelist_type: str, steam_raw: str, eos_raw: str):
+        try:
+            await self._handle_identifier_submission_inner(interaction, whitelist_type, steam_raw, eos_raw)
+        except Exception:
+            log.exception("Error handling identifier submission for %s in guild %s", interaction.user, getattr(interaction.guild, 'id', '?'))
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("Something went wrong while saving your whitelist. Please try again.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("Something went wrong while saving your whitelist. Please try again.", ephemeral=True)
+            except Exception:
+                pass  # Interaction may have expired
+
+    async def _handle_identifier_submission_inner(self, interaction: discord.Interaction, whitelist_type: str, steam_raw: str, eos_raw: str):
         guild_id = interaction.guild.id
         wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
         if not wl:
@@ -425,16 +445,21 @@ class WhitelistBot(commands.Bot):
         tier_lines = []
         if panel and panel.get("tier_category_id"):
             tier_entries = await self.db.get_tier_entries(guild_id, panel["tier_category_id"])
+            # Sort by slot_limit ascending
+            tier_entries = sorted(tier_entries, key=lambda te: te[3])
             for te in tier_entries:
-                name = te[4] or te[2]  # display_name or role_name
+                role_id = te[1]  # role_id
                 slot_limit = te[3]
-                tier_lines.append(f"**{name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+                display_name = te[4] or te[2]  # display_name or role_name
+                # Use role mention for colored display (pings suppressed via allowed_mentions)
+                tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
         else:
             role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
             for rm in role_mappings:
+                role_id = rm[0] if len(rm) > 0 else 0
                 role_name = rm[1] if len(rm) > 1 else "Unknown"
                 slot_limit = rm[2] if len(rm) > 2 else 1
-                tier_lines.append(f"**{role_name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+                tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
 
         description = "Use the buttons below to manage your whitelist entry.\n\n"
         if tier_lines:
@@ -482,7 +507,7 @@ class WhitelistBot(commands.Bot):
                 stored_ch = self.get_channel(int(stored_channel_id))
                 if stored_ch:
                     old = await stored_ch.fetch_message(int(stored_message_id))
-                    await old.edit(embed=embed, view=panel_view)
+                    await old.edit(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
                     posted = old
             except Exception:
                 posted = None
@@ -494,7 +519,7 @@ class WhitelistBot(commands.Bot):
             if target is None and stored_channel_id:
                 target = self.get_channel(int(stored_channel_id))
             if target is not None:
-                posted = await target.send(embed=embed, view=panel_view)
+                posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
 
         if posted is not None:
             await self.db.update_whitelist(whitelist_id, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
