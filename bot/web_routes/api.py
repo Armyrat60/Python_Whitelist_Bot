@@ -2611,7 +2611,7 @@ async def admin_push_panel(request: web.Request) -> web.Response:
         log.info("Guild %s: sent panel embed to channel %s", guild_id, channel_id)
         return web.json_response({"ok": True, "panel_id": panel_id, "action": "sent", "message_id": new_message_id})
 
-    return web.json_response({"error": "Failed to send message. Check bot permissions in the channel."}, status=500)
+    return web.json_response({"error": "Failed to send message. Check bot permissions in the channel (Send Messages, Embed Links)."}, status=400)
 
 
 # ── Admin Squad Groups API routes ─────────────────────────────────────────────

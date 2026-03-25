@@ -267,8 +267,11 @@ function PanelCard({
 
   function handlePush() {
     pushPanel.mutate(panel.id, {
-      onSuccess: () => toast.success("Panel pushed to Discord"),
-      onError: () => toast.error("Failed to push panel"),
+      onSuccess: () => toast.success("Panel pushed to Discord!"),
+      onError: (err: unknown) => {
+        const msg = (err as { message?: string })?.message || "Failed to push panel. Check bot permissions.";
+        toast.error(msg);
+      },
     });
   }
 
