@@ -391,13 +391,13 @@ class WhitelistBot(commands.Bot):
         wl_name = wl["name"]
         wl_id = wl["id"]
 
-        # Get role mappings for tier info
+        # Get role mappings for tier info — use <@&ID> for colored role mentions
         role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
         tier_lines = []
         for rm in role_mappings:
-            role_name = rm[1] if len(rm) > 1 else "Unknown"
+            role_id = rm[0] if len(rm) > 0 else 0
             slot_limit = rm[2] if len(rm) > 2 else 1
-            tier_lines.append(f"**@{role_name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+            tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
 
         description = "Use the buttons below to manage your whitelist entry.\n\n"
         if tier_lines:

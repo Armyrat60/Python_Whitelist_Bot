@@ -2556,12 +2556,12 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     for rm in role_mappings:
         # Tuple format: (role_id, role_name, slot_limit, is_active)
         if isinstance(rm, tuple):
-            name = rm[1] if len(rm) > 1 else "Unknown"
+            role_id = rm[0] if len(rm) > 0 else 0
             slots = rm[2] if len(rm) > 2 else 1
         else:
-            name = rm.get("role_name", "Unknown")
+            role_id = rm.get("role_id", 0)
             slots = rm.get("slot_limit", 1)
-        tier_lines.append(f"**@{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
+        tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
 
     description = f"Submit your Steam64 ID to get whitelisted on the server.\n\n"
     if tier_lines:
