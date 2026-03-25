@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -10,7 +10,6 @@ import {
   Send,
   Settings2,
   Copy,
-  Power,
 } from "lucide-react";
 import {
   usePanels,
@@ -29,7 +28,7 @@ import {
   useRemoveRoleMapping,
 } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
-import type { Panel, Whitelist, SquadGroup, DiscordRole } from "@/lib/types";
+import type { Panel, Whitelist, SquadGroup } from "@/lib/types";
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -56,12 +55,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import {
   Sheet,
   SheetTrigger,
@@ -70,20 +73,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { Combobox } from "@/components/ui/combobox";
+import type { ComboboxOption } from "@/components/ui/combobox";
 
 // ─── All known Squad permissions ────────────────────────────────────────
 const SQUAD_PERMISSIONS = [
@@ -243,6 +234,16 @@ function PanelCard({
   const wlName =
     whitelists.find((w) => w.id === panel.whitelist_id)?.name ?? "None";
 
+  const channelOptions: ComboboxOption[] = useMemo(
+    () => channels.map((ch) => ({ value: ch.id, label: `#${ch.name}` })),
+    [channels]
+  );
+
+  const whitelistOptions: ComboboxOption[] = useMemo(
+    () => whitelists.map((wl) => ({ value: String(wl.id), label: wl.name })),
+    [whitelists]
+  );
+
   function handleSave() {
     updatePanel.mutate(
       {
@@ -299,52 +300,38 @@ function PanelCard({
 
         <div className="space-y-2">
           <Label className="text-xs">Channel</Label>
-          <Select value={channelId} onValueChange={(v) => setChannelId(v ?? "")}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select channel" />
-            </SelectTrigger>
-            <SelectContent>
-              {channels.map((ch) => (
-                <SelectItem key={ch.id} value={ch.id}>
-                  #{ch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={channelOptions}
+            value={channelId}
+            onValueChange={setChannelId}
+            placeholder="Select channel"
+            searchPlaceholder="Search channels..."
+            emptyText="No channels found."
+          />
         </div>
 
         <div className="space-y-2">
           <Label className="text-xs">Log Channel</Label>
-          <Select value={logChannelId} onValueChange={(v) => setLogChannelId(v ?? "")}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select log channel" />
-            </SelectTrigger>
-            <SelectContent>
-              {channels.map((ch) => (
-                <SelectItem key={ch.id} value={ch.id}>
-                  #{ch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={channelOptions}
+            value={logChannelId}
+            onValueChange={setLogChannelId}
+            placeholder="Select log channel"
+            searchPlaceholder="Search channels..."
+            emptyText="No channels found."
+          />
         </div>
 
         <div className="space-y-2">
           <Label className="text-xs">Whitelist</Label>
-          <Select value={whitelistId} onValueChange={(v) => setWhitelistId(v ?? "")}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select whitelist">
-                {wlName !== "None" ? wlName : "Select whitelist"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {whitelists.map((wl) => (
-                <SelectItem key={wl.id} value={String(wl.id)}>
-                  {wl.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={whitelistOptions}
+            value={whitelistId}
+            onValueChange={setWhitelistId}
+            placeholder="Select whitelist"
+            searchPlaceholder="Search whitelists..."
+            emptyText="No whitelists found."
+          />
         </div>
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
@@ -370,15 +357,34 @@ function PanelCard({
           whitelists.find((w) => w.id === panel.whitelist_id)?.slug
         } />
         {!panel.is_default && (
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleDelete}
-            disabled={deletePanel.isPending}
-          >
-            <Trash2 className="mr-1 h-3 w-3" />
-            Delete
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deletePanel.isPending}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  Delete
+                </Button>
+              }
+            />
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {panel.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently remove this panel and all associated data. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={handleDelete}>
+                  Continue
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </CardFooter>
     </Card>
@@ -395,12 +401,26 @@ function ManageRolesButton({
   const removeRole = useRemoveRoleMapping();
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [slotCount, setSlotCount] = useState("1");
-  const [roleSearchOpen, setRoleSearchOpen] = useState(false);
 
   // We get role mappings from the settings query which includes whitelists with their mappings
   // For now, this is a simplified version
 
   const slug = panelWhitelistSlug;
+
+  const roleOptions: ComboboxOption[] = useMemo(
+    () =>
+      (roles ?? []).map((role) => ({
+        value: role.id,
+        label: role.name,
+        icon: (
+          <span
+            className="mr-2 inline-block h-3 w-3 rounded-full"
+            style={{ backgroundColor: role.color || "#99AAB5" }}
+          />
+        ),
+      })),
+    [roles]
+  );
 
   function handleAddRole() {
     if (!slug || !selectedRoleId) return;
@@ -428,9 +448,6 @@ function ManageRolesButton({
     );
   }
 
-  const selectedRoleName =
-    roles?.find((r) => r.id === selectedRoleId)?.name ?? "Select role";
-
   return (
     <Dialog>
       <DialogTrigger render={<Button size="sm" variant="outline" />}>
@@ -453,44 +470,15 @@ function ManageRolesButton({
             <div className="space-y-2">
               <Label>Add Role Mapping</Label>
               <div className="flex gap-2">
-                <Popover open={roleSearchOpen} onOpenChange={setRoleSearchOpen}>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 justify-start"
-                      />
-                    }
-                  >
-                    {selectedRoleName}
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56 p-0">
-                    <Command>
-                      <CommandInput placeholder="Search role..." />
-                      <CommandList>
-                        <CommandEmpty>No roles found.</CommandEmpty>
-                        <CommandGroup>
-                          {roles?.map((role) => (
-                            <CommandItem
-                              key={role.id}
-                              onSelect={() => {
-                                setSelectedRoleId(role.id);
-                                setRoleSearchOpen(false);
-                              }}
-                            >
-                              <span
-                                className="mr-2 inline-block h-3 w-3 rounded-full"
-                                style={{ backgroundColor: role.color || "#99AAB5" }}
-                              />
-                              {role.name}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Combobox
+                  options={roleOptions}
+                  value={selectedRoleId}
+                  onValueChange={setSelectedRoleId}
+                  placeholder="Select role"
+                  searchPlaceholder="Search roles..."
+                  emptyText="No roles found."
+                  className="flex-1"
+                />
                 <Input
                   type="number"
                   min={1}
@@ -663,12 +651,12 @@ function WhitelistCard({
       <CardContent className="space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Squad Group</span>
-          <span className="font-medium">{whitelist.squad_group || "—"}</span>
+          <span className="font-medium">{whitelist.squad_group || "\u2014"}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Output File</span>
           <span className="font-medium font-mono text-xs">
-            {whitelist.output_filename || "—"}
+            {whitelist.output_filename || "\u2014"}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -693,10 +681,30 @@ function WhitelistCard({
         <div className="ml-auto flex gap-2">
           <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
           {!whitelist.is_default && (
-            <Button size="sm" variant="destructive" onClick={onDelete}>
-              <Trash2 className="mr-1 h-3 w-3" />
-              Delete
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button size="sm" variant="destructive">
+                    <Trash2 className="mr-1 h-3 w-3" />
+                    Delete
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {whitelist.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove this whitelist and all associated data. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={onDelete}>
+                    Continue
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </div>
       </CardFooter>
@@ -715,6 +723,11 @@ function WhitelistConfigSheet({
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
   const [outputFilename, setOutputFilename] = useState(
     whitelist.output_filename
+  );
+
+  const groupOptions: ComboboxOption[] = useMemo(
+    () => groups.map((g) => ({ value: g.group_name, label: g.group_name })),
+    [groups]
   );
 
   async function handleSave() {
@@ -749,18 +762,14 @@ function WhitelistConfigSheet({
           </div>
           <div className="space-y-2">
             <Label>Squad Group</Label>
-            <Select value={squadGroup} onValueChange={(v) => setSquadGroup(v ?? "")}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select group" />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={g.group_name} value={g.group_name}>
-                    {g.group_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={groupOptions}
+              value={squadGroup}
+              onValueChange={setSquadGroup}
+              placeholder="Select group"
+              searchPlaceholder="Search groups..."
+              emptyText="No groups found."
+            />
           </div>
           <div className="space-y-2">
             <Label>Output Filename</Label>
