@@ -240,18 +240,22 @@ class WhitelistBot(commands.Bot):
         if panel and panel.get("tier_category_id"):
             tier_category_id = panel["tier_category_id"]
 
+        member_role_ids = {r.id for r in member.roles}
         if tier_category_id:
             # Use tier_entries from the category
+            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
             tier_entries = await self.db.get_tier_entries(guild_id, tier_category_id)
             matched = [
                 (te[4] or te[2], te[3])  # (display_name or role_name, slot_limit)
                 for te in tier_entries
-                if bool(te[6]) and any(r.id == te[1] for r in member.roles)
+                if bool(te[6]) and int(te[1]) in member_role_ids
             ]
+            log.debug("Tier calc guild=%s member=%s category=%s entries=%d matched=%d member_roles=%s",
+                       guild_id, member.id, tier_category_id, len(tier_entries), len(matched), member_role_ids)
         else:
             # Fall back to role_mappings for the whitelist (backward compat)
             mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-            matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and any(r.id == role_id for r in member.roles)]
+            matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and int(role_id) in member_role_ids]
 
         if override_slots is not None:
             return int(override_slots), f"override ({override_slots})"
