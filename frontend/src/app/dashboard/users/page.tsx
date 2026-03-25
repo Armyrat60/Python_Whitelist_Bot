@@ -730,6 +730,15 @@ function UserCard({
 /*  User Detail Sheet                                                  */
 /* ------------------------------------------------------------------ */
 
+// Auto-detect ID type
+function detectIdType(value: string): "steam64" | "eosid" | "invalid" | "empty" {
+  const v = value.trim();
+  if (!v) return "empty";
+  if (/^7656119\d{10}$/.test(v)) return "steam64";
+  if (/^[0-9a-fA-F]{32}$/.test(v)) return "eosid";
+  return "invalid";
+}
+
 function UserDetailSheet({
   user,
   onClose,
@@ -738,68 +747,61 @@ function UserDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [steamIds, setSteamIds] = useState<string[]>(
-    user.steam_ids?.length ? [...user.steam_ids] : [""]
-  );
-  const [eosIds, setEosIds] = useState<string[]>(
-    user.eos_ids?.length ? [...user.eos_ids] : []
-  );
+
+  // Combine all IDs into unified slots
+  const initialSlots = [
+    ...(user.steam_ids ?? []),
+    ...(user.eos_ids ?? []),
+  ];
+  if (initialSlots.length === 0) initialSlots.push("");
+
+  const [slots, setSlots] = useState<string[]>(initialSlots);
   const [status, setStatus] = useState(user.status);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  function updateSteamId(idx: number, value: string) {
-    setSteamIds((prev) => {
+  function updateSlot(idx: number, value: string) {
+    setSlots((prev) => {
       const next = [...prev];
       next[idx] = value;
       return next;
     });
   }
 
-  function addSteamSlot() {
-    setSteamIds((prev) => [...prev, ""]);
+  function addSlot() {
+    setSlots((prev) => [...prev, ""]);
   }
 
-  function removeSteamSlot(idx: number) {
-    setSteamIds((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function updateEosId(idx: number, value: string) {
-    setEosIds((prev) => {
-      const next = [...prev];
-      next[idx] = value;
-      return next;
-    });
-  }
-
-  function addEosSlot() {
-    setEosIds((prev) => [...prev, ""]);
-  }
-
-  function removeEosSlot(idx: number) {
-    setEosIds((prev) => prev.filter((_, i) => i !== idx));
+  function removeSlot(idx: number) {
+    setSlots((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function handleSave() {
-    const cleanSteam = steamIds.map((s) => s.trim()).filter(Boolean);
-    const cleanEos = eosIds.map((s) => s.trim()).filter(Boolean);
+    const steamIds: string[] = [];
+    const eosIds: string[] = [];
 
-    for (const sid of cleanSteam) {
-      if (!/^7656119\d{10}$/.test(sid)) {
-        toast.error(`Invalid Steam64 ID: ${sid}`);
+    for (const slot of slots) {
+      const v = slot.trim();
+      if (!v) continue;
+      const type = detectIdType(v);
+      if (type === "steam64") steamIds.push(v);
+      else if (type === "eosid") eosIds.push(v);
+      else {
+        toast.error(`Invalid ID: ${v}. Must be a Steam64 (17 digits starting with 7656119) or EOS ID (32 hex chars).`);
         return;
       }
+    }
+
+    if (steamIds.length === 0 && eosIds.length === 0) {
+      toast.error("At least one valid ID is required");
+      return;
     }
 
     setSaving(true);
     try {
       await api.patch(
         `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`,
-        {
-          status,
-          steam_ids: cleanSteam,
-          eos_ids: cleanEos,
-        }
+        { status, steam_ids: steamIds, eos_ids: eosIds }
       );
       toast.success("User updated");
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -828,6 +830,8 @@ function UserDetailSheet({
     }
   }
 
+  const usedSlots = slots.filter((s) => s.trim()).length;
+
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4">
       {/* Meta info */}
@@ -843,8 +847,7 @@ function UserDetailSheet({
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Slots</Label>
           <p className="text-sm">
-            {(user.steam_ids?.length ?? 0) + (user.eos_ids?.length ?? 0)} /{" "}
-            {user.effective_slot_limit}
+            {usedSlots} / {user.effective_slot_limit}
           </p>
         </div>
         <div className="space-y-1">
@@ -861,63 +864,58 @@ function UserDetailSheet({
         </div>
       </div>
 
-      {/* Steam IDs */}
+      {/* Unified Slots — auto-detect Steam64 or EOS ID */}
       <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Steam IDs</Label>
-        {steamIds.map((id, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
-              Slot {idx + 1}
-            </span>
-            <Input
-              className="h-8 font-mono text-xs"
-              value={id}
-              onChange={(e) => updateSteamId(idx, e.target.value)}
-              placeholder="76561198..."
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => removeSteamSlot(idx)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
-        <Button variant="outline" size="sm" onClick={addSteamSlot}>
-          <Plus className="mr-1 h-3 w-3" /> Add Steam ID
-        </Button>
-      </div>
-
-      {/* EOS IDs */}
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">EOS IDs</Label>
-        {eosIds.length === 0 && (
-          <p className="text-xs text-muted-foreground">None</p>
+        <Label className="text-xs text-muted-foreground">
+          Slots ({usedSlots}/{user.effective_slot_limit})
+        </Label>
+        {slots.map((id, idx) => {
+          const type = detectIdType(id);
+          return (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+                Slot {idx + 1}
+              </span>
+              <Input
+                className="h-8 flex-1 font-mono text-xs"
+                value={id}
+                onChange={(e) => updateSlot(idx, e.target.value)}
+                placeholder="Steam64 or EOS ID..."
+              />
+              {/* Type indicator */}
+              {type === "steam64" && (
+                <Badge variant="outline" className="shrink-0 text-[10px] text-emerald-400 border-emerald-500/30">
+                  Steam64
+                </Badge>
+              )}
+              {type === "eosid" && (
+                <Badge variant="outline" className="shrink-0 text-[10px] text-blue-400 border-blue-500/30">
+                  EOS
+                </Badge>
+              )}
+              {type === "invalid" && (
+                <Badge variant="outline" className="shrink-0 text-[10px] text-red-400 border-red-500/30">
+                  Invalid
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => removeSlot(idx)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          );
+        })}
+        {slots.filter(s => s.trim()).length < user.effective_slot_limit && (
+          <Button variant="outline" size="sm" onClick={addSlot}>
+            <Plus className="mr-1 h-3 w-3" /> Add Slot
+          </Button>
         )}
-        {eosIds.map((id, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
-              EOS {idx + 1}
-            </span>
-            <Input
-              className="h-8 font-mono text-xs"
-              value={id}
-              onChange={(e) => updateEosId(idx, e.target.value)}
-              placeholder="0002a101..."
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => removeEosSlot(idx)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
-        <Button variant="outline" size="sm" onClick={addEosSlot}>
-          <Plus className="mr-1 h-3 w-3" /> Add EOS ID
-        </Button>
+        <p className="text-[11px] text-muted-foreground">
+          Paste any ID — Steam64 (17 digits starting with 7656119) or EOS (32 hex chars) are auto-detected.
+        </p>
       </div>
 
       {/* Timestamps */}
