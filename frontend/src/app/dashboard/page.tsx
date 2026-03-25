@@ -37,7 +37,7 @@ export default function DashboardPage() {
   const { data: panels } = usePanels();
   const { data: settingsData } = useSettings();
 
-  const whitelistCount = whitelists?.length ?? 0;
+  const whitelistCount = whitelists?.filter((w) => w.enabled).length ?? 0;
   const panelCount = panels?.length ?? 0;
 
   // Setup guide state
@@ -99,10 +99,10 @@ export default function DashboardPage() {
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Resync
         </Button>
-        <Link href="/dashboard/setup">
+        <Link href="/dashboard/panels">
           <Button variant="outline" size="sm">
             <Settings2 className="mr-1.5 h-3.5 w-3.5" />
-            Go to Setup
+            Manage Panels
           </Button>
         </Link>
       </div>

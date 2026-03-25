@@ -151,6 +151,14 @@ class ManagerMenuView(discord.ui.View):
         self.bot = bot
         self.whitelist_type = whitelist_type
 
+        # Link buttons must be added manually (can't use decorator)
+        self.add_item(discord.ui.Button(
+            label="Open Dashboard",
+            style=discord.ButtonStyle.link,
+            url="https://squadwhitelister.com/dashboard",
+            emoji="🌐",
+        ))
+
     @discord.ui.button(label="Lookup User", style=discord.ButtonStyle.primary, emoji="🔍")
     async def lookup(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = LookupModal(self.bot, self.whitelist_type)
@@ -177,10 +185,6 @@ class ManagerMenuView(discord.ui.View):
         embed.add_field(name="Total IDs", value=str(id_row[0] if id_row else 0), inline=True)
         embed.set_footer(text="Squad Whitelister")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="Open Dashboard", style=discord.ButtonStyle.link, url="https://squadwhitelister.com/dashboard", emoji="🌐")
-    async def dashboard(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pass  # Link buttons don't need a callback
 
 
 class LookupModal(discord.ui.Modal, title="Lookup User"):

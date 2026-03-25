@@ -9,9 +9,12 @@ import { Button } from "@/components/ui/button";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/dashboard/setup": "Setup",
+  "/dashboard/panels": "Panels",
+  "/dashboard/whitelists": "Whitelists",
+  "/dashboard/groups": "Groups",
   "/dashboard/settings": "Settings",
-  "/dashboard/users": "Users",
+  "/dashboard/users": "WL Roster",
+  "/dashboard/roster": "WL Roster",
   "/dashboard/audit": "Audit Log",
   "/dashboard/import-export": "Import / Export",
   "/my-whitelist": "My Whitelist",
@@ -51,7 +54,7 @@ export function Topbar() {
           </div>
         )}
 
-        <a href="/api/auth/logout">
+        <a href="/logout">
           <Button variant="ghost" size="icon-sm">
             <LogOut className="h-4 w-4" />
             <span className="sr-only">Logout</span>

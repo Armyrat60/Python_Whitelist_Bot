@@ -584,6 +584,10 @@ POSTGRES_MIGRATIONS = [
         END IF;
     END $$
     """,
+
+    # --- Clean up legacy whitelist_types table to prevent re-migration ---
+    # This stops old clan/staff/subscription from being re-created after deletion
+    "TRUNCATE TABLE whitelist_types",
 ]
 
 
