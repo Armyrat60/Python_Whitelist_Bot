@@ -564,6 +564,11 @@ POSTGRES_MIGRATIONS = [
       AND audit_log.whitelist_id IS NULL AND audit_log.whitelist_type IS NOT NULL
     """,
 
+    # --- Force whitelist_type nullable (may have failed in earlier migration) ---
+    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_type DROP NOT NULL",
+    "ALTER TABLE whitelist_identifiers ALTER COLUMN whitelist_type DROP NOT NULL",
+    "ALTER TABLE role_mappings ALTER COLUMN whitelist_type DROP NOT NULL",
+
     # --- Ensure unique constraints exist for ON CONFLICT to work ---
     # Delete orphaned rows with NULL whitelist_id before adding constraints
     "DELETE FROM whitelist_users WHERE whitelist_id IS NULL",
