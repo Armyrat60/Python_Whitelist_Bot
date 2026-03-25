@@ -37,6 +37,7 @@ export interface Panel {
   tier_category_id: number | null;
   panel_message_id: string | null;
   is_default: boolean;
+  enabled: boolean;
 }
 
 export interface TierCategory {

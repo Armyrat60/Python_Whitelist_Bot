@@ -176,7 +176,7 @@ function PanelCard({
     panel.tier_category_id?.toString() ?? ""
   );
   const [panelName, setPanelName] = useState(panel.name);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(panel.enabled ?? true);
 
   const channelName =
     channels.find((c) => c.id === panel.channel_id)?.name ?? "None";
@@ -276,7 +276,16 @@ function PanelCard({
           )}
           <Switch
             checked={enabled}
-            onCheckedChange={setEnabled}
+            onCheckedChange={(checked) => {
+              setEnabled(checked);
+              updatePanel.mutate(
+                { id: panel.id, enabled: checked },
+                {
+                  onSuccess: () => toast.success(checked ? "Panel enabled" : "Panel disabled"),
+                  onError: () => { setEnabled(!checked); toast.error("Failed to toggle panel"); },
+                }
+              );
+            }}
             className="ml-auto scale-75"
           />
         </CardTitle>
