@@ -48,22 +48,197 @@ class IdentifierModal(discord.ui.Modal, title="Submit or Update Whitelist IDs"):
 
 
 class WhitelistPanelView(discord.ui.View):
+    """Persistent panel view with interactive buttons for members and managers."""
+
     def __init__(self, bot, whitelist_type: str, whitelist_id: int = None):
         super().__init__(timeout=None)
         self.bot = bot
         self.whitelist_type = whitelist_type
         self.whitelist_id = whitelist_id
 
-        start_btn = discord.ui.Button(
-            label="Start / Update Whitelist",
+        # Row 1: Member buttons
+        submit_btn = discord.ui.Button(
+            label="Submit / Update ID",
             style=discord.ButtonStyle.green,
-            custom_id=f"panel:start:{whitelist_type}",
+            emoji="🛡️",
+            custom_id=f"panel:submit:{whitelist_type}",
+            row=0,
         )
-        start_btn.callback = self._start_callback
-        self.add_item(start_btn)
+        submit_btn.callback = self._submit_callback
+        self.add_item(submit_btn)
 
-    async def _start_callback(self, interaction: discord.Interaction):
+        view_btn = discord.ui.Button(
+            label="View My Whitelist",
+            style=discord.ButtonStyle.primary,
+            emoji="📋",
+            custom_id=f"panel:view:{whitelist_type}",
+            row=0,
+        )
+        view_btn.callback = self._view_callback
+        self.add_item(view_btn)
+
+        web_btn = discord.ui.Button(
+            label="Web Dashboard",
+            style=discord.ButtonStyle.link,
+            url="https://squadwhitelister.com/my-whitelist",
+            emoji="🌐",
+            row=0,
+        )
+        self.add_item(web_btn)
+
+        # Row 2: Manager button
+        manage_btn = discord.ui.Button(
+            label="Manager Tools",
+            style=discord.ButtonStyle.secondary,
+            emoji="⚙️",
+            custom_id=f"panel:manage:{whitelist_type}",
+            row=1,
+        )
+        manage_btn.callback = self._manage_callback
+        self.add_item(manage_btn)
+
+    async def _submit_callback(self, interaction: discord.Interaction):
         await self.bot.start_whitelist_flow(interaction, self.whitelist_type)
+
+    async def _view_callback(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+            return
+        wl_id = wl["id"]
+        row = await self.bot.db.get_user_record(guild_id, interaction.user.id, wl_id)
+        ids = await self.bot.db.get_identifiers(guild_id, interaction.user.id, wl_id)
+        if not row and not ids:
+            await interaction.response.send_message("You don't have a whitelist entry yet. Click **Submit / Update ID** to get started!", ephemeral=True)
+            return
+        embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
+        if row:
+            embed.add_field(name="Status", value=row[1], inline=True)
+            embed.add_field(name="Slots", value=str(row[3]), inline=True)
+            if row[4]:
+                embed.add_field(name="Tier", value=row[4], inline=True)
+        if ids:
+            id_lines = []
+            for t, v, *_ in ids:
+                label = "Steam64" if t == "steam64" else "EOS"
+                id_lines.append(f"**{label}:** `{v}`")
+            embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
+        else:
+            embed.add_field(name="Your IDs", value="None submitted yet", inline=False)
+        embed.set_footer(text="Squad Whitelister • squadwhitelister.com")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def _manage_callback(self, interaction: discord.Interaction):
+        if not await self.bot.user_is_mod(interaction.guild.id, interaction.user):
+            await interaction.response.send_message("You need manager permissions to use this.", ephemeral=True)
+            return
+        # Show manager menu
+        view = ManagerMenuView(self.bot, self.whitelist_type)
+        embed = discord.Embed(
+            title="⚙️ Manager Tools",
+            description="Select an action below to manage whitelist entries.",
+            color=0xF97316,
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class ManagerMenuView(discord.ui.View):
+    """Ephemeral manager tools menu."""
+
+    def __init__(self, bot, whitelist_type: str):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+
+    @discord.ui.button(label="Lookup User", style=discord.ButtonStyle.primary, emoji="🔍")
+    async def lookup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = LookupModal(self.bot, self.whitelist_type)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="View Stats", style=discord.ButtonStyle.secondary, emoji="📊")
+    async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = interaction.guild.id
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+            return
+        wl_id = wl["id"]
+        active_row = await self.bot.db.fetchone(
+            "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'",
+            (guild_id, wl_id),
+        )
+        id_row = await self.bot.db.fetchone(
+            "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s",
+            (guild_id, wl_id),
+        )
+        embed = discord.Embed(title=f"📊 {wl['name']} Stats", color=0xF97316)
+        embed.add_field(name="Active Users", value=str(active_row[0] if active_row else 0), inline=True)
+        embed.add_field(name="Total IDs", value=str(id_row[0] if id_row else 0), inline=True)
+        embed.set_footer(text="Squad Whitelister")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Open Dashboard", style=discord.ButtonStyle.link, url="https://squadwhitelister.com/dashboard", emoji="🌐")
+    async def dashboard(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass  # Link buttons don't need a callback
+
+
+class LookupModal(discord.ui.Modal, title="Lookup User"):
+    on_error = _modal_on_error
+
+    def __init__(self, bot, whitelist_type: str):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+        self.user_input = discord.ui.TextInput(
+            label="Discord Username or ID",
+            placeholder="e.g. armyrat60 or 268871213479231489",
+            required=True,
+            max_length=100,
+        )
+        self.add_item(self.user_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        query = self.user_input.value.strip()
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+            return
+        wl_id = wl["id"]
+
+        # Try to find by Discord ID or name
+        target_id = None
+        if query.isdigit():
+            target_id = int(query)
+        else:
+            # Search by name in the guild
+            member = discord.utils.find(lambda m: m.name.lower() == query.lower() or m.display_name.lower() == query.lower(), interaction.guild.members)
+            if member:
+                target_id = member.id
+
+        if not target_id:
+            await interaction.response.send_message(f"Could not find user `{query}`. Try their Discord ID.", ephemeral=True)
+            return
+
+        row = await self.bot.db.get_user_record(guild_id, target_id, wl_id)
+        ids = await self.bot.db.get_identifiers(guild_id, target_id, wl_id)
+
+        if not row and not ids:
+            await interaction.response.send_message(f"No whitelist entry found for <@{target_id}>.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title=f"Whitelist Entry for <@{target_id}>", color=0xF97316)
+        if row:
+            embed.add_field(name="Status", value=row[1], inline=True)
+            embed.add_field(name="Slots", value=str(row[3]), inline=True)
+            if row[4]:
+                embed.add_field(name="Tier", value=row[4], inline=True)
+        if ids:
+            id_lines = [f"**{'Steam64' if t == 'steam64' else 'EOS'}:** `{v}`" for t, v, *_ in ids]
+            embed.add_field(name="IDs", value="\n".join(id_lines), inline=False)
+        embed.set_footer(text="Squad Whitelister")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class WhitelistCog(commands.Cog):

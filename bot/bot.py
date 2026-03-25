@@ -387,17 +387,34 @@ class WhitelistBot(commands.Bot):
             if not self._sync_pending:
                 break
 
-    def _build_panel_embed(self, wl_name: str) -> discord.Embed:
-        embed = discord.Embed(
-            title=f"{wl_name} Whitelist",
-            description=(
-                "Click **Start / Update Whitelist** to submit or change your IDs.\n\n"
-                "**Supported formats:**\n"
-                "- **Steam64** \u2014 17-digit ID starting with `7656119`\n"
-                "- **EOSID** \u2014 32-character hex string"
-            ),
-            color=discord.Color.blurple(),
+    async def _build_panel_embed(self, guild_id: int, wl: dict) -> discord.Embed:
+        wl_name = wl["name"]
+        wl_id = wl["id"]
+
+        # Get role mappings for tier info
+        role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
+        tier_lines = []
+        for rm in role_mappings:
+            role_name = rm[1] if len(rm) > 1 else "Unknown"
+            slot_limit = rm[2] if len(rm) > 2 else 1
+            tier_lines.append(f"**@{role_name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+
+        description = "Use the buttons below to manage your whitelist entry.\n\n"
+        if tier_lines:
+            description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
+        description += (
+            "**How it works:**\n"
+            "1. Click **Submit / Update ID** to enter your Steam64 ID\n"
+            "2. Click **View My Whitelist** to check your current entry\n"
+            "3. Or use the **Web Dashboard** for full management"
         )
+
+        embed = discord.Embed(
+            title=f"🛡️ {wl_name}",
+            description=description,
+            color=discord.Color.from_rgb(249, 115, 22),  # Orange
+        )
+        embed.set_footer(text="Squad Whitelister • squadwhitelister.com")
         return embed
 
     async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):
@@ -409,7 +426,7 @@ class WhitelistBot(commands.Bot):
         if not wl:
             return None
         whitelist_id = wl["id"]
-        embed = self._build_panel_embed(wl["name"])
+        embed = await self._build_panel_embed(guild_id, wl)
 
         view_key = (guild_id, whitelist_id)
         # Ensure we have a view for this guild+whitelist

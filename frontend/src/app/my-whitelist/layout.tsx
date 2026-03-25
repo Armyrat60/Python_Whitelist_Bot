@@ -36,6 +36,25 @@ export default function MyWhitelistLayout({
 
   if (!session?.logged_in) return null;
 
+  // No mutual guilds
+  if (!session.guilds || session.guilds.length === 0) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900 px-4 text-center">
+        <img src="/logo.png" alt="Squad Whitelister" className="mb-6 h-16 w-16 rounded-xl" />
+        <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
+        <p className="mb-4 max-w-md text-muted-foreground">
+          None of your Discord servers have Squad Whitelister installed.
+          Ask your server administrator to add the bot first.
+        </p>
+        <a href="/logout">
+          <button className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-muted-foreground hover:bg-zinc-800">
+            Sign Out
+          </button>
+        </a>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-900">
       {/* Simple Topbar */}

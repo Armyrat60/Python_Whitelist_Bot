@@ -15,16 +15,18 @@ export default function DashboardLayout({
   const router = useRouter();
   const { data: session, isLoading } = useSession();
 
+  const hasGuilds = session?.guilds && session.guilds.length > 0;
+
   useEffect(() => {
     if (isLoading) return;
     if (!session?.logged_in) {
       router.replace("/");
       return;
     }
-    if (!session.is_mod) {
+    if (hasGuilds && !session.is_mod) {
       router.replace("/my-whitelist");
     }
-  }, [session, isLoading, router]);
+  }, [session, isLoading, router, hasGuilds]);
 
   if (isLoading) {
     return (
@@ -37,7 +39,32 @@ export default function DashboardLayout({
     );
   }
 
-  if (!session?.logged_in || !session.is_mod) {
+  if (!session?.logged_in) {
+    return null;
+  }
+
+  // No mutual guilds — user's servers aren't registered
+  if (!hasGuilds) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900 px-4 text-center">
+        <img src="/logo.png" alt="Squad Whitelister" className="mb-6 h-16 w-16 rounded-xl" />
+        <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
+        <p className="mb-4 max-w-md text-muted-foreground">
+          None of your Discord servers have Squad Whitelister installed.
+          Ask your server administrator to add the bot first.
+        </p>
+        <div className="flex gap-3">
+          <a href="/logout">
+            <button className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-muted-foreground hover:bg-zinc-800">
+              Sign Out
+            </button>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session.is_mod) {
     return null;
   }
 
