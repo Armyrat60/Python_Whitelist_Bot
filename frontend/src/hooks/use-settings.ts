@@ -18,46 +18,89 @@ import type {
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
 
+interface SettingsResponse {
+  bot_settings: Record<string, string>;
+  type_configs: Record<string, {
+    id: number;
+    slug: string;
+    name: string;
+    enabled: boolean;
+    panel_channel_id: string | null;
+    panel_message_id: string | null;
+    log_channel_id: string | null;
+    output_filename: string;
+    default_slot_limit: number;
+    stack_roles: boolean;
+    squad_group: string;
+    is_default: boolean;
+  }>;
+  role_mappings: Record<string, RoleMapping[]>;
+  squad_groups: string[];
+  squad_permissions: Record<string, string>;
+}
+
 export function useSettings() {
-  return useQuery<{ settings: Settings; whitelists: Whitelist[] }>({
+  return useQuery<SettingsResponse>({
     queryKey: ["settings"],
-    queryFn: () =>
-      api.get<{ settings: Settings; whitelists: Whitelist[] }>(
-        "/api/admin/settings"
-      ),
+    queryFn: () => api.get<SettingsResponse>("/api/admin/settings"),
   });
 }
 
 export function useWhitelists() {
   const { data, ...rest } = useSettings();
-  return { data: data?.whitelists, ...rest };
+  const whitelists: Whitelist[] = data?.type_configs
+    ? Object.values(data.type_configs).map((tc) => ({
+        id: tc.id,
+        slug: tc.slug,
+        name: tc.name,
+        enabled: tc.enabled,
+        default_slot_limit: tc.default_slot_limit,
+        stack_roles: tc.stack_roles,
+        squad_group: tc.squad_group,
+        output_filename: tc.output_filename,
+        is_default: tc.is_default,
+      }))
+    : [];
+  return { data: whitelists, ...rest };
 }
 
 export function usePanels() {
   return useQuery<Panel[]>({
     queryKey: ["panels"],
-    queryFn: () => api.get<Panel[]>("/api/admin/panels"),
+    queryFn: async () => {
+      const res = await api.get<{ panels: Panel[] }>("/api/admin/panels");
+      return res.panels;
+    },
   });
 }
 
 export function useRoles() {
   return useQuery<DiscordRole[]>({
     queryKey: ["roles"],
-    queryFn: () => api.get<DiscordRole[]>("/api/admin/roles"),
+    queryFn: async () => {
+      const res = await api.get<{ roles: DiscordRole[] }>("/api/admin/roles");
+      return res.roles;
+    },
   });
 }
 
 export function useChannels() {
   return useQuery<DiscordChannel[]>({
     queryKey: ["channels"],
-    queryFn: () => api.get<DiscordChannel[]>("/api/admin/channels"),
+    queryFn: async () => {
+      const res = await api.get<{ channels: DiscordChannel[] }>("/api/admin/channels");
+      return res.channels;
+    },
   });
 }
 
 export function useGroups() {
   return useQuery<SquadGroup[]>({
     queryKey: ["groups"],
-    queryFn: () => api.get<SquadGroup[]>("/api/admin/groups"),
+    queryFn: async () => {
+      const res = await api.get<{ groups: SquadGroup[] }>("/api/admin/groups");
+      return res.groups;
+    },
   });
 }
 

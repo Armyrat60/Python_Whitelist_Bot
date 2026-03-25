@@ -74,15 +74,15 @@ export default function SettingsPage() {
   const [rolesPopoverOpen, setRolesPopoverOpen] = useState(false);
 
   useEffect(() => {
-    if (data?.settings) {
-      setForm(data.settings);
+    if (data?.bot_settings) {
+      setForm(data.bot_settings as unknown as Settings);
       setModRoleIds(
-        data.settings.mod_role_id
-          ? data.settings.mod_role_id.split(",").filter(Boolean)
+        data.bot_settings.mod_role_id
+          ? data.bot_settings.mod_role_id.split(",").filter(Boolean)
           : []
       );
     }
-  }, [data?.settings]);
+  }, [data?.bot_settings]);
 
   function updateField<K extends keyof Settings>(key: K, value: Settings[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
