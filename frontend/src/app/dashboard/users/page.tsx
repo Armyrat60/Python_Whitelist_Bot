@@ -1,22 +1,21 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-} from "@tanstack/react-table";
 import { toast } from "sonner";
 import {
-  ArrowUpDown,
   Search,
   Plus,
   ChevronLeft,
   ChevronRight,
+  Pencil,
+  Trash2,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  X,
+  Save,
+  User as UserIcon,
 } from "lucide-react";
 import { useUsers, useWhitelists } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
@@ -27,13 +26,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from "@/components/ui/table";
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import {
   Select,
   SelectTrigger,
@@ -57,29 +56,47 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-function avatarUrl(userId: string) {
-  return `https://cdn.discordapp.com/avatars/${userId}/placeholder.webp?size=64`;
-}
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
-const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const statusVariant: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   active: "default",
   inactive: "secondary",
   expired: "destructive",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Main Page                                                          */
+/* ------------------------------------------------------------------ */
 
 export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [sorting, setSorting] = useState<SortingState>([]);
   const [selectedUser, setSelectedUser] = useState<WhitelistUser | null>(null);
+  const queryClient = useQueryClient();
 
-  const perPage = 25;
+  const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
 
@@ -99,106 +116,12 @@ export default function UsersPage() {
     setPage(1);
   }
 
-  const columns = useMemo<ColumnDef<WhitelistUser>[]>(
-    () => [
-      {
-        accessorKey: "discord_name",
-        header: "User",
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <Avatar size="sm">
-              <AvatarFallback>
-                {row.original.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{row.original.discord_name}</p>
-              <p className="text-xs text-muted-foreground">
-                {row.original.discord_id}
-              </p>
-            </div>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "whitelist_name",
-        header: "Whitelist",
-        cell: ({ row }) => (
-          <Badge variant="outline">{row.original.whitelist_name}</Badge>
-        ),
-      },
-      {
-        accessorKey: "last_plan_name",
-        header: "Tier",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.last_plan_name ?? "—"}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "effective_slot_limit",
-        header: "Slots",
-        cell: ({ row }) => {
-          const used =
-            (row.original.steam_ids?.length ?? 0) +
-            (row.original.eos_ids?.length ?? 0);
-          return (
-            <span>
-              {used} / {row.original.effective_slot_limit}
-            </span>
-          );
-        },
-      },
-      {
-        id: "steam_ids",
-        header: "Steam IDs",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.steam_ids?.length ?? 0}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge
-            variant={statusVariant[row.original.status] ?? "outline"}
-          >
-            {row.original.status}
-          </Badge>
-        ),
-      },
-      {
-        accessorKey: "updated_at",
-        header: "Last Updated",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {new Date(row.original.updated_at).toLocaleDateString()}
-          </span>
-        ),
-      },
-    ],
-    []
-  );
-
-  const table = useReactTable({
-    data: data?.users ?? [],
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    manualPagination: true,
-    pageCount: data ? Math.ceil(data.total / perPage) : -1,
-  });
-
   const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+  const users = data?.users ?? [];
 
   return (
-    <div className="space-y-4">
-      {/* Search and Filters */}
+    <div className="space-y-6">
+      {/* ---- Toolbar ---- */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1">
           <div className="flex gap-2">
@@ -217,7 +140,10 @@ export default function UsersPage() {
         <Select
           value={filters.whitelist ?? ""}
           onValueChange={(v) => {
-            setFilters((prev) => ({ ...prev, whitelist: v === "__all__" ? "" : (v ?? "") }));
+            setFilters((prev) => ({
+              ...prev,
+              whitelist: v === "__all__" ? "" : (v ?? ""),
+            }));
             setPage(1);
           }}
         >
@@ -236,7 +162,10 @@ export default function UsersPage() {
         <Select
           value={filters.status ?? ""}
           onValueChange={(v) => {
-            setFilters((prev) => ({ ...prev, status: v === "__all__" ? "" : (v ?? "") }));
+            setFilters((prev) => ({
+              ...prev,
+              status: v === "__all__" ? "" : (v ?? ""),
+            }));
             setPage(1);
           }}
         >
@@ -253,105 +182,61 @@ export default function UsersPage() {
         <AddUserDialog whitelists={whitelists ?? []} />
       </div>
 
-      {/* Data Table */}
+      {/* ---- Card Grid ---- */}
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-52 w-full rounded-xl" />
           ))}
         </div>
+      ) : users.length === 0 ? (
+        <div className="flex h-48 items-center justify-center text-muted-foreground">
+          No users found.
+        </div>
       ) : (
-        <>
-          <div className="rounded-lg border border-zinc-800">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead
-                        key={header.id}
-                        className={cn(
-                          header.column.getCanSort() && "cursor-pointer select-none"
-                        )}
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
-                        <div className="flex items-center gap-1">
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                          {header.column.getCanSort() && (
-                            <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
-                          )}
-                        </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="h-24 text-center text-muted-foreground"
-                    >
-                      No users found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedUser(row.original)}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {data?.total ?? 0} total users
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm">
-                Page {page} of {totalPages || 1}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {users.map((user) => (
+            <UserCard
+              key={`${user.discord_id}-${user.whitelist_slug}`}
+              user={user}
+              onSelect={() => setSelectedUser(user)}
+              whitelists={whitelists ?? []}
+            />
+          ))}
+        </div>
       )}
 
-      {/* User Detail Sheet */}
+      {/* ---- Pagination ---- */}
+      {totalPages > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {data?.total ?? 0} total users
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm">
+              Page {page} of {totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- User Detail Sheet ---- */}
       <Sheet
         open={!!selectedUser}
         onOpenChange={(open) => !open && setSelectedUser(null)}
@@ -359,80 +244,459 @@ export default function UsersPage() {
         <SheetContent>
           <SheetHeader>
             <SheetTitle>{selectedUser?.discord_name ?? "User"}</SheetTitle>
-            <SheetDescription>
-              {selectedUser?.discord_id}
-            </SheetDescription>
+            <SheetDescription>{selectedUser?.discord_id}</SheetDescription>
           </SheetHeader>
-          {selectedUser && <UserDetail user={selectedUser} />}
+          {selectedUser && (
+            <UserDetailSheet
+              user={selectedUser}
+              onClose={() => setSelectedUser(null)}
+            />
+          )}
         </SheetContent>
       </Sheet>
     </div>
   );
 }
 
-function UserDetail({ user }: { user: WhitelistUser }) {
+/* ------------------------------------------------------------------ */
+/*  User Card                                                          */
+/* ------------------------------------------------------------------ */
+
+function UserCard({
+  user,
+  onSelect,
+  whitelists,
+}: {
+  user: WhitelistUser;
+  onSelect: () => void;
+  whitelists: { slug: string; name: string }[];
+}) {
+  const queryClient = useQueryClient();
+  const [removing, setRemoving] = useState(false);
+
+  const slotLimit = user.effective_slot_limit;
+  const allIds = [...(user.steam_ids ?? []), ...(user.eos_ids ?? [])];
+  const usedSlots = allIds.length;
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.delete(
+        `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`
+      );
+      toast.success(`Removed ${user.discord_name}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    } catch {
+      toast.error("Failed to remove user");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
-    <div className="space-y-4 p-4">
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Whitelist</Label>
-        <Badge variant="outline">{user.whitelist_name}</Badge>
+    <Card className="flex flex-col">
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <Avatar
+            size="default"
+            className="cursor-pointer"
+            onClick={onSelect}
+          >
+            <AvatarFallback>
+              {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <CardTitle
+              className="cursor-pointer truncate hover:underline"
+              onClick={onSelect}
+            >
+              {user.discord_name}
+            </CardTitle>
+            <CardDescription className="font-mono text-[11px]">
+              {user.discord_id}
+            </CardDescription>
+          </div>
+          <Badge
+            variant={statusVariant[user.status] ?? "outline"}
+            className={cn(
+              user.status === "active" &&
+                "bg-orange-500/15 text-orange-400 dark:bg-orange-500/20 dark:text-orange-300"
+            )}
+          >
+            {user.status}
+          </Badge>
+        </div>
+      </CardHeader>
+
+      <CardContent className="flex-1 space-y-3">
+        {/* Role / tier badge */}
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs">
+            @{user.whitelist_name}
+          </Badge>
+          {user.last_plan_name && (
+            <span className="text-xs text-muted-foreground">
+              {user.last_plan_name}
+            </span>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {usedSlots}/{slotLimit} slots
+          </span>
+        </div>
+
+        {/* Slot list */}
+        <div className="space-y-1">
+          {Array.from({ length: slotLimit }).map((_, idx) => {
+            const id = allIds[idx];
+            const isOwner = idx === 0;
+            return (
+              <div
+                key={idx}
+                className="flex items-center gap-2 text-xs"
+              >
+                <span className="w-14 shrink-0 font-mono text-muted-foreground">
+                  Slot {idx + 1}:
+                </span>
+                {id ? (
+                  <>
+                    <span className="min-w-0 truncate font-mono">
+                      {id}
+                    </span>
+                    {isOwner && (
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto shrink-0 text-[10px]"
+                      >
+                        owner
+                      </Badge>
+                    )}
+                  </>
+                ) : (
+                  <span className="italic text-muted-foreground/50">
+                    — empty —
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+
+      <CardFooter className="gap-2">
+        <Button variant="outline" size="sm" onClick={onSelect}>
+          <Pencil className="mr-1.5 h-3 w-3" />
+          Edit
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger
+            render={
+              <Button variant="outline" size="sm" disabled={removing} />
+            }
+          >
+            {removing ? (
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="mr-1.5 h-3 w-3" />
+            )}
+            Remove
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove User</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove {user.discord_name} from the{" "}
+                {user.whitelist_name} whitelist. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={handleRemove}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardFooter>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  User Detail Sheet                                                  */
+/* ------------------------------------------------------------------ */
+
+function UserDetailSheet({
+  user,
+  onClose,
+}: {
+  user: WhitelistUser;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [steamIds, setSteamIds] = useState<string[]>(
+    user.steam_ids?.length ? [...user.steam_ids] : [""]
+  );
+  const [eosIds, setEosIds] = useState<string[]>(
+    user.eos_ids?.length ? [...user.eos_ids] : []
+  );
+  const [status, setStatus] = useState(user.status);
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  function updateSteamId(idx: number, value: string) {
+    setSteamIds((prev) => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  }
+
+  function addSteamSlot() {
+    setSteamIds((prev) => [...prev, ""]);
+  }
+
+  function removeSteamSlot(idx: number) {
+    setSteamIds((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateEosId(idx: number, value: string) {
+    setEosIds((prev) => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  }
+
+  function addEosSlot() {
+    setEosIds((prev) => [...prev, ""]);
+  }
+
+  function removeEosSlot(idx: number) {
+    setEosIds((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function handleSave() {
+    const cleanSteam = steamIds.map((s) => s.trim()).filter(Boolean);
+    const cleanEos = eosIds.map((s) => s.trim()).filter(Boolean);
+
+    for (const sid of cleanSteam) {
+      if (!/^7656119\d{10}$/.test(sid)) {
+        toast.error(`Invalid Steam64 ID: ${sid}`);
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      await api.patch(
+        `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`,
+        {
+          status,
+          steam_ids: cleanSteam,
+          eos_ids: cleanEos,
+        }
+      );
+      toast.success("User updated");
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    } catch {
+      toast.error("Failed to update user");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.delete(
+        `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`
+      );
+      toast.success(`Removed ${user.discord_name}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      onClose();
+    } catch {
+      toast.error("Failed to remove user");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4">
+      {/* Meta info */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Whitelist</Label>
+          <Badge variant="outline">{user.whitelist_name}</Badge>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Tier</Label>
+          <p className="text-sm">{user.last_plan_name ?? "—"}</p>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Slots</Label>
+          <p className="text-sm">
+            {(user.steam_ids?.length ?? 0) + (user.eos_ids?.length ?? 0)} /{" "}
+            {user.effective_slot_limit}
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Status</Label>
+          <Select value={status} onValueChange={(v) => v && setStatus(v)}>
+            <SelectTrigger className="h-8 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Status</Label>
-        <Badge variant={statusVariant[user.status] ?? "outline"}>
-          {user.status}
-        </Badge>
-      </div>
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Tier</Label>
-        <p className="text-sm">{user.last_plan_name ?? "—"}</p>
-      </div>
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Slots</Label>
-        <p className="text-sm">
-          {(user.steam_ids?.length ?? 0) + (user.eos_ids?.length ?? 0)} /{" "}
-          {user.effective_slot_limit}
-        </p>
-      </div>
+
+      {/* Steam IDs */}
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">Steam IDs</Label>
-        {user.steam_ids?.length ? (
-          <ul className="space-y-1">
-            {user.steam_ids.map((id) => (
-              <li key={id} className="font-mono text-xs">
-                {id}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-xs text-muted-foreground">None</p>
-        )}
+        {steamIds.map((id, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+              Slot {idx + 1}
+            </span>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={id}
+              onChange={(e) => updateSteamId(idx, e.target.value)}
+              placeholder="76561198..."
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => removeSteamSlot(idx)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addSteamSlot}>
+          <Plus className="mr-1 h-3 w-3" /> Add Steam ID
+        </Button>
       </div>
+
+      {/* EOS IDs */}
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">EOS IDs</Label>
-        {user.eos_ids?.length ? (
-          <ul className="space-y-1">
-            {user.eos_ids.map((id) => (
-              <li key={id} className="font-mono text-xs">
-                {id}
-              </li>
-            ))}
-          </ul>
-        ) : (
+        {eosIds.length === 0 && (
           <p className="text-xs text-muted-foreground">None</p>
         )}
+        {eosIds.map((id, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+              EOS {idx + 1}
+            </span>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={id}
+              onChange={(e) => updateEosId(idx, e.target.value)}
+              placeholder="0002a101..."
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => removeEosSlot(idx)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addEosSlot}>
+          <Plus className="mr-1 h-3 w-3" /> Add EOS ID
+        </Button>
       </div>
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Created</Label>
-        <p className="text-xs">{new Date(user.created_at).toLocaleString()}</p>
+
+      {/* Timestamps */}
+      <div className="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
+        <div>
+          <Label className="text-[11px]">Created</Label>
+          <p>{new Date(user.created_at).toLocaleString()}</p>
+        </div>
+        <div>
+          <Label className="text-[11px]">Last Updated</Label>
+          <p>{new Date(user.updated_at).toLocaleString()}</p>
+        </div>
       </div>
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Last Updated</Label>
-        <p className="text-xs">{new Date(user.updated_at).toLocaleString()}</p>
+
+      {/* Actions */}
+      <div className="mt-auto flex gap-2 border-t pt-4">
+        <Button onClick={handleSave} disabled={saving} className="flex-1">
+          {saving ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="mr-1.5 h-4 w-4" />
+          )}
+          Save Changes
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger
+            render={
+              <Button variant="destructive" disabled={removing} />
+            }
+          >
+            {removing ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-1.5 h-4 w-4" />
+            )}
+            Remove
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove User</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently remove {user.discord_name} from the{" "}
+                {user.whitelist_name} whitelist.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={handleRemove}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Add User Dialog — with role verification                           */
+/* ------------------------------------------------------------------ */
+
+interface RoleVerifyResult {
+  discord_id: string;
+  name: string;
+  roles: string[];
+  suggested_plan: string | null;
+  suggested_slots: number;
+}
+
+type VerifyState =
+  | { step: "idle" }
+  | { step: "checking" }
+  | { step: "verified"; result: RoleVerifyResult }
+  | { step: "no_role"; name?: string }
+  | { step: "error"; message: string };
 
 function AddUserDialog({
   whitelists,
@@ -441,27 +705,78 @@ function AddUserDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [discordId, setDiscordId] = useState("");
-  const [discordName, setDiscordName] = useState("");
   const [whitelistSlug, setWhitelistSlug] = useState("");
   const [steamIds, setSteamIds] = useState("");
   const [eosIds, setEosIds] = useState("");
+  const [verifyState, setVerifyState] = useState<VerifyState>({
+    step: "idle",
+  });
+  const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
 
-  async function handleAdd() {
+  function resetForm() {
+    setDiscordId("");
+    setWhitelistSlug("");
+    setSteamIds("");
+    setEosIds("");
+    setVerifyState({ step: "idle" });
+    setSubmitting(false);
+  }
+
+  // Verify roles when Discord ID is entered and a whitelist is selected
+  const handleVerify = useCallback(async () => {
     if (!discordId || !whitelistSlug) {
-      toast.error("Discord ID and whitelist are required");
+      toast.error("Enter a Discord ID and select a whitelist first");
       return;
     }
-    // Parse comma/newline separated IDs
-    const steamList = steamIds.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
-    const eosList = eosIds.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+
+    setVerifyState({ step: "checking" });
+
+    try {
+      const res = await api.post<{ results: RoleVerifyResult[] }>(
+        "/api/admin/verify-roles",
+        {
+          discord_ids: [discordId],
+          whitelist_type: whitelistSlug,
+        }
+      );
+
+      const match = res.results?.[0];
+      if (match && match.suggested_plan) {
+        setVerifyState({ step: "verified", result: match });
+      } else if (match) {
+        setVerifyState({ step: "no_role", name: match.name });
+      } else {
+        setVerifyState({ step: "no_role" });
+      }
+    } catch {
+      setVerifyState({
+        step: "error",
+        message: "Failed to verify roles. The user may not be in the server.",
+      });
+    }
+  }, [discordId, whitelistSlug]);
+
+  async function handleAdd() {
+    if (verifyState.step !== "verified") {
+      toast.error("Role verification must pass before adding a user");
+      return;
+    }
+
+    const steamList = steamIds
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const eosList = eosIds
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     if (steamList.length === 0 && eosList.length === 0) {
       toast.error("At least one Steam64 or EOS ID is required");
       return;
     }
 
-    // Validate Steam64 format
     for (const sid of steamList) {
       if (!/^7656119\d{10}$/.test(sid)) {
         toast.error(`Invalid Steam64 ID: ${sid}`);
@@ -469,30 +784,36 @@ function AddUserDialog({
       }
     }
 
+    setSubmitting(true);
     try {
-      await api.post(`/api/admin/users`, {
+      await api.post("/api/admin/users", {
         discord_id: discordId,
-        discord_name: discordName || `User ${discordId}`,
+        discord_name:
+          verifyState.result.name || `User ${discordId}`,
         whitelist_slug: whitelistSlug,
         steam_ids: steamList,
         eos_ids: eosList,
       });
       toast.success("User added successfully");
-      setDiscordId("");
-      setDiscordName("");
-      setWhitelistSlug("");
-      setSteamIds("");
-      setEosIds("");
+      resetForm();
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
     } catch {
       toast.error("Failed to add user");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) resetForm();
+      }}
+    >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         Add User
@@ -501,65 +822,155 @@ function AddUserDialog({
         <DialogHeader>
           <DialogTitle>Add User</DialogTitle>
           <DialogDescription>
-            Manually add a user to a whitelist with their IDs.
+            Enter a Discord ID and verify their role before adding.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+
+        <div className="space-y-4">
+          {/* Step 1: Discord ID + whitelist selection */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Discord ID <span className="text-destructive">*</span></Label>
+              <Label>
+                Discord ID <span className="text-destructive">*</span>
+              </Label>
               <Input
                 value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
+                onChange={(e) => {
+                  setDiscordId(e.target.value);
+                  if (verifyState.step !== "idle")
+                    setVerifyState({ step: "idle" });
+                }}
                 placeholder="e.g. 123456789012345678"
               />
             </div>
             <div className="space-y-2">
-              <Label>Discord Name</Label>
-              <Input
-                value={discordName}
-                onChange={(e) => setDiscordName(e.target.value)}
-                placeholder="e.g. username"
-              />
+              <Label>
+                Whitelist <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={whitelistSlug}
+                onValueChange={(v) => {
+                  setWhitelistSlug(v ?? "");
+                  if (verifyState.step !== "idle")
+                    setVerifyState({ step: "idle" });
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select whitelist" />
+                </SelectTrigger>
+                <SelectContent>
+                  {whitelists.map((wl) => (
+                    <SelectItem key={wl.slug} value={wl.slug}>
+                      {wl.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Whitelist <span className="text-destructive">*</span></Label>
-            <Select value={whitelistSlug} onValueChange={(v) => setWhitelistSlug(v ?? "")}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select whitelist" />
-              </SelectTrigger>
-              <SelectContent>
-                {whitelists.map((wl) => (
-                  <SelectItem key={wl.slug} value={wl.slug}>
-                    {wl.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Steam64 IDs <span className="text-destructive">*</span></Label>
-            <Input
-              value={steamIds}
-              onChange={(e) => setSteamIds(e.target.value)}
-              placeholder="e.g. 76561198012345678 (comma-separated for multiple)"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Must start with 7656119 and be 17 digits. Separate multiple with commas.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label>EOS IDs <span className="text-xs text-muted-foreground">(optional)</span></Label>
-            <Input
-              value={eosIds}
-              onChange={(e) => setEosIds(e.target.value)}
-              placeholder="e.g. 0002a10186d9453eb8e43a8e67e4f25c"
-            />
-          </div>
+
+          {/* Verify button */}
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={
+              !discordId ||
+              !whitelistSlug ||
+              verifyState.step === "checking"
+            }
+            onClick={handleVerify}
+          >
+            {verifyState.step === "checking" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <UserIcon className="mr-2 h-4 w-4" />
+            )}
+            Verify Discord Role
+          </Button>
+
+          {/* Verify result feedback */}
+          {verifyState.step === "verified" && (
+            <div className="flex items-start gap-3 rounded-lg border border-green-500/30 bg-green-500/5 p-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-500" />
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">
+                  {verifyState.result.name}
+                </p>
+                <p className="text-muted-foreground">
+                  Role: {verifyState.result.suggested_plan} —{" "}
+                  {verifyState.result.suggested_slots} slot
+                  {verifyState.result.suggested_slots !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {verifyState.step === "no_role" && (
+            <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">No whitelist role found</p>
+                <p className="text-muted-foreground">
+                  {verifyState.name ? `${verifyState.name} doesn't` : "This user doesn't"} have a
+                  whitelist role assigned in Discord. They need one of the
+                  mapped roles (e.g. @Spooky Whitelist, @Ghost Whitelist).
+                  Assign the role first, then add them here.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {verifyState.step === "error" && (
+            <div className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+              <p className="text-sm text-muted-foreground">
+                {verifyState.message}
+              </p>
+            </div>
+          )}
+
+          {/* Step 2: IDs — only shown once verified */}
+          {verifyState.step === "verified" && (
+            <>
+              <div className="space-y-2">
+                <Label>
+                  Steam64 IDs <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={steamIds}
+                  onChange={(e) => setSteamIds(e.target.value)}
+                  placeholder="e.g. 76561198012345678 (comma-separated)"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Must start with 7656119 and be 17 digits. Separate
+                  multiple with commas.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  EOS IDs{" "}
+                  <span className="text-xs text-muted-foreground">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  value={eosIds}
+                  onChange={(e) => setEosIds(e.target.value)}
+                  placeholder="e.g. 0002a10186d9453eb8e43a8e67e4f25c"
+                />
+              </div>
+            </>
+          )}
         </div>
+
         <DialogFooter>
-          <Button onClick={handleAdd} disabled={!discordId || !whitelistSlug}>
+          <Button
+            onClick={handleAdd}
+            disabled={verifyState.step !== "verified" || submitting}
+          >
+            {submitting && (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            )}
             Add User
           </Button>
         </DialogFooter>
