@@ -10,6 +10,9 @@ import {
   Send,
   Settings2,
   Copy,
+  X,
+  Pencil,
+  Check,
 } from "lucide-react";
 import {
   useSettings,
@@ -229,6 +232,7 @@ function PanelCard({
   const pushPanel = usePushPanel();
   const { data: settingsData } = useSettings();
 
+  const [configMode, setConfigMode] = useState(false);
   const [channelId, setChannelId] = useState(panel.channel_id ?? "");
   const [logChannelId, setLogChannelId] = useState(panel.log_channel_id ?? "");
   const [whitelistId, setWhitelistId] = useState(
@@ -237,6 +241,8 @@ function PanelCard({
 
   const channelName =
     channels.find((c) => c.id === panel.channel_id)?.name ?? "None";
+  const logChannelName =
+    channels.find((c) => c.id === panel.log_channel_id)?.name ?? "None";
   const wlName =
     whitelists.find((w) => w.id === panel.whitelist_id)?.name ?? "None";
 
@@ -259,10 +265,21 @@ function PanelCard({
         whitelist_id: whitelistId ? Number(whitelistId) : null,
       },
       {
-        onSuccess: () => toast.success("Panel saved"),
+        onSuccess: () => {
+          toast.success("Panel saved");
+          setConfigMode(false);
+        },
         onError: () => toast.error("Failed to save panel"),
       }
     );
+  }
+
+  function handleCancel() {
+    // Reset dropdowns to current panel values
+    setChannelId(panel.channel_id ?? "");
+    setLogChannelId(panel.log_channel_id ?? "");
+    setWhitelistId(panel.whitelist_id?.toString() ?? "");
+    setConfigMode(false);
   }
 
   function handlePush() {
@@ -282,6 +299,10 @@ function PanelCard({
     });
   }
 
+  // Tier summary data
+  const wlSlug = whitelists.find((w) => w.id === panel.whitelist_id)?.slug;
+  const mappings = wlSlug && settingsData?.role_mappings?.[wlSlug] ? settingsData.role_mappings[wlSlug] : [];
+
   return (
     <Card>
       <CardHeader>
@@ -295,9 +316,13 @@ function PanelCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Always show badges summary */}
         <div className="flex flex-wrap gap-1.5">
           {panel.channel_id && (
             <Badge variant="outline">#{channelName}</Badge>
+          )}
+          {panel.log_channel_id && (
+            <Badge variant="outline">Log: #{logChannelName}</Badge>
           )}
           {panel.whitelist_id && (
             <Badge variant="outline">{wlName}</Badge>
@@ -307,85 +332,104 @@ function PanelCard({
           )}
         </div>
 
-        {/* Tier summary from role mappings */}
-        {(() => {
-          const wlSlug = whitelists.find((w) => w.id === panel.whitelist_id)?.slug;
-          const mappings = wlSlug && settingsData?.role_mappings?.[wlSlug] ? settingsData.role_mappings[wlSlug] : [];
-          if (mappings.length > 0) {
-            return (
-              <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-2">
-                <p className="text-[10px] font-semibold uppercase text-orange-400/70 mb-1">Tiers</p>
-                <div className="flex flex-wrap gap-1">
-                  {mappings.map((rm) => (
-                    <Badge key={rm.role_id} variant="secondary" className="text-[10px]">
-                      @{rm.role_name} = {rm.slot_limit} {rm.slot_limit === 1 ? "slot" : "slots"}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            );
-          }
-          return null;
-        })()}
+        {/* Tier summary from role mappings — always visible */}
+        {mappings.length > 0 && (
+          <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-2">
+            <p className="text-[10px] font-semibold uppercase text-orange-400/70 mb-1">Tiers</p>
+            <div className="flex flex-wrap gap-1">
+              {mappings.map((rm) => (
+                <Badge key={rm.role_id} variant="secondary" className="text-[10px]">
+                  @{rm.role_name} = {rm.slot_limit} {rm.slot_limit === 1 ? "slot" : "slots"}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
 
-        <div className="space-y-2">
-          <Label className="text-xs">Channel</Label>
-          <Combobox
-            options={channelOptions}
-            value={channelId}
-            onValueChange={setChannelId}
-            placeholder="Select channel"
-            searchPlaceholder="Search channels..."
-            emptyText="No channels found."
-          />
-        </div>
+        {/* Configure mode: show dropdowns */}
+        {configMode && (
+          <>
+            <div className="space-y-2">
+              <Label className="text-xs">Channel</Label>
+              <Combobox
+                options={channelOptions}
+                value={channelId}
+                onValueChange={setChannelId}
+                placeholder="Select channel"
+                searchPlaceholder="Search channels..."
+                emptyText="No channels found."
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs">Log Channel</Label>
-          <Combobox
-            options={channelOptions}
-            value={logChannelId}
-            onValueChange={setLogChannelId}
-            placeholder="Select log channel"
-            searchPlaceholder="Search channels..."
-            emptyText="No channels found."
-          />
-        </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Log Channel</Label>
+              <Combobox
+                options={channelOptions}
+                value={logChannelId}
+                onValueChange={setLogChannelId}
+                placeholder="Select log channel"
+                searchPlaceholder="Search channels..."
+                emptyText="No channels found."
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs">Whitelist</Label>
-          <Combobox
-            options={whitelistOptions}
-            value={whitelistId}
-            onValueChange={setWhitelistId}
-            placeholder="Select whitelist"
-            searchPlaceholder="Search whitelists..."
-            emptyText="No whitelists found."
-          />
-        </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Whitelist</Label>
+              <Combobox
+                options={whitelistOptions}
+                value={whitelistId}
+                onValueChange={setWhitelistId}
+                placeholder="Select whitelist"
+                searchPlaceholder="Search whitelists..."
+                emptyText="No whitelists found."
+              />
+            </div>
+          </>
+        )}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          className="bg-emerald-600 text-white hover:bg-emerald-700"
-          onClick={handlePush}
-          disabled={pushPanel.isPending}
-        >
-          <Send className="mr-1 h-3 w-3" />
-          Push
-        </Button>
-        <Button
-          size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
-          onClick={handleSave}
-          disabled={updatePanel.isPending}
-        >
-          <Save className="mr-1 h-3 w-3" />
-          Save
-        </Button>
-        <ManageRolesButton panelWhitelistSlug={
-          whitelists.find((w) => w.id === panel.whitelist_id)?.slug
-        } />
+        {configMode ? (
+          <>
+            <Button
+              size="sm"
+              className="bg-blue-600 text-white hover:bg-blue-700"
+              onClick={handleSave}
+              disabled={updatePanel.isPending}
+            >
+              <Save className="mr-1 h-3 w-3" />
+              Save
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCancel}
+            >
+              <X className="mr-1 h-3 w-3" />
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={handlePush}
+              disabled={pushPanel.isPending}
+            >
+              <Send className="mr-1 h-3 w-3" />
+              Push
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfigMode(true)}
+            >
+              <Pencil className="mr-1 h-3 w-3" />
+              Configure
+            </Button>
+            <ManageRolesButton panelWhitelistSlug={wlSlug} />
+          </>
+        )}
         {!panel.is_default && (
           <AlertDialog>
             <AlertDialogTrigger
@@ -435,6 +479,9 @@ function ManageRolesButton({
 
   const slug = panelWhitelistSlug;
 
+  // Track inline edits for each role's slot count: roleId -> editedSlotValue
+  const [editingSlots, setEditingSlots] = useState<Record<string, string>>({});
+
   // Get existing role mappings for this whitelist from settings
   const existingMappings = slug && settingsData?.role_mappings?.[slug]
     ? settingsData.role_mappings[slug]
@@ -481,6 +528,26 @@ function ManageRolesButton({
     );
   }
 
+  function handleUpdateSlots(roleId: string) {
+    if (!slug) return;
+    const newLimit = Number(editingSlots[roleId]);
+    if (!newLimit || newLimit < 1) return;
+    addRole.mutate(
+      { slug, role_id: roleId, slot_limit: newLimit },
+      {
+        onSuccess: () => {
+          toast.success("Slot count updated");
+          setEditingSlots((prev) => {
+            const next = { ...prev };
+            delete next[roleId];
+            return next;
+          });
+        },
+        onError: () => toast.error("Failed to update slot count"),
+      }
+    );
+  }
+
   return (
     <Dialog>
       <DialogTrigger render={<Button size="sm" variant="outline" />}>
@@ -503,28 +570,55 @@ function ManageRolesButton({
             {existingMappings.length > 0 ? (
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Current Roles</Label>
-                {existingMappings.map((rm) => (
-                  <div
-                    key={rm.role_id}
-                    className="flex items-center justify-between rounded-lg border border-zinc-800 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{rm.role_name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {rm.slot_limit} {rm.slot_limit === 1 ? "slot" : "slots"}
-                      </Badge>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-destructive hover:text-destructive"
-                      onClick={() => handleRemoveRole(rm.role_id)}
-                      disabled={removeRole.isPending}
+                {existingMappings.map((rm) => {
+                  const isEditing = rm.role_id in editingSlots;
+                  const editValue = editingSlots[rm.role_id] ?? String(rm.slot_limit);
+                  return (
+                    <div
+                      key={rm.role_id}
+                      className="flex items-center justify-between rounded-lg border border-zinc-800 px-3 py-2"
                     >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{rm.role_name}</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={isEditing ? editValue : String(rm.slot_limit)}
+                          onChange={(e) =>
+                            setEditingSlots((prev) => ({
+                              ...prev,
+                              [rm.role_id]: e.target.value,
+                            }))
+                          }
+                          className="h-7 w-16 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">slots</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {isEditing && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-emerald-500 hover:text-emerald-400"
+                            onClick={() => handleUpdateSlots(rm.role_id)}
+                            disabled={addRole.isPending}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-destructive hover:text-destructive"
+                          onClick={() => handleRemoveRole(rm.role_id)}
+                          disabled={removeRole.isPending}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">No role mappings configured.</p>
