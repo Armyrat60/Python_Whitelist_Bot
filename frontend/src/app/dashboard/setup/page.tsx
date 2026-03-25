@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -285,8 +286,15 @@ function PanelCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-1.5">
-          <Badge variant="outline">#{channelName}</Badge>
-          <Badge variant="outline">{wlName}</Badge>
+          {panel.channel_id && (
+            <Badge variant="outline">#{channelName}</Badge>
+          )}
+          {panel.whitelist_id && (
+            <Badge variant="outline">{wlName}</Badge>
+          )}
+          {!panel.channel_id && !panel.whitelist_id && (
+            <span className="text-xs text-muted-foreground">Not configured</span>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -621,9 +629,11 @@ function WhitelistCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
-  const baseUrl =
-    typeof window !== "undefined" ? window.location.origin : "";
-  const url = `${baseUrl}/api/whitelist/${whitelist.slug}/cfg`;
+  const { data: urlsData } = useQuery<{ urls: { slug: string; url: string }[] }>({
+    queryKey: ["whitelist-urls"],
+    queryFn: () => api.get("/api/admin/whitelist-urls"),
+  });
+  const url = urlsData?.urls?.find((u) => u.slug === whitelist.slug)?.url ?? "Loading...";
 
   function copyUrl() {
     navigator.clipboard.writeText(url);
