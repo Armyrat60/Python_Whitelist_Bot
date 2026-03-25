@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const API_URL = process.env.BACKEND_URL || "http://pythonwhitelistbot.railway.internal:8080";
+const API_URL = process.env.BACKEND_URL || "https://pythonwhitelistbot-production.up.railway.app";
 
 const nextConfig: NextConfig = {
   output: "standalone",
