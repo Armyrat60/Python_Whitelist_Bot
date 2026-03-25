@@ -73,6 +73,7 @@ class WhitelistBot(commands.Bot):
 
         self.weekly_report.start()
         self.daily_housekeeping.start()
+        self.panel_refresh_poller.start()
 
     async def on_ready(self):
         log.info("Connected as %s (%s)", self.user, self.user.id)
@@ -678,4 +679,28 @@ class WhitelistBot(commands.Bot):
 
     @weekly_report.before_loop
     async def _before_weekly_report(self):
+        await self.wait_until_ready()
+
+    @tasks.loop(seconds=15)
+    async def panel_refresh_poller(self):
+        """Poll for panel refresh requests from the web dashboard."""
+        try:
+            pending = await self.db.get_pending_refreshes()
+            for row in pending:
+                refresh_id, guild_id, panel_id, reason = row[0], int(row[1]), int(row[2]), row[3]
+                try:
+                    panel = await self.db.get_panel_by_id(panel_id)
+                    if panel and panel.get("whitelist_id"):
+                        wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
+                        if wl:
+                            await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
+                            log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
+                except Exception:
+                    log.exception("Failed to auto-refresh panel %s (guild=%s)", panel_id, guild_id)
+                await self.db.mark_refresh_processed(refresh_id)
+        except Exception:
+            pass  # DB might not be ready yet
+
+    @panel_refresh_poller.before_loop
+    async def _before_panel_poller(self):
         await self.wait_until_ready()

@@ -3138,6 +3138,9 @@ async def admin_add_tier_entry(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "Failed to add tier entry."}, status=500)
 
+    # Queue affected panels for auto-refresh
+    await db.queue_panels_for_category(guild_id, category_id, reason=f"tier_added:{role_name}")
+
     log.info("Guild %s: admin added tier entry role %s to category %s", guild_id, role_id, category_id)
     return web.json_response({
         "ok": True,
@@ -3191,6 +3194,8 @@ async def admin_update_tier_entry(request: web.Request) -> web.Response:
 
     if update_kwargs:
         await db.update_tier_entry(entry_id, **update_kwargs)
+        # Queue affected panels for auto-refresh
+        await db.queue_panels_for_category(guild_id, category_id, reason=f"tier_updated:{entry_id}")
 
     log.info("Guild %s: admin updated tier entry %s in category %s", guild_id, entry_id, category_id)
     return web.json_response({"ok": True, "entry_id": entry_id})
@@ -3215,6 +3220,8 @@ async def admin_delete_tier_entry(request: web.Request) -> web.Response:
         return web.json_response({"error": "Tier category not found."}, status=404)
 
     await db.remove_tier_entry(entry_id)
+    # Queue affected panels for auto-refresh
+    await db.queue_panels_for_category(guild_id, category_id, reason=f"tier_removed:{entry_id}")
 
     log.info("Guild %s: admin deleted tier entry %s from category %s", guild_id, entry_id, category_id)
     return web.json_response({"ok": True, "deleted_entry_id": entry_id})

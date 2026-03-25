@@ -333,6 +333,16 @@ MYSQL_SCHEMA = [
         UNIQUE KEY uq_guild_cat_role (guild_id, category_id, role_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    """
+    CREATE TABLE IF NOT EXISTS panel_refresh_queue (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        panel_id INT NOT NULL,
+        reason VARCHAR(200) NOT NULL DEFAULT 'settings_changed',
+        created_at DATETIME NOT NULL,
+        processed TINYINT(1) NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 
 POSTGRES_SCHEMA = [
@@ -503,6 +513,16 @@ POSTGRES_SCHEMA = [
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMP NOT NULL,
         UNIQUE (guild_id, category_id, role_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS panel_refresh_queue (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        panel_id INT NOT NULL,
+        reason VARCHAR(200) NOT NULL DEFAULT 'settings_changed',
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        processed BOOLEAN NOT NULL DEFAULT FALSE
     )
     """,
 ]
@@ -988,6 +1008,18 @@ class Database:
         )
         return self._row_to_whitelist(row) if row else None
 
+    async def get_whitelist_by_id(self, whitelist_id: int) -> Optional[Dict[str, Any]]:
+        row = await self.fetchone(
+            """
+            SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
+                   log_channel_id, squad_group, output_filename, default_slot_limit,
+                   stack_roles, is_default, created_at, updated_at
+            FROM whitelists WHERE id=%s
+            """,
+            (whitelist_id,),
+        )
+        return self._row_to_whitelist(row) if row else None
+
     async def get_default_whitelist(self, guild_id: int) -> Optional[Dict[str, Any]]:
         is_def = True if self.engine == "postgres" else 1
         row = await self.fetchone(
@@ -1128,6 +1160,39 @@ class Database:
 
     async def delete_panel(self, panel_id: int):
         await self.execute("DELETE FROM panels WHERE id=%s", (panel_id,))
+
+    # ── Panel refresh queue ──
+
+    async def queue_panel_refresh(self, guild_id: int, panel_id: int, reason: str = "settings_changed"):
+        """Queue a panel for Discord embed refresh."""
+        await self.execute(
+            "INSERT INTO panel_refresh_queue (guild_id, panel_id, reason, created_at) VALUES (%s, %s, %s, %s)",
+            (guild_id, panel_id, reason, utcnow()),
+        )
+
+    async def queue_panels_for_category(self, guild_id: int, category_id: int, reason: str = "tier_changed"):
+        """Queue all panels that use a specific tier category for refresh."""
+        panels = await self.fetchall(
+            "SELECT id FROM panels WHERE guild_id=%s AND tier_category_id=%s",
+            (guild_id, category_id),
+        )
+        for row in panels:
+            await self.queue_panel_refresh(guild_id, row[0], reason)
+
+    async def get_pending_refreshes(self) -> List[tuple]:
+        """Get unprocessed panel refreshes. Returns (id, guild_id, panel_id, reason)."""
+        is_false = False if self.engine == "postgres" else 0
+        return await self.fetchall(
+            "SELECT id, guild_id, panel_id, reason FROM panel_refresh_queue WHERE processed=%s ORDER BY created_at LIMIT 50",
+            (is_false,),
+        )
+
+    async def mark_refresh_processed(self, refresh_id: int):
+        is_true = True if self.engine == "postgres" else 1
+        await self.execute(
+            "UPDATE panel_refresh_queue SET processed=%s WHERE id=%s",
+            (is_true, refresh_id),
+        )
 
     # ── Legacy type config (backward compatibility shim) ──
 
