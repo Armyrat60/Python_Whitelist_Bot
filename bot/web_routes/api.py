@@ -2564,9 +2564,13 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
     tier_lines = []
     for rm in role_mappings:
-        rm_dict = {"role_name": rm[3], "slot_limit": rm[4]} if isinstance(rm, tuple) else rm
-        name = rm_dict.get("role_name", "Unknown")
-        slots = rm_dict.get("slot_limit", 1)
+        # Tuple format: (role_id, role_name, slot_limit, is_active)
+        if isinstance(rm, tuple):
+            name = rm[1] if len(rm) > 1 else "Unknown"
+            slots = rm[2] if len(rm) > 2 else 1
+        else:
+            name = rm.get("role_name", "Unknown")
+            slots = rm.get("slot_limit", 1)
         tier_lines.append(f"**@{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
 
     description = f"Submit your Steam64 ID to get whitelisted on the server.\n\n"
