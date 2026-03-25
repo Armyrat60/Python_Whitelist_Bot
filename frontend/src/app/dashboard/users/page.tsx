@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -81,6 +81,17 @@ export default function UsersPage() {
   const perPage = 25;
   const { data, isLoading } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+
+  // Debounced dynamic search — update after 300ms of no typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput !== search) {
+        setSearch(searchInput);
+        setPage(1);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, search]);
 
   function handleSearch() {
     setSearch(searchInput);
