@@ -12,6 +12,7 @@ import {
   Copy,
 } from "lucide-react";
 import {
+  useSettings,
   usePanels,
   useWhitelists,
   useRoles,
@@ -226,6 +227,7 @@ function PanelCard({
   const updatePanel = useUpdatePanel();
   const deletePanel = useDeletePanel();
   const pushPanel = usePushPanel();
+  const { data: settingsData } = useSettings();
 
   const [channelId, setChannelId] = useState(panel.channel_id ?? "");
   const [logChannelId, setLogChannelId] = useState(panel.log_channel_id ?? "");
@@ -301,6 +303,27 @@ function PanelCard({
             <span className="text-xs text-muted-foreground">Not configured</span>
           )}
         </div>
+
+        {/* Tier summary from role mappings */}
+        {(() => {
+          const wlSlug = whitelists.find((w) => w.id === panel.whitelist_id)?.slug;
+          const mappings = wlSlug && settingsData?.role_mappings?.[wlSlug] ? settingsData.role_mappings[wlSlug] : [];
+          if (mappings.length > 0) {
+            return (
+              <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-2">
+                <p className="text-[10px] font-semibold uppercase text-orange-400/70 mb-1">Tiers</p>
+                <div className="flex flex-wrap gap-1">
+                  {mappings.map((rm) => (
+                    <Badge key={rm.role_id} variant="secondary" className="text-[10px]">
+                      @{rm.role_name} = {rm.slot_limit} {rm.slot_limit === 1 ? "slot" : "slots"}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         <div className="space-y-2">
           <Label className="text-xs">Channel</Label>
@@ -401,15 +424,18 @@ function ManageRolesButton({
   panelWhitelistSlug?: string;
 }) {
   const { data: roles } = useRoles();
+  const { data: settingsData } = useSettings();
   const addRole = useAddRoleMapping();
   const removeRole = useRemoveRoleMapping();
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [slotCount, setSlotCount] = useState("1");
 
-  // We get role mappings from the settings query which includes whitelists with their mappings
-  // For now, this is a simplified version
-
   const slug = panelWhitelistSlug;
+
+  // Get existing role mappings for this whitelist from settings
+  const existingMappings = slug && settingsData?.role_mappings?.[slug]
+    ? settingsData.role_mappings[slug]
+    : [];
 
   const roleOptions: ComboboxOption[] = useMemo(
     () =>
@@ -468,11 +494,42 @@ function ManageRolesButton({
           </DialogDescription>
         </DialogHeader>
 
-        {slug && (
+        {slug ? (
           <div className="space-y-4">
+            {/* Existing role mappings */}
+            {existingMappings.length > 0 ? (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Current Roles</Label>
+                {existingMappings.map((rm) => (
+                  <div
+                    key={rm.role_id}
+                    className="flex items-center justify-between rounded-lg border border-zinc-800 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{rm.role_name}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {rm.slot_limit} {rm.slot_limit === 1 ? "slot" : "slots"}
+                      </Badge>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-destructive hover:text-destructive"
+                      onClick={() => handleRemoveRole(rm.role_id)}
+                      disabled={removeRole.isPending}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No role mappings configured.</p>
+            )}
+
             {/* Add new role mapping */}
             <div className="space-y-2">
-              <Label>Add Role Mapping</Label>
+              <Label className="text-xs text-muted-foreground">Add Role</Label>
               <div className="flex gap-2">
                 <Combobox
                   options={roleOptions}
@@ -501,6 +558,10 @@ function ManageRolesButton({
               </div>
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground py-4">
+            Link a whitelist to this panel first, then you can manage role mappings.
+          </p>
         )}
 
         <DialogFooter showCloseButton />
