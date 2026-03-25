@@ -480,19 +480,56 @@ async def admin_users(request: web.Request) -> web.Response:
         tuple(params_page),
     )
 
+    # Fetch identifiers for all users on this page
+    user_ids_on_page = [(row[0], row[2]) for row in rows]  # (discord_id, wl_slug)
+    id_map: dict[str, dict] = {}  # key: "discord_id:wl_slug" -> {"steam_ids": [], "eos_ids": []}
+
+    if rows:
+        discord_id_list = list(set(str(r[0]) for r in rows))
+        # Fetch all identifiers for these users in this guild
+        placeholders = ",".join(["%s"] * len(discord_id_list))
+        id_rows = await db.fetchall(
+            f"""
+            SELECT i.discord_id, i.id_type, i.id_value, w.slug
+            FROM whitelist_identifiers i
+            LEFT JOIN whitelists w ON w.id = i.whitelist_id
+            WHERE i.guild_id=%s AND CAST(i.discord_id AS TEXT) IN ({placeholders})
+            """ if db.engine == "postgres" else f"""
+            SELECT i.discord_id, i.id_type, i.id_value, w.slug
+            FROM whitelist_identifiers i
+            LEFT JOIN whitelists w ON w.id = i.whitelist_id
+            WHERE i.guild_id=%s AND CAST(i.discord_id AS CHAR) IN ({placeholders})
+            """,
+            tuple([guild_id] + discord_id_list),
+        )
+        for irow in (id_rows or []):
+            key = f"{irow[0]}:{irow[3] or ''}"
+            if key not in id_map:
+                id_map[key] = {"steam_ids": [], "eos_ids": []}
+            if irow[1] == "steam64":
+                id_map[key]["steam_ids"].append(str(irow[2]))
+            elif irow[1] == "eosid":
+                id_map[key]["eos_ids"].append(str(irow[2]))
+
     users = []
     for row in rows:
         meta = _unpack_plan_meta(row[5])
+        key = f"{row[0]}:{row[2] or ''}"
+        ids = id_map.get(key, {"steam_ids": [], "eos_ids": []})
         users.append({
             "discord_id": str(row[0]),
             "discord_name": row[1],
             "whitelist_type": row[2] or "",
+            "whitelist_slug": row[2] or "",
             "status": row[3],
             "effective_slot_limit": row[4],
             "last_plan_name": meta["plan"],
             "notes": meta["notes"],
             "expires_at": meta["expires_at"],
             "updated_at": str(row[6]) if row[6] else "",
+            "created_at": str(row[6]) if row[6] else "",
+            "steam_ids": ids["steam_ids"],
+            "eos_ids": ids["eos_ids"],
         })
 
     return web.json_response({
