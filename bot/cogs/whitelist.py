@@ -104,33 +104,53 @@ class WhitelistPanelView(discord.ui.View):
         await self.bot.start_whitelist_flow(interaction, self.whitelist_type)
 
     async def _view_callback(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
-        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
-        if not wl:
-            await interaction.response.send_message("Whitelist not found.", ephemeral=True)
-            return
-        wl_id = wl["id"]
-        row = await self.bot.db.get_user_record(guild_id, interaction.user.id, wl_id)
-        ids = await self.bot.db.get_identifiers(guild_id, interaction.user.id, wl_id)
-        if not row and not ids:
-            await interaction.response.send_message("You don't have a whitelist entry yet. Click **Submit / Update ID** to get started!", ephemeral=True)
-            return
-        embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
-        if row:
-            embed.add_field(name="Status", value=row[1], inline=True)
-            embed.add_field(name="Slots", value=str(row[3]), inline=True)
-            if row[4]:
-                embed.add_field(name="Tier", value=row[4], inline=True)
-        if ids:
-            id_lines = []
-            for t, v, *_ in ids:
-                label = "Steam64" if t == "steam64" else "EOS"
-                id_lines.append(f"**{label}:** `{v}`")
-            embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
-        else:
-            embed.add_field(name="Your IDs", value="None submitted yet", inline=False)
-        embed.set_footer(text=f"Squad Whitelister • {_DASHBOARD_URL.replace('https://', '')}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            guild_id = interaction.guild.id
+            wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+            if not wl:
+                await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+                return
+            wl_id = wl["id"]
+            member = interaction.guild.get_member(interaction.user.id)
+            ids = await self.bot.db.get_identifiers(guild_id, interaction.user.id, wl_id)
+
+            # Always recalculate slots from current roles (not stale DB record)
+            panels = await self.bot.db.get_panels(guild_id)
+            panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+            slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
+
+            if slots <= 0 and not ids:
+                await interaction.response.send_message(
+                    "You don't have a whitelist role. Contact your server admin to get access.",
+                    ephemeral=True,
+                )
+                return
+
+            embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
+            embed.add_field(name="Slots", value=f"{len(ids)} / {slots} used", inline=True)
+            embed.add_field(name="Tier", value=plan.split(":")[0] if ":" in plan else plan, inline=True)
+
+            if ids:
+                id_lines = []
+                for t, v, *_ in ids:
+                    label = "Steam64" if t == "steam64" else "EOS"
+                    id_lines.append(f"**{label}:** `{v}`")
+                embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
+            else:
+                embed.add_field(name="Your IDs", value="None submitted yet. Click **Submit / Update ID** to add yours!", inline=False)
+
+            embed.set_footer(text=f"Squad Whitelister • {_DASHBOARD_URL.replace('https://', '')}")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception:
+            from bot.config import log
+            log.exception("Error in view callback for %s", interaction.user)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("Something went wrong. Please try again.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("Something went wrong. Please try again.", ephemeral=True)
+            except Exception:
+                pass
 
     async def _manage_callback(self, interaction: discord.Interaction):
         if not await self.bot.user_is_mod(interaction.guild.id, interaction.user):

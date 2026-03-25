@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import List
 
@@ -24,9 +25,31 @@ def validate_identifier(id_type: str, id_value: str) -> bool:
     return False
 
 
+_STEAM_PROFILE_RE = re.compile(r'steamcommunity\.com/profiles/(\d{17})', re.IGNORECASE)
+
+
 def split_identifier_tokens(raw: str) -> List[str]:
+    """Split raw input into identifier tokens.
+
+    Handles:
+    - Comma/newline separated Steam64 IDs
+    - Full Steam profile URLs (extracts the ID)
+    - Mixed input (URLs + raw IDs)
+    """
     raw = raw.replace("\n", ",")
-    return [token.strip() for token in raw.split(",") if token.strip()]
+    tokens = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        # Extract Steam64 from profile URLs
+        m = _STEAM_PROFILE_RE.search(token)
+        if m:
+            tokens.append(m.group(1))
+        else:
+            # Strip any http(s) prefix that doesn't match the pattern
+            tokens.append(token)
+    return tokens
 
 
 async def _modal_on_error(modal, interaction: discord.Interaction, error: Exception):

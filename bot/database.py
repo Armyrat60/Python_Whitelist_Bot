@@ -301,6 +301,7 @@ MYSQL_SCHEMA = [
         whitelist_id INT NULL,
         panel_message_id BIGINT NULL,
         is_default TINYINT(1) NOT NULL DEFAULT 0,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
         tier_category_id INT NULL,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL
@@ -483,6 +484,7 @@ POSTGRES_SCHEMA = [
         whitelist_id INT NULL REFERENCES whitelists(id) ON DELETE SET NULL,
         panel_message_id BIGINT NULL,
         is_default BOOLEAN NOT NULL DEFAULT FALSE,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
         tier_category_id INT NULL,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
@@ -585,6 +587,9 @@ MYSQL_MIGRATIONS = [
 
     # --- Tier categories migration ---
     "ALTER TABLE panels ADD COLUMN tier_category_id INT NULL",
+
+    # --- Panel enabled column ---
+    "ALTER TABLE panels ADD COLUMN enabled TINYINT(1) NOT NULL DEFAULT 1",
 ]
 
 POSTGRES_MIGRATIONS = [
@@ -676,6 +681,9 @@ POSTGRES_MIGRATIONS = [
 
     # --- Tier categories migration ---
     "ALTER TABLE panels ADD COLUMN IF NOT EXISTS tier_category_id INT NULL",
+
+    # --- Panel enabled column ---
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
 ]
 
 
@@ -1066,20 +1074,21 @@ class Database:
 
     _PANEL_COLUMNS = (
         "id", "guild_id", "name", "channel_id", "log_channel_id",
-        "whitelist_id", "panel_message_id", "is_default", "tier_category_id", "created_at", "updated_at",
+        "whitelist_id", "panel_message_id", "is_default", "enabled", "tier_category_id", "created_at", "updated_at",
     )
 
     def _row_to_panel(self, row: tuple) -> Dict[str, Any]:
         """Convert a raw DB row to a panel dict."""
         d = dict(zip(self._PANEL_COLUMNS, row))
         d["is_default"] = bool(d["is_default"])
+        d["enabled"] = bool(d.get("enabled", True))
         return d
 
     async def get_panels(self, guild_id: int) -> List[Dict[str, Any]]:
         rows = await self.fetchall(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, tier_category_id, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id, created_at, updated_at
             FROM panels WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
             """,
@@ -1091,7 +1100,7 @@ class Database:
         row = await self.fetchone(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, tier_category_id, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id, created_at, updated_at
             FROM panels WHERE id=%s
             """,
             (panel_id,),
@@ -1137,9 +1146,9 @@ class Database:
     async def update_panel(self, panel_id: int, **kwargs):
         allowed = {
             "name", "channel_id", "log_channel_id", "whitelist_id",
-            "panel_message_id", "is_default", "tier_category_id",
+            "panel_message_id", "is_default", "enabled", "tier_category_id",
         }
-        bool_cols = {"is_default"}
+        bool_cols = {"is_default", "enabled"}
         parts = []
         params = []
         for key, value in kwargs.items():
