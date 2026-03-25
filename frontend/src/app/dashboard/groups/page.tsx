@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
-import { useGroups } from "@/hooks/use-settings";
-import { api } from "@/lib/api";
+import { useGroups, useCreateGroup, useUpdateGroup, useDeleteGroup } from "@/hooks/use-settings";
 import type { SquadGroup } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -56,23 +55,24 @@ const SQUAD_PERMISSIONS = [
 
 export default function GroupsPage() {
   const { data: groups, isLoading } = useGroups();
+  const createGroup = useCreateGroup();
   const [createOpen, setCreateOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [editGroup, setEditGroup] = useState<SquadGroup | null>(null);
 
-  async function handleCreateGroup() {
+  function handleCreateGroup() {
     if (!newGroupName.trim()) return;
-    try {
-      await api.post("/api/admin/groups", {
-        group_name: newGroupName.trim(),
-        permissions: "",
-      });
-      toast.success("Group created");
-      setNewGroupName("");
-      setCreateOpen(false);
-    } catch {
-      toast.error("Failed to create group");
-    }
+    createGroup.mutate(
+      { group_name: newGroupName.trim(), permissions: "" },
+      {
+        onSuccess: () => {
+          toast.success("Group created");
+          setNewGroupName("");
+          setCreateOpen(false);
+        },
+        onError: () => toast.error("Failed to create group"),
+      }
+    );
   }
 
   if (isLoading) {
@@ -177,10 +177,14 @@ function EditGroupDialog({
   group: SquadGroup;
   onClose: () => void;
 }) {
+  const updateGroup = useUpdateGroup();
+  const deleteGroup = useDeleteGroup();
   const currentPerms = group.permissions
     ? group.permissions.split(",").filter(Boolean)
     : [];
   const [selected, setSelected] = useState<string[]>(currentPerms);
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(group.group_name);
 
   function togglePerm(perm: string) {
     setSelected((prev) =>
@@ -188,23 +192,60 @@ function EditGroupDialog({
     );
   }
 
-  async function handleSave() {
-    try {
-      await api.put(`/api/admin/groups/${group.group_name}`, {
-        permissions: selected.join(","),
-      });
-      toast.success("Group updated");
-      onClose();
-    } catch {
-      toast.error("Failed to update group");
+  function handleSave() {
+    const payload: { group_name: string; permissions?: string; new_name?: string } = {
+      group_name: group.group_name,
+      permissions: selected.join(","),
+    };
+    if (nameValue.trim() && nameValue.trim() !== group.group_name) {
+      payload.new_name = nameValue.trim();
     }
+    updateGroup.mutate(payload, {
+      onSuccess: () => {
+        toast.success("Group updated");
+        onClose();
+      },
+      onError: () => toast.error("Failed to update group"),
+    });
+  }
+
+  function handleDelete() {
+    deleteGroup.mutate(group.group_name, {
+      onSuccess: () => {
+        toast.success("Group deleted");
+        onClose();
+      },
+      onError: () => toast.error("Failed to delete group"),
+    });
   }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit Group: {group.group_name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {editingName ? (
+              <Input
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                className="h-7 w-48 text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setEditingName(false);
+                  if (e.key === "Escape") { setNameValue(group.group_name); setEditingName(false); }
+                }}
+                onBlur={() => setEditingName(false)}
+              />
+            ) : (
+              <span
+                className="cursor-pointer hover:underline"
+                onClick={() => !group.is_default && setEditingName(true)}
+                title={group.is_default ? "Default group cannot be renamed" : "Click to rename"}
+              >
+                Edit Group: {nameValue}
+              </span>
+            )}
+          </DialogTitle>
           <DialogDescription>
             Select permissions for this admin group.
           </DialogDescription>
@@ -223,11 +264,20 @@ function EditGroupDialog({
             </label>
           ))}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>Save</Button>
+        <DialogFooter className="flex justify-between">
+          {!group.is_default && (
+            <Button variant="destructive" size="sm" onClick={handleDelete}>
+              Delete Group
+            </Button>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={updateGroup.isPending}>
+              Save
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

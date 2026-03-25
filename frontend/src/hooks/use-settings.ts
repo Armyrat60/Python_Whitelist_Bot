@@ -106,6 +106,33 @@ export function useGroups() {
   });
 }
 
+export function useCreateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { group_name: string; permissions: string }) =>
+      api.post("/api/admin/groups", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
+  });
+}
+
+export function useUpdateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { group_name: string; permissions?: string; new_name?: string }) =>
+      api.put(`/api/admin/groups/${encodeURIComponent(data.group_name)}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
+  });
+}
+
+export function useDeleteGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (group_name: string) =>
+      api.delete(`/api/admin/groups/${encodeURIComponent(group_name)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
+  });
+}
+
 export function useStats() {
   return useQuery<Stats>({
     queryKey: ["stats"],
