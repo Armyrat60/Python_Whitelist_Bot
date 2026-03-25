@@ -273,7 +273,12 @@ class WhitelistBot(commands.Bot):
             return
         whitelist_id = wl["id"]
         member = interaction.guild.get_member(interaction.user.id)
-        slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
+
+        # Find panel for this whitelist to get tier_category_id
+        panels = await self.db.get_panels(guild_id)
+        panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
+
+        slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
         if slots <= 0:
             await interaction.response.send_message("You are not eligible for this whitelist.", ephemeral=True)
             return
@@ -291,7 +296,12 @@ class WhitelistBot(commands.Bot):
             return
         whitelist_id = wl["id"]
         member = interaction.guild.get_member(interaction.user.id)
-        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
+
+        # Find panel for tier_category lookup
+        panels = await self.db.get_panels(guild_id)
+        panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
+
+        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
         steam_ids = list(dict.fromkeys(token for token in split_identifier_tokens(steam_raw) if token))
         eos_ids = list(dict.fromkeys(token.lower() for token in split_identifier_tokens(eos_raw) if token))
 
@@ -485,6 +495,7 @@ class WhitelistBot(commands.Bot):
     async def enforce_member_roles(self, member: discord.Member):
         guild_id = member.guild.id
         whitelists = await self.db.get_whitelists(guild_id)
+        panels = await self.db.get_panels(guild_id)
         for wl in whitelists:
             if not wl["enabled"]:
                 continue
@@ -492,7 +503,9 @@ class WhitelistBot(commands.Bot):
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
                 continue
-            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl)
+            # Find panel with tier_category for this whitelist
+            panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
+            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl, panel=panel)
             status_before = user_record[1]
             if slots <= 0:
                 if status_before == "active":
