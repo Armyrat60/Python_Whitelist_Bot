@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/command";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Combobox } from "@/components/ui/combobox";
 
 const TIMEZONES = [
   "UTC",
@@ -222,21 +223,15 @@ export default function SettingsPage() {
           <CardTitle>Notification Channel</CardTitle>
         </CardHeader>
         <CardContent>
-          <Select
+          <Combobox
+            options={(channels ?? []).map((ch) => ({ value: ch.id, label: `#${ch.name}` }))}
             value={form.notification_channel_id ?? ""}
-            onValueChange={(v) => updateField("notification_channel_id", v ?? "")}
-          >
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select channel" />
-            </SelectTrigger>
-            <SelectContent>
-              {channels?.map((ch) => (
-                <SelectItem key={ch.id} value={ch.id}>
-                  #{ch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onValueChange={(v) => updateField("notification_channel_id", v)}
+            placeholder="Select channel"
+            searchPlaceholder="Search channels..."
+            emptyText="No channels found."
+            className="w-64"
+          />
         </CardContent>
       </Card>
 
