@@ -208,6 +208,43 @@ async def switch_guild(request: web.Request) -> web.Response:
 # ── User API routes ──────────────────────────────────────────────────────────
 
 @require_login
+async def get_my_whitelists_all(request: web.Request) -> web.Response:
+    """Return all whitelists the user is enrolled in with their identifiers."""
+    session = await aiohttp_session.get_session(request)
+    bot = request.app["bot"]
+    guild_id = int(session["active_guild_id"])
+    discord_id = int(session["discord_id"])
+    db = bot.db
+
+    whitelists = await db.get_whitelists(guild_id)
+    results = []
+    for wl in whitelists:
+        if not wl["enabled"]:
+            continue
+        wl_id = wl["id"]
+        user_record = await db.get_user_record(guild_id, discord_id, wl_id)
+        identifiers = await db.get_identifiers(guild_id, discord_id, wl_id)
+
+        steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
+        eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
+
+        entry = {
+            "whitelist_slug": wl["slug"],
+            "whitelist_name": wl["name"],
+            "tier_name": None,
+            "effective_slot_limit": wl.get("default_slot_limit", 1),
+            "steam_ids": steam_ids,
+            "eos_ids": eos_ids,
+        }
+        if user_record:
+            entry["tier_name"] = user_record[4]  # last_plan_name
+            entry["effective_slot_limit"] = user_record[3]  # effective_slot_limit
+        results.append(entry)
+
+    return web.json_response(results)
+
+
+@require_login
 async def get_my_whitelist(request: web.Request) -> web.Response:
     """Return the user's identifiers for a given whitelist type."""
     session = await aiohttp_session.get_session(request)
@@ -2626,6 +2663,7 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/guilds", get_guilds)
     app.router.add_post("/api/guilds/switch", switch_guild)
     # User API
+    app.router.add_get("/api/my-whitelist", get_my_whitelists_all)
     app.router.add_get("/api/my-whitelist/{type}", get_my_whitelist)
     app.router.add_post("/api/my-whitelist/{type}", update_my_whitelist)
     # Admin API
