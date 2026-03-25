@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
@@ -294,4 +295,47 @@ export function useRemoveRoleMapping() {
       qc.invalidateQueries({ queryKey: ["settings"] });
     },
   });
+}
+
+// ─── Steam name resolution ──────────────────────────────────────────────────
+
+export function useSteamNames(users: WhitelistUser[]) {
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const prevKeyRef = useRef("");
+
+  const steamIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const u of users) {
+      for (const sid of u.steam_ids ?? []) {
+        if (sid) ids.add(sid);
+      }
+    }
+    return Array.from(ids).sort();
+  }, [users]);
+
+  const cacheKey = steamIds.join(",");
+
+  useEffect(() => {
+    if (steamIds.length === 0 || cacheKey === prevKeyRef.current) return;
+    prevKeyRef.current = cacheKey;
+
+    let cancelled = false;
+
+    api
+      .post<{ names: Record<string, string> }>("/api/steam/names", {
+        steam_ids: steamIds,
+      })
+      .then((res) => {
+        if (!cancelled) setNameMap(res.names ?? {});
+      })
+      .catch(() => {
+        // silently fail — names are optional
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [steamIds, cacheKey]);
+
+  return nameMap;
 }

@@ -12,7 +12,13 @@ from typing import Callable
 import aiohttp_session
 from aiohttp import web
 
-from bot.config import DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, log
+import aiohttp as _aiohttp
+
+from bot.config import DEFAULT_SETTINGS, SQUAD_PERMISSIONS, STEAM64_RE, EOSID_RE, STEAM_API_KEY, WEB_BASE_URL, log
+
+# Steam name cache: {steam64_id: (name, timestamp)}
+_steam_name_cache: dict[str, tuple[str, float]] = {}
+_STEAM_CACHE_TTL = 3600  # 1 hour
 from bot.output import sync_outputs
 from bot.utils import utcnow
 
@@ -2782,6 +2788,60 @@ async def admin_get_permissions(request: web.Request) -> web.Response:
     return web.json_response({"permissions": SQUAD_PERMISSIONS})
 
 
+@require_login
+async def resolve_steam_names(request: web.Request) -> web.Response:
+    """Resolve Steam64 IDs to player names using Steam Web API."""
+    body = await request.json()
+    steam_ids = body.get("steam_ids", [])
+
+    if not steam_ids or not isinstance(steam_ids, list):
+        return web.json_response({"error": "steam_ids array required"}, status=400)
+
+    # Cap at 100 IDs per request
+    steam_ids = steam_ids[:100]
+
+    now = time.monotonic()
+    results: dict[str, str] = {}
+    uncached: list[str] = []
+
+    # Check cache first
+    for sid in steam_ids:
+        sid = str(sid)
+        cached = _steam_name_cache.get(sid)
+        if cached and (now - cached[1]) < _STEAM_CACHE_TTL:
+            results[sid] = cached[0]
+        else:
+            uncached.append(sid)
+
+    # Fetch uncached from Steam API
+    if uncached and STEAM_API_KEY:
+        try:
+            # Steam API accepts up to 100 IDs comma-separated
+            ids_param = ",".join(uncached)
+            url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids_param}"
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for player in data.get("response", {}).get("players", []):
+                            sid = player.get("steamid", "")
+                            name = player.get("personaname", "")
+                            avatar = player.get("avatarmedium", "")
+                            if sid:
+                                results[sid] = name
+                                _steam_name_cache[sid] = (name, now)
+        except Exception:
+            log.debug("Steam API call failed for name resolution")
+
+    # For any still unresolved, return empty string
+    for sid in steam_ids:
+        sid = str(sid)
+        if sid not in results:
+            results[sid] = ""
+
+    return web.json_response({"names": results})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2832,3 +2892,5 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
+    # Steam name resolution
+    app.router.add_post("/api/steam/names", resolve_steam_names)

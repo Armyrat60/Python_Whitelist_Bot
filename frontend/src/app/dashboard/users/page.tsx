@@ -8,6 +8,7 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Pencil,
   Trash2,
   Loader2,
@@ -16,8 +17,10 @@ import {
   X,
   Save,
   User as UserIcon,
+  List,
+  LayoutGrid,
 } from "lucide-react";
-import { useUsers, useWhitelists } from "@/hooks/use-settings";
+import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -84,6 +87,8 @@ const statusVariant: Record<
   expired: "destructive",
 };
 
+type ViewMode = "list" | "cards";
+
 /* ------------------------------------------------------------------ */
 /*  Main Page                                                          */
 /* ------------------------------------------------------------------ */
@@ -94,11 +99,15 @@ export default function UsersPage() {
   const [searchInput, setSearchInput] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [selectedUser, setSelectedUser] = useState<WhitelistUser | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const queryClient = useQueryClient();
 
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+
+  const users = data?.users ?? [];
+  const steamNames = useSteamNames(users);
 
   // Debounced dynamic search — update after 300ms of no typing
   useEffect(() => {
@@ -117,7 +126,6 @@ export default function UsersPage() {
   }
 
   const totalPages = data ? Math.ceil(data.total / perPage) : 0;
-  const users = data?.users ?? [];
 
   return (
     <div className="space-y-6">
@@ -179,21 +187,50 @@ export default function UsersPage() {
             <SelectItem value="expired">Expired</SelectItem>
           </SelectContent>
         </Select>
+
+        {/* View toggle */}
+        <div className="flex rounded-md border border-border">
+          <Button
+            variant={viewMode === "list" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8 rounded-r-none"
+            onClick={() => setViewMode("list")}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === "cards" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8 rounded-l-none"
+            onClick={() => setViewMode("cards")}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+        </div>
+
         <AddUserDialog whitelists={whitelists ?? []} />
       </div>
 
-      {/* ---- Card Grid ---- */}
+      {/* ---- Content ---- */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-52 w-full rounded-xl" />
-          ))}
-        </div>
+        viewMode === "cards" ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-52 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            ))}
+          </div>
+        )
       ) : users.length === 0 ? (
         <div className="flex h-48 items-center justify-center text-muted-foreground">
           No users found.
         </div>
-      ) : (
+      ) : viewMode === "cards" ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {users.map((user) => (
             <UserCard
@@ -201,9 +238,17 @@ export default function UsersPage() {
               user={user}
               onSelect={() => setSelectedUser(user)}
               whitelists={whitelists ?? []}
+              steamNames={steamNames}
             />
           ))}
         </div>
+      ) : (
+        <UserListView
+          users={users}
+          whitelists={whitelists ?? []}
+          steamNames={steamNames}
+          onSelect={setSelectedUser}
+        />
       )}
 
       {/* ---- Pagination ---- */}
@@ -259,6 +304,251 @@ export default function UsersPage() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  List View                                                          */
+/* ------------------------------------------------------------------ */
+
+function UserListView({
+  users,
+  whitelists,
+  steamNames,
+  onSelect,
+}: {
+  users: WhitelistUser[];
+  whitelists: { slug: string; name: string }[];
+  steamNames: Record<string, string>;
+  onSelect: (user: WhitelistUser) => void;
+}) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  return (
+    <div className="divide-y divide-border rounded-lg border border-border">
+      {/* Header */}
+      <div className="hidden items-center gap-3 px-4 py-2 text-xs font-medium text-muted-foreground sm:flex">
+        <span className="w-8" />
+        <span className="flex-1">Discord Name</span>
+        <span className="w-28 text-center">Tier</span>
+        <span className="w-20 text-center">Slots</span>
+        <span className="w-20 text-center">Status</span>
+        <span className="w-6" />
+      </div>
+
+      {users.map((user) => {
+        const key = `${user.discord_id}-${user.whitelist_slug}`;
+        const isExpanded = expandedKey === key;
+        const allIds = [...(user.steam_ids ?? []), ...(user.eos_ids ?? [])];
+        const usedSlots = allIds.length;
+
+        return (
+          <div key={key}>
+            {/* Row */}
+            <div
+              className="flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50"
+              onClick={() => setExpandedKey(isExpanded ? null : key)}
+            >
+              <Avatar size="sm">
+                <AvatarFallback>
+                  {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
+                </AvatarFallback>
+              </Avatar>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {user.discord_name}
+              </span>
+              <span className="hidden w-28 text-center sm:block">
+                <Badge variant="outline" className="text-[11px]">
+                  {user.last_plan_name ?? user.whitelist_name}
+                </Badge>
+              </span>
+              <span className="w-20 text-center text-xs text-muted-foreground">
+                {usedSlots}/{user.effective_slot_limit}
+              </span>
+              <span className="w-20 text-center">
+                <Badge
+                  variant={statusVariant[user.status] ?? "outline"}
+                  className={cn(
+                    "text-[11px]",
+                    user.status === "active" &&
+                      "bg-orange-500/15 text-orange-400 dark:bg-orange-500/20 dark:text-orange-300"
+                  )}
+                >
+                  {user.status}
+                </Badge>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                  isExpanded && "rotate-180"
+                )}
+              />
+            </div>
+
+            {/* Expanded detail */}
+            {isExpanded && (
+              <ListRowDetail
+                user={user}
+                steamNames={steamNames}
+                whitelists={whitelists}
+                onEdit={() => onSelect(user)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  List Row Detail (expanded)                                         */
+/* ------------------------------------------------------------------ */
+
+function ListRowDetail({
+  user,
+  steamNames,
+  whitelists,
+  onEdit,
+}: {
+  user: WhitelistUser;
+  steamNames: Record<string, string>;
+  whitelists: { slug: string; name: string }[];
+  onEdit: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [removing, setRemoving] = useState(false);
+
+  const slotLimit = user.effective_slot_limit;
+  const allIds = [...(user.steam_ids ?? []), ...(user.eos_ids ?? [])];
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.delete(
+        `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`
+      );
+      toast.success(`Removed ${user.discord_name}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    } catch {
+      toast.error("Failed to remove user");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-border/50 bg-muted/30 px-4 py-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {/* Slot details */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Slot Details
+          </p>
+          {Array.from({ length: slotLimit }).map((_, idx) => {
+            const id = allIds[idx];
+            const isSteam = idx < (user.steam_ids?.length ?? 0);
+            const resolvedName =
+              isSteam && id ? steamNames[id] : undefined;
+            const isOwner = idx === 0;
+            return (
+              <div
+                key={idx}
+                className="flex items-center gap-2 text-xs"
+              >
+                <span className="w-14 shrink-0 font-mono text-muted-foreground">
+                  Slot {idx + 1}:
+                </span>
+                {id ? (
+                  <>
+                    <span className="min-w-0 truncate font-mono">
+                      {id}
+                      {resolvedName && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({resolvedName})
+                        </span>
+                      )}
+                    </span>
+                    {isOwner && (
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto shrink-0 text-[10px]"
+                      >
+                        owner
+                      </Badge>
+                    )}
+                  </>
+                ) : (
+                  <span className="italic text-muted-foreground/50">
+                    — empty —
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Meta info */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Info</p>
+          <p className="text-xs">
+            <span className="text-muted-foreground">Discord ID: </span>
+            <span className="font-mono">{user.discord_id}</span>
+          </p>
+          <p className="text-xs">
+            <span className="text-muted-foreground">Whitelist: </span>
+            {user.whitelist_name}
+          </p>
+          {user.last_plan_name && (
+            <p className="text-xs">
+              <span className="text-muted-foreground">Tier: </span>
+              {user.last_plan_name}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-3 flex gap-2">
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Pencil className="mr-1.5 h-3 w-3" />
+          Edit
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger
+            render={
+              <Button variant="outline" size="sm" disabled={removing} />
+            }
+          >
+            {removing ? (
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="mr-1.5 h-3 w-3" />
+            )}
+            Remove
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove User</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove {user.discord_name} from the{" "}
+                {user.whitelist_name} whitelist. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={handleRemove}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  User Card                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -266,10 +556,12 @@ function UserCard({
   user,
   onSelect,
   whitelists,
+  steamNames,
 }: {
   user: WhitelistUser;
   onSelect: () => void;
   whitelists: { slug: string; name: string }[];
+  steamNames: Record<string, string>;
 }) {
   const queryClient = useQueryClient();
   const [removing, setRemoving] = useState(false);
@@ -350,6 +642,9 @@ function UserCard({
         <div className="space-y-1">
           {Array.from({ length: slotLimit }).map((_, idx) => {
             const id = allIds[idx];
+            const isSteam = idx < (user.steam_ids?.length ?? 0);
+            const resolvedName =
+              isSteam && id ? steamNames[id] : undefined;
             const isOwner = idx === 0;
             return (
               <div
@@ -363,6 +658,11 @@ function UserCard({
                   <>
                     <span className="min-w-0 truncate font-mono">
                       {id}
+                      {resolvedName && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({resolvedName})
+                        </span>
+                      )}
                     </span>
                     {isOwner && (
                       <Badge

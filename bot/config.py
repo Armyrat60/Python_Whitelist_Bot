@@ -33,6 +33,7 @@ GITHUB_REPO_NAME = os.getenv("GITHUB_REPO_NAME", "")
 WHITELIST_FILENAME = os.getenv("WHITELIST_FILENAME", "whitelist.txt")
 
 DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
+STEAM_API_KEY = os.getenv("STEAM_API_KEY", "")
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
