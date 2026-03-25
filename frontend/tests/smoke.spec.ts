@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Smoke Tests", () => {
   test("login page loads", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("text=Squad Whitelister")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Squad Whitelister" })).toBeVisible();
     await expect(page.locator("text=Sign in with Discord")).toBeVisible();
   });
 
