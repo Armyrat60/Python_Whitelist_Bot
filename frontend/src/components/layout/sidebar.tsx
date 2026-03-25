@@ -4,30 +4,33 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Settings2,
-  Sliders,
   Users,
   FileText,
   ArrowUpDown,
   List,
+  PanelTop,
+  Shield,
+  Lock,
+  Sliders,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 
-const adminLinks = [
+const mainLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/roster", label: "WL Roster", icon: Users },
+  { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
 ];
 
-const adminSectionLinks = [
-  { href: "/dashboard/setup", label: "Setup", icon: Settings2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Sliders },
-  { href: "/dashboard/users", label: "Users", icon: Users },
-  { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
-  {
-    href: "/dashboard/import-export",
-    label: "Import / Export",
-    icon: ArrowUpDown,
-  },
+const manageLinks = [
+  { href: "/dashboard/panels", label: "Panels", icon: PanelTop },
+  { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
+  { href: "/dashboard/groups", label: "Groups", icon: Lock },
+];
+
+const settingsLinks = [
+  { href: "/dashboard/settings", label: "General", icon: Sliders },
+  { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
 ];
 
 const userLinks = [
@@ -36,6 +39,16 @@ const userLinks = [
 
 export function Sidebar() {
   const pathname = usePathname();
+
+  // Match setup tabs to their new sidebar routes
+  const isActive = (href: string) => {
+    if (href === "/dashboard" && pathname === "/dashboard") return true;
+    if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
+    if (href !== "/dashboard" && pathname.startsWith(href)) return true;
+    // Legacy setup route mapping
+    if (href === "/dashboard/panels" && pathname === "/dashboard/setup") return true;
+    return false;
+  };
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950">
@@ -49,30 +62,37 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {adminLinks.map((link) => (
+        {mainLinks.map((link) => (
           <NavLink
             key={link.href}
             href={link.href}
             label={link.label}
             icon={link.icon}
-            active={pathname === link.href}
+            active={isActive(link.href)}
           />
         ))}
 
-        <div className="py-2">
-          <Separator className="bg-zinc-800" />
-          <p className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Admin
-          </p>
-        </div>
+        <SectionLabel>Manage</SectionLabel>
 
-        {adminSectionLinks.map((link) => (
+        {manageLinks.map((link) => (
           <NavLink
             key={link.href}
             href={link.href}
             label={link.label}
             icon={link.icon}
-            active={pathname === link.href}
+            active={isActive(link.href)}
+          />
+        ))}
+
+        <SectionLabel>Settings</SectionLabel>
+
+        {settingsLinks.map((link) => (
+          <NavLink
+            key={link.href}
+            href={link.href}
+            label={link.label}
+            icon={link.icon}
+            active={isActive(link.href)}
           />
         ))}
 
@@ -86,11 +106,22 @@ export function Sidebar() {
             href={link.href}
             label={link.label}
             icon={link.icon}
-            active={pathname === link.href}
+            active={isActive(link.href)}
           />
         ))}
       </nav>
     </aside>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="py-2">
+      <Separator className="bg-zinc-800" />
+      <p className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-orange-400/60">
+        {children}
+      </p>
+    </div>
   );
 }
 

@@ -221,6 +221,10 @@ export function useDeleteWhitelist() {
       api.delete(`/api/admin/whitelists/${slug}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["health"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+      qc.invalidateQueries({ queryKey: ["panels"] });
     },
   });
 }

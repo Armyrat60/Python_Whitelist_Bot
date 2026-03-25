@@ -102,9 +102,13 @@ const SQUAD_PERMISSIONS = [
 ];
 
 export default function SetupPage() {
+  // Read tab from URL query param for sidebar navigation
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const defaultTab = searchParams?.get("tab") || "panels";
+
   return (
     <div className="space-y-6">
-      <Tabs defaultValue="panels">
+      <Tabs defaultValue={defaultTab}>
         <TabsList>
           <TabsTrigger value="panels">Panels</TabsTrigger>
           <TabsTrigger value="whitelists">Whitelists</TabsTrigger>
