@@ -34,7 +34,8 @@ export function GuildProvider({ children }: { children: ReactNode }) {
   const switchGuild = useCallback(
     async (guildId: string) => {
       await api.post("/api/guilds/switch", { guild_id: guildId });
-      await queryClient.invalidateQueries({ queryKey: ["session"] });
+      // Invalidate ALL queries — guild switch changes every data endpoint
+      await queryClient.invalidateQueries();
     },
     [queryClient]
   );

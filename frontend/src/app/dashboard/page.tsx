@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useStats, useHealth, useAudit, useWhitelists, usePanels } from "@/hooks/use-settings";
+import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/stats/stat-card";
+import { SetupGuide } from "@/components/setup-guide";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,9 +35,17 @@ export default function DashboardPage() {
   const { data: audit, isLoading: auditLoading } = useAudit(1, 10);
   const { data: whitelists } = useWhitelists();
   const { data: panels } = usePanels();
+  const { data: settingsData } = useSettings();
 
   const whitelistCount = whitelists?.length ?? 0;
   const panelCount = panels?.length ?? 0;
+
+  // Setup guide state
+  const hasWhitelistEnabled = whitelists?.some((w) => w.enabled) ?? false;
+  const hasRoleMappings = settingsData?.role_mappings
+    ? Object.values(settingsData.role_mappings).some((arr) => arr.length > 0)
+    : false;
+  const hasPanelChannel = panels?.some((p) => p.channel_id) ?? false;
 
   async function handleResync() {
     try {
@@ -76,6 +85,13 @@ export default function DashboardPage() {
           loading={statsLoading}
         />
       </div>
+
+      {/* Setup Guide */}
+      <SetupGuide
+        hasWhitelistEnabled={hasWhitelistEnabled}
+        hasRoleMappings={hasRoleMappings}
+        hasPanelChannel={hasPanelChannel}
+      />
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2">

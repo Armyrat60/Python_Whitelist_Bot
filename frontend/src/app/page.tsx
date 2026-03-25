@@ -1,4 +1,3 @@
-import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,9 +12,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-            <Shield className="h-8 w-8 text-primary" />
-          </div>
+          <img src="/logo.png" alt="Squad Whitelister" className="mb-2 h-16 w-16 rounded-xl" />
           <CardTitle className="text-2xl">Squad Whitelister</CardTitle>
           <CardDescription>
             Manage your Squad server whitelist

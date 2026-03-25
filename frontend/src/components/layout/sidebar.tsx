@@ -41,9 +41,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950">
       {/* Brand */}
       <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500">
-          <span className="text-sm font-bold text-white">SW</span>
-        </div>
+        <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
         <span className="text-sm font-semibold text-foreground">
           Squad Whitelister
         </span>
