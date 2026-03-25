@@ -12,6 +12,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard/panels": "Panels",
   "/dashboard/whitelists": "Whitelists",
   "/dashboard/groups": "Groups",
+  "/dashboard/tiers": "Tiers",
   "/dashboard/settings": "Settings",
   "/dashboard/users": "WL Roster",
   "/dashboard/roster": "WL Roster",
