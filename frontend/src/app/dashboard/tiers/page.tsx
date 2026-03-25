@@ -369,68 +369,69 @@ function CategoryCard({
               return (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-800 px-2.5 py-1.5"
+                  className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2"
+                  title={`Role ID: ${entry.role_id}`}
                 >
                   {/* Role color dot */}
                   <span
-                    className="h-3 w-3 shrink-0 rounded-full"
+                    className="h-3.5 w-3.5 shrink-0 rounded-full"
                     style={{
                       backgroundColor: role?.color || "#99AAB5",
                     }}
                   />
 
-                  {/* Role name + display name */}
+                  {/* Role name */}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">
                       {entry.role_name}
                     </p>
-                    {entry.display_name && (
-                      <p className="text-[10px] text-muted-foreground truncate">
-                        {entry.display_name}
-                      </p>
-                    )}
                   </div>
 
-                  {/* Slot count (editable) */}
-                  <Input
-                    type="number"
-                    min={1}
-                    max={99}
-                    value={isEditing ? editValue : String(entry.slot_limit)}
-                    onChange={(e) =>
-                      setEditingSlots((prev) => ({
-                        ...prev,
-                        [entry.id]: e.target.value,
-                      }))
-                    }
-                    className="h-7 w-14 text-center text-xs font-mono"
-                  />
-                  <span className="text-[10px] text-muted-foreground">
-                    {entry.slot_limit === 1 ? "slot" : "slots"}
-                  </span>
-
-                  {/* Save edited slot count */}
-                  {isEditing && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-emerald-500 hover:text-emerald-400"
-                      onClick={() => handleUpdateSlots(entry)}
-                      disabled={updateEntry.isPending}
-                    >
-                      <Check className="h-3 w-3" />
-                    </Button>
-                  )}
+                  {/* Slot count — auto-saves on blur or Enter */}
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={isEditing ? editValue : String(entry.slot_limit)}
+                      onChange={(e) =>
+                        setEditingSlots((prev) => ({
+                          ...prev,
+                          [entry.id]: e.target.value,
+                        }))
+                      }
+                      onBlur={() => {
+                        if (isEditing) handleUpdateSlots(entry);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && isEditing) {
+                          e.preventDefault();
+                          handleUpdateSlots(entry);
+                        }
+                        if (e.key === "Escape") {
+                          setEditingSlots((prev) => {
+                            const next = { ...prev };
+                            delete next[entry.id];
+                            return next;
+                          });
+                        }
+                      }}
+                      className="h-8 w-16 text-center text-sm font-mono"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {(isEditing ? Number(editValue) : entry.slot_limit) === 1 ? "slot" : "slots"}
+                    </span>
+                  </div>
 
                   {/* Remove entry */}
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                     onClick={() => handleRemoveEntry(entry.id)}
                     disabled={removeEntry.isPending}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );
@@ -450,7 +451,7 @@ function CategoryCard({
               searchPlaceholder="Search roles..."
               emptyText="No roles available."
             />
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Input
                 type="number"
                 min={1}
@@ -460,18 +461,14 @@ function CategoryCard({
                 placeholder="Slots"
                 className="w-20"
               />
-              <Input
-                value={newDisplayName}
-                onChange={(e) => setNewDisplayName(e.target.value)}
-                placeholder="Display name (optional)"
-                className="flex-1"
-              />
+              <span className="text-xs text-muted-foreground">slots</span>
               <Button
-                size="sm"
                 onClick={handleAddEntry}
                 disabled={!newRoleId || addEntry.isPending}
+                className="bg-orange-600 hover:bg-orange-700"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add
               </Button>
             </div>
           </div>
