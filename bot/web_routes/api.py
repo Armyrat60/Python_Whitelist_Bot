@@ -2569,12 +2569,58 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     description += f"Use the `/whitelist` command or visit the [web dashboard]({WEB_BASE_URL}/my-whitelist) to manage your IDs."
 
     _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
+    _dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"
+    wl_slug = wl["slug"] if wl else "default"
+
     embed = {
         "title": f"🛡️ {panel['name']} — {wl_name}",
         "description": description,
         "color": 0xF97316,  # Orange
         "footer": {"text": f"Squad Whitelister • {_domain}"},
     }
+
+    # Build interactive button components
+    # These custom_ids match the bot-worker's persistent views, so the bot handles clicks
+    components = [
+        {
+            "type": 1,  # ACTION_ROW
+            "components": [
+                {
+                    "type": 2,  # BUTTON
+                    "style": 3,  # SUCCESS (green)
+                    "label": "Submit / Update ID",
+                    "emoji": {"name": "🛡️"},
+                    "custom_id": f"panel:submit:{wl_slug}",
+                },
+                {
+                    "type": 2,  # BUTTON
+                    "style": 1,  # PRIMARY (blue)
+                    "label": "View My Whitelist",
+                    "emoji": {"name": "📋"},
+                    "custom_id": f"panel:view:{wl_slug}",
+                },
+                {
+                    "type": 2,  # BUTTON
+                    "style": 5,  # LINK
+                    "label": "Web Dashboard",
+                    "emoji": {"name": "🌐"},
+                    "url": f"{_dashboard_url}/my-whitelist",
+                },
+            ],
+        },
+        {
+            "type": 1,  # ACTION_ROW
+            "components": [
+                {
+                    "type": 2,  # BUTTON
+                    "style": 2,  # SECONDARY (gray)
+                    "label": "Manager Tools",
+                    "emoji": {"name": "⚙️"},
+                    "custom_id": f"panel:manage:{wl_slug}",
+                },
+            ],
+        },
+    ]
 
     # Try to send or edit the message
     discord_client = getattr(bot, "_discord", None)
@@ -2588,13 +2634,13 @@ async def admin_push_panel(request: web.Request) -> web.Response:
 
     if message_id:
         # Try to edit existing message
-        result = await discord_client.edit_message(channel_id, message_id, embed=embed)
+        result = await discord_client.edit_message(channel_id, message_id, embed=embed, components=components)
         if result:
             log.info("Guild %s: edited panel embed in channel %s message %s", guild_id, channel_id, message_id)
             return web.json_response({"ok": True, "panel_id": panel_id, "action": "edited"})
 
     # Send new message
-    result = await discord_client.send_message(channel_id, embed=embed)
+    result = await discord_client.send_message(channel_id, embed=embed, components=components)
     if result:
         new_message_id = result.get("id")
         if new_message_id:
