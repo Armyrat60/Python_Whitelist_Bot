@@ -301,8 +301,36 @@ MYSQL_SCHEMA = [
         whitelist_id INT NULL,
         panel_message_id BIGINT NULL,
         is_default TINYINT(1) NOT NULL DEFAULT 0,
+        tier_category_id INT NULL,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tier_categories (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        description VARCHAR(500) NULL,
+        is_default TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        UNIQUE KEY uq_guild_tier_name (guild_id, name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tier_entries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        category_id INT NOT NULL,
+        role_id BIGINT NOT NULL,
+        role_name VARCHAR(255) NOT NULL,
+        slot_limit INT NOT NULL DEFAULT 1,
+        display_name VARCHAR(100) NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL,
+        UNIQUE KEY uq_guild_cat_role (guild_id, category_id, role_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
 ]
@@ -445,8 +473,36 @@ POSTGRES_SCHEMA = [
         whitelist_id INT NULL REFERENCES whitelists(id) ON DELETE SET NULL,
         panel_message_id BIGINT NULL,
         is_default BOOLEAN NOT NULL DEFAULT FALSE,
+        tier_category_id INT NULL,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tier_categories (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        description VARCHAR(500) NULL,
+        is_default BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE (guild_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tier_entries (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        category_id INT NOT NULL,
+        role_id BIGINT NOT NULL,
+        role_name VARCHAR(255) NOT NULL,
+        slot_limit INT NOT NULL DEFAULT 1,
+        display_name VARCHAR(100) NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL,
+        UNIQUE (guild_id, category_id, role_id)
     )
     """,
 ]
@@ -506,6 +562,9 @@ MYSQL_MIGRATIONS = [
     SET al.whitelist_id = w.id
     WHERE al.whitelist_id IS NULL AND al.whitelist_type IS NOT NULL
     """,
+
+    # --- Tier categories migration ---
+    "ALTER TABLE panels ADD COLUMN tier_category_id INT NULL",
 ]
 
 POSTGRES_MIGRATIONS = [
@@ -594,6 +653,9 @@ POSTGRES_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
     "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
+
+    # --- Tier categories migration ---
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS tier_category_id INT NULL",
 ]
 
 
@@ -739,11 +801,48 @@ class Database:
         else:
             wl_id = existing[0]
 
+        # Seed one default tier category if none exists, and migrate role_mappings
+        is_def_val = True if self.engine == "postgres" else 1
+        existing_tier_cat = await self.fetchone(
+            "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=%s LIMIT 1",
+            (guild_id, is_def_val),
+        )
+        if not existing_tier_cat:
+            try:
+                tier_cat_id = await self.create_tier_category(
+                    guild_id,
+                    name="Default",
+                    description="Default tier category",
+                    is_default=True,
+                )
+            except Exception:
+                row = await self.fetchone(
+                    "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=%s LIMIT 1",
+                    (guild_id, is_def_val),
+                )
+                tier_cat_id = row[0] if row else None
+
+            # Migrate existing role_mappings into tier_entries under the default category
+            if tier_cat_id:
+                all_mappings = await self.fetchall(
+                    "SELECT role_id, role_name, slot_limit FROM role_mappings WHERE guild_id=%s",
+                    (guild_id,),
+                )
+                for rm in all_mappings:
+                    try:
+                        await self.add_tier_entry(
+                            guild_id, tier_cat_id, rm[0], rm[1], rm[2],
+                        )
+                    except Exception:
+                        pass  # Already exists or race condition
+        else:
+            tier_cat_id = existing_tier_cat[0]
+
         # Seed one default panel linked to the default whitelist if none exists
         if wl_id:
             existing_panel = await self.fetchone(
                 "SELECT id FROM panels WHERE guild_id=%s AND is_default=%s LIMIT 1",
-                (guild_id, True if self.engine == "postgres" else 1),
+                (guild_id, is_def_val),
             )
             if not existing_panel:
                 try:
@@ -752,9 +851,16 @@ class Database:
                         name="Default Panel",
                         whitelist_id=wl_id,
                         is_default=True,
+                        tier_category_id=tier_cat_id,
                     )
                 except Exception:
                     pass  # Race condition: another process created it
+            else:
+                # Ensure existing default panel has tier_category_id set
+                panel_id = existing_panel[0]
+                panel = await self.get_panel_by_id(panel_id)
+                if panel and not panel.get("tier_category_id") and tier_cat_id:
+                    await self.update_panel(panel_id, tier_category_id=tier_cat_id)
 
     # ── Settings ──
 
@@ -928,7 +1034,7 @@ class Database:
 
     _PANEL_COLUMNS = (
         "id", "guild_id", "name", "channel_id", "log_channel_id",
-        "whitelist_id", "panel_message_id", "is_default", "created_at", "updated_at",
+        "whitelist_id", "panel_message_id", "is_default", "tier_category_id", "created_at", "updated_at",
     )
 
     def _row_to_panel(self, row: tuple) -> Dict[str, Any]:
@@ -941,7 +1047,7 @@ class Database:
         rows = await self.fetchall(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, tier_category_id, created_at, updated_at
             FROM panels WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
             """,
@@ -953,7 +1059,7 @@ class Database:
         row = await self.fetchone(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, tier_category_id, created_at, updated_at
             FROM panels WHERE id=%s
             """,
             (panel_id,),
@@ -968,18 +1074,19 @@ class Database:
         whitelist_id = kwargs.get("whitelist_id", None)
         panel_message_id = kwargs.get("panel_message_id", None)
         is_default = kwargs.get("is_default", False)
+        tier_category_id = kwargs.get("tier_category_id", None)
 
         if self.engine == "postgres":
             row = await self.execute_returning(
                 """
                 INSERT INTO panels
                 (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 panel_message_id, is_default, tier_category_id, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, now, now),
+                 panel_message_id, is_default, tier_category_id, now, now),
             )
             return row[0]
         else:
@@ -987,18 +1094,18 @@ class Database:
                 """
                 INSERT INTO panels
                 (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 panel_message_id, is_default, tier_category_id, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, 1 if is_default else 0, now, now),
+                 panel_message_id, 1 if is_default else 0, tier_category_id, now, now),
             )
             return row[0]
 
     async def update_panel(self, panel_id: int, **kwargs):
         allowed = {
             "name", "channel_id", "log_channel_id", "whitelist_id",
-            "panel_message_id", "is_default",
+            "panel_message_id", "is_default", "tier_category_id",
         }
         bool_cols = {"is_default"}
         parts = []
@@ -1331,3 +1438,157 @@ class Database:
                 return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=TRUE ORDER BY permission")
             return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=1 ORDER BY permission")
         return await self.fetchall("SELECT permission, description, is_active FROM squad_permissions ORDER BY permission")
+
+    # ── Tier Categories ──
+
+    async def get_tier_categories(self, guild_id: int) -> List[dict]:
+        rows = await self.fetchall(
+            """
+            SELECT id, guild_id, name, description, is_default, created_at, updated_at
+            FROM tier_categories WHERE guild_id=%s
+            ORDER BY is_default DESC, name ASC
+            """,
+            (guild_id,),
+        )
+        result = []
+        for r in rows:
+            result.append({
+                "id": r[0],
+                "guild_id": r[1],
+                "name": r[2],
+                "description": r[3],
+                "is_default": bool(r[4]),
+                "created_at": r[5],
+                "updated_at": r[6],
+            })
+        return result
+
+    async def get_tier_category(self, category_id: int) -> Optional[dict]:
+        row = await self.fetchone(
+            """
+            SELECT id, guild_id, name, description, is_default, created_at, updated_at
+            FROM tier_categories WHERE id=%s
+            """,
+            (category_id,),
+        )
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "guild_id": row[1],
+            "name": row[2],
+            "description": row[3],
+            "is_default": bool(row[4]),
+            "created_at": row[5],
+            "updated_at": row[6],
+        }
+
+    async def create_tier_category(self, guild_id: int, name: str, description: str = "", is_default: bool = False) -> int:
+        now = utcnow()
+        if self.engine == "postgres":
+            row = await self.execute_returning(
+                """
+                INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (guild_id, name, description, is_default, now, now),
+            )
+            return row[0]
+        else:
+            row = await self.execute_returning(
+                """
+                INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (guild_id, name, description, 1 if is_default else 0, now, now),
+            )
+            return row[0]
+
+    async def update_tier_category(self, category_id: int, **kwargs):
+        allowed = {"name", "description", "is_default"}
+        bool_cols = {"is_default"}
+        parts = []
+        params = []
+        for key, value in kwargs.items():
+            if key in allowed:
+                if key in bool_cols:
+                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                parts.append(f"{key}=%s")
+                params.append(value)
+        if not parts:
+            return
+        parts.append("updated_at=%s")
+        params.append(utcnow())
+        params.append(category_id)
+        await self.execute(
+            f"UPDATE tier_categories SET {', '.join(parts)} WHERE id=%s",
+            tuple(params),
+        )
+
+    async def delete_tier_category(self, category_id: int):
+        # Delete associated tier entries first
+        await self.execute("DELETE FROM tier_entries WHERE category_id=%s", (category_id,))
+        await self.execute("DELETE FROM tier_categories WHERE id=%s", (category_id,))
+
+    # ── Tier Entries ──
+
+    async def get_tier_entries(self, guild_id: int, category_id: int) -> List[tuple]:
+        return await self.fetchall(
+            """
+            SELECT id, role_id, role_name, slot_limit, display_name, sort_order, is_active
+            FROM tier_entries
+            WHERE guild_id=%s AND category_id=%s
+            ORDER BY sort_order ASC, role_name ASC
+            """,
+            (guild_id, category_id),
+        )
+
+    async def add_tier_entry(self, guild_id: int, category_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0) -> int:
+        now = utcnow()
+        if self.engine == "postgres":
+            row = await self.execute_returning(
+                """
+                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                ON CONFLICT (guild_id, category_id, role_id) DO UPDATE
+                    SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
+                        display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order, is_active=TRUE
+                RETURNING id
+                """,
+                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, now),
+            )
+            return row[0]
+        else:
+            row = await self.execute_returning(
+                """
+                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
+                ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), slot_limit=VALUES(slot_limit),
+                    display_name=VALUES(display_name), sort_order=VALUES(sort_order), is_active=1
+                """,
+                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, now),
+            )
+            return row[0]
+
+    async def update_tier_entry(self, entry_id: int, **kwargs):
+        allowed = {"role_name", "slot_limit", "display_name", "sort_order", "is_active"}
+        bool_cols = {"is_active"}
+        parts = []
+        params = []
+        for key, value in kwargs.items():
+            if key in allowed:
+                if key in bool_cols:
+                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                parts.append(f"{key}=%s")
+                params.append(value)
+        if not parts:
+            return
+        params.append(entry_id)
+        await self.execute(
+            f"UPDATE tier_entries SET {', '.join(parts)} WHERE id=%s",
+            tuple(params),
+        )
+
+    async def remove_tier_entry(self, entry_id: int):
+        await self.execute("DELETE FROM tier_entries WHERE id=%s", (entry_id,))

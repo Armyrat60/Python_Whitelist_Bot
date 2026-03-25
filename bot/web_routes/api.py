@@ -1001,12 +1001,37 @@ async def admin_get_settings(request: web.Request) -> web.Response:
     )
     squad_groups = [row[0] for row in (squad_rows or [])]
 
+    # Tier categories with entries
+    tier_categories_raw = await db.get_tier_categories(guild_id)
+    tier_categories = []
+    for cat in tier_categories_raw:
+        entries_raw = await db.get_tier_entries(guild_id, cat["id"])
+        entries = []
+        for e in entries_raw:
+            entries.append({
+                "id": e[0],
+                "role_id": str(e[1]),
+                "role_name": role_name_map.get(str(e[1]), e[2] or str(e[1])),
+                "slot_limit": e[3],
+                "display_name": e[4],
+                "sort_order": e[5],
+                "is_active": bool(e[6]),
+            })
+        tier_categories.append({
+            "id": cat["id"],
+            "name": cat["name"],
+            "description": cat["description"],
+            "is_default": cat["is_default"],
+            "entries": entries,
+        })
+
     return web.json_response({
         "bot_settings": bot_settings,
         "type_configs": type_configs,
         "role_mappings": role_mappings,
         "squad_groups": squad_groups,
         "squad_permissions": SQUAD_PERMISSIONS,
+        "tier_categories": tier_categories,
     })
 
 
@@ -2444,6 +2469,7 @@ async def admin_get_panels(request: web.Request) -> web.Response:
             "whitelist_id": p["whitelist_id"],
             "panel_message_id": str(p["panel_message_id"]) if p["panel_message_id"] else None,
             "is_default": p["is_default"],
+            "tier_category_id": p.get("tier_category_id"),
         })
     return web.json_response({"panels": result})
 
@@ -2533,6 +2559,9 @@ async def admin_update_panel(request: web.Request) -> web.Response:
     if "whitelist_id" in body:
         val = body["whitelist_id"]
         update_kwargs["whitelist_id"] = int(val) if val else None
+    if "tier_category_id" in body:
+        val = body["tier_category_id"]
+        update_kwargs["tier_category_id"] = int(val) if val else None
 
     if update_kwargs:
         await db.update_panel(panel_id, **update_kwargs)
@@ -2593,18 +2622,28 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     wl = await db.get_whitelist(panel["whitelist_id"])
     wl_name = wl["name"] if wl else "Whitelist"
 
-    # Get role mappings for tier info
-    role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
+    # Get tiers: prefer tier_category_id on panel, fall back to role_mappings
     tier_lines = []
-    for rm in role_mappings:
-        # Tuple format: (role_id, role_name, slot_limit, is_active)
-        if isinstance(rm, tuple):
-            role_id = rm[0] if len(rm) > 0 else 0
-            slots = rm[2] if len(rm) > 2 else 1
-        else:
-            role_id = rm.get("role_id", 0)
-            slots = rm.get("slot_limit", 1)
-        tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
+    if panel.get("tier_category_id"):
+        tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
+        for te in tier_entries:
+            # Tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
+            if not bool(te[6]):
+                continue
+            role_id = te[1]
+            slots = te[3]
+            display = te[4] or te[2]
+            tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
+    else:
+        role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
+        for rm in role_mappings:
+            if isinstance(rm, tuple):
+                role_id = rm[0] if len(rm) > 0 else 0
+                slots = rm[2] if len(rm) > 2 else 1
+            else:
+                role_id = rm.get("role_id", 0)
+                slots = rm.get("slot_limit", 1)
+            tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
 
     description = "Use the buttons below to manage your whitelist entry.\n\n"
     if tier_lines:
@@ -2883,6 +2922,305 @@ async def resolve_steam_names(request: web.Request) -> web.Response:
     return web.json_response({"names": results})
 
 
+# ── Admin Tier Categories API routes ──────────────────────────────────────────
+
+MAX_TIER_CATEGORIES_PER_GUILD = 20
+
+
+@require_admin
+async def admin_get_tier_categories(request: web.Request) -> web.Response:
+    """Return all tier categories with their entries for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    categories = await db.get_tier_categories(guild_id)
+
+    # Build live role name lookup from Discord API
+    role_name_map: dict[str, str] = {}
+    try:
+        if hasattr(bot, "get_roles"):
+            raw_roles = await bot.get_roles(guild_id)
+            for r in raw_roles:
+                role_name_map[str(r["id"])] = r.get("name", "")
+        elif hasattr(bot, "get_guild"):
+            guild = bot.get_guild(guild_id)
+            if guild:
+                for r in guild.roles:
+                    role_name_map[str(r.id)] = r.name
+    except Exception:
+        pass
+
+    result = []
+    for cat in categories:
+        entries_raw = await db.get_tier_entries(guild_id, cat["id"])
+        entries = []
+        for e in entries_raw:
+            entries.append({
+                "id": e[0],
+                "role_id": str(e[1]),
+                "role_name": role_name_map.get(str(e[1]), e[2] or str(e[1])),
+                "slot_limit": e[3],
+                "display_name": e[4],
+                "sort_order": e[5],
+                "is_active": bool(e[6]),
+            })
+        result.append({
+            "id": cat["id"],
+            "name": cat["name"],
+            "description": cat["description"],
+            "is_default": cat["is_default"],
+            "entries": entries,
+        })
+
+    return web.json_response({"categories": result})
+
+
+@require_admin
+async def admin_create_tier_category(request: web.Request) -> web.Response:
+    """Create a new tier category."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    name = (body.get("name") or "").strip()
+    if not name or len(name) > 100:
+        return web.json_response({"error": "Name is required (max 100 chars)."}, status=400)
+
+    description = (body.get("description") or "").strip()
+    if len(description) > 500:
+        return web.json_response({"error": "Description too long (max 500 chars)."}, status=400)
+
+    existing = await db.get_tier_categories(guild_id)
+    if len(existing) >= MAX_TIER_CATEGORIES_PER_GUILD:
+        return web.json_response(
+            {"error": f"Maximum of {MAX_TIER_CATEGORIES_PER_GUILD} tier categories per community."},
+            status=400,
+        )
+
+    # Check for duplicate name
+    for cat in existing:
+        if cat["name"].lower() == name.lower():
+            return web.json_response({"error": "A tier category with that name already exists."}, status=409)
+
+    try:
+        cat_id = await db.create_tier_category(guild_id, name, description)
+    except Exception:
+        return web.json_response({"error": "Failed to create tier category."}, status=500)
+
+    log.info("Guild %s: admin created tier category '%s' (id=%s)", guild_id, name, cat_id)
+    return web.json_response({"ok": True, "id": cat_id, "name": name}, status=201)
+
+
+@require_admin
+async def admin_update_tier_category(request: web.Request) -> web.Response:
+    """Update a tier category."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        category_id = int(request.match_info["category_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid category_id."}, status=400)
+
+    cat = await db.get_tier_category(category_id)
+    if not cat or cat["guild_id"] != guild_id:
+        return web.json_response({"error": "Tier category not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    update_kwargs = {}
+    if "name" in body:
+        name = (body["name"] or "").strip()
+        if not name or len(name) > 100:
+            return web.json_response({"error": "Name is required (max 100 chars)."}, status=400)
+        update_kwargs["name"] = name
+    if "description" in body:
+        desc = (body["description"] or "").strip()
+        if len(desc) > 500:
+            return web.json_response({"error": "Description too long (max 500 chars)."}, status=400)
+        update_kwargs["description"] = desc
+
+    if update_kwargs:
+        await db.update_tier_category(category_id, **update_kwargs)
+
+    log.info("Guild %s: admin updated tier category %s: %s", guild_id, category_id, list(body.keys()))
+    return web.json_response({"ok": True, "category_id": category_id})
+
+
+@require_admin
+async def admin_delete_tier_category(request: web.Request) -> web.Response:
+    """Delete a tier category (cannot delete the default one)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        category_id = int(request.match_info["category_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid category_id."}, status=400)
+
+    cat = await db.get_tier_category(category_id)
+    if not cat or cat["guild_id"] != guild_id:
+        return web.json_response({"error": "Tier category not found."}, status=404)
+    if cat["is_default"]:
+        return web.json_response({"error": "Cannot delete the default tier category."}, status=400)
+
+    await db.delete_tier_category(category_id)
+
+    log.info("Guild %s: admin deleted tier category %s", guild_id, category_id)
+    return web.json_response({"ok": True, "deleted_category_id": category_id})
+
+
+# ── Admin Tier Entries API routes ─────────────────────────────────────────────
+
+@require_admin
+async def admin_add_tier_entry(request: web.Request) -> web.Response:
+    """Add a tier entry to a category."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        category_id = int(request.match_info["category_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid category_id."}, status=400)
+
+    cat = await db.get_tier_category(category_id)
+    if not cat or cat["guild_id"] != guild_id:
+        return web.json_response({"error": "Tier category not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    role_id = body.get("role_id")
+    role_name = body.get("role_name", "")
+    slot_limit = body.get("slot_limit", 1)
+    display_name = body.get("display_name")
+
+    if not role_id:
+        return web.json_response({"error": "role_id is required."}, status=400)
+
+    try:
+        role_id = int(role_id)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "role_id must be numeric."}, status=400)
+
+    try:
+        slot_limit = int(slot_limit)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "slot_limit must be an integer."}, status=400)
+
+    # Determine sort_order (append at end)
+    existing_entries = await db.get_tier_entries(guild_id, category_id)
+    sort_order = max((e[5] for e in existing_entries), default=-1) + 1
+
+    try:
+        entry_id = await db.add_tier_entry(
+            guild_id, category_id, role_id, role_name, slot_limit,
+            display_name=display_name, sort_order=sort_order,
+        )
+    except Exception:
+        return web.json_response({"error": "Failed to add tier entry."}, status=500)
+
+    log.info("Guild %s: admin added tier entry role %s to category %s", guild_id, role_id, category_id)
+    return web.json_response({
+        "ok": True,
+        "id": entry_id,
+        "role_id": str(role_id),
+        "role_name": role_name,
+        "slot_limit": slot_limit,
+        "display_name": display_name,
+        "sort_order": sort_order,
+    }, status=201)
+
+
+@require_admin
+async def admin_update_tier_entry(request: web.Request) -> web.Response:
+    """Update a tier entry."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        category_id = int(request.match_info["category_id"])
+        entry_id = int(request.match_info["entry_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid category_id or entry_id."}, status=400)
+
+    cat = await db.get_tier_category(category_id)
+    if not cat or cat["guild_id"] != guild_id:
+        return web.json_response({"error": "Tier category not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    update_kwargs = {}
+    if "slot_limit" in body:
+        try:
+            update_kwargs["slot_limit"] = int(body["slot_limit"])
+        except (ValueError, TypeError):
+            return web.json_response({"error": "slot_limit must be an integer."}, status=400)
+    if "display_name" in body:
+        update_kwargs["display_name"] = body["display_name"]
+    if "sort_order" in body:
+        try:
+            update_kwargs["sort_order"] = int(body["sort_order"])
+        except (ValueError, TypeError):
+            return web.json_response({"error": "sort_order must be an integer."}, status=400)
+    if "is_active" in body:
+        update_kwargs["is_active"] = bool(body["is_active"])
+
+    if update_kwargs:
+        await db.update_tier_entry(entry_id, **update_kwargs)
+
+    log.info("Guild %s: admin updated tier entry %s in category %s", guild_id, entry_id, category_id)
+    return web.json_response({"ok": True, "entry_id": entry_id})
+
+
+@require_admin
+async def admin_delete_tier_entry(request: web.Request) -> web.Response:
+    """Remove a tier entry."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        category_id = int(request.match_info["category_id"])
+        entry_id = int(request.match_info["entry_id"])
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid category_id or entry_id."}, status=400)
+
+    cat = await db.get_tier_category(category_id)
+    if not cat or cat["guild_id"] != guild_id:
+        return web.json_response({"error": "Tier category not found."}, status=404)
+
+    await db.remove_tier_entry(entry_id)
+
+    log.info("Guild %s: admin deleted tier entry %s from category %s", guild_id, entry_id, category_id)
+    return web.json_response({"ok": True, "deleted_entry_id": entry_id})
+
+
 def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
@@ -2933,5 +3271,14 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
+    # Admin Tier Categories CRUD
+    app.router.add_get("/api/admin/tier-categories", admin_get_tier_categories)
+    app.router.add_post("/api/admin/tier-categories", admin_create_tier_category)
+    app.router.add_put("/api/admin/tier-categories/{category_id}", admin_update_tier_category)
+    app.router.add_delete("/api/admin/tier-categories/{category_id}", admin_delete_tier_category)
+    # Admin Tier Entries CRUD
+    app.router.add_post("/api/admin/tier-categories/{category_id}/entries", admin_add_tier_entry)
+    app.router.add_put("/api/admin/tier-categories/{category_id}/entries/{entry_id}", admin_update_tier_entry)
+    app.router.add_delete("/api/admin/tier-categories/{category_id}/entries/{entry_id}", admin_delete_tier_entry)
     # Steam name resolution
     app.router.add_post("/api/steam/names", resolve_steam_names)

@@ -223,19 +223,36 @@ class WhitelistBot(commands.Bot):
         except discord.Forbidden:
             log.warning("Missing access to log channel %s", channel_id)
 
-    async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None) -> tuple:
-        """Calculate effective slots for a member. whitelist_id must be an int. wl is the whitelist dict."""
+    async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None, panel=None) -> tuple:
+        """Calculate effective slots for a member. whitelist_id must be an int. wl is the whitelist dict.
+        If panel is provided, its tier_category_id is checked first for tier_entries."""
         if user_record is None:
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
         override_slots = user_record[2] if user_record else None
         if wl is None:
-            # Fetch from DB by scanning all whitelists (caller should pass wl when possible)
             whitelists = await self.db.get_whitelists(guild_id)
             wl = next((w for w in whitelists if w["id"] == whitelist_id), None)
             if not wl:
                 return 0, "unknown"
-        mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-        matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and any(r.id == role_id for r in member.roles)]
+
+        # Check for tier_category_id on the panel first
+        tier_category_id = None
+        if panel and panel.get("tier_category_id"):
+            tier_category_id = panel["tier_category_id"]
+
+        if tier_category_id:
+            # Use tier_entries from the category
+            tier_entries = await self.db.get_tier_entries(guild_id, tier_category_id)
+            matched = [
+                (te[4] or te[2], te[3])  # (display_name or role_name, slot_limit)
+                for te in tier_entries
+                if bool(te[6]) and any(r.id == te[1] for r in member.roles)
+            ]
+        else:
+            # Fall back to role_mappings for the whitelist (backward compat)
+            mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
+            matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and any(r.id == role_id for r in member.roles)]
+
         if override_slots is not None:
             return int(override_slots), f"override ({override_slots})"
         if matched:

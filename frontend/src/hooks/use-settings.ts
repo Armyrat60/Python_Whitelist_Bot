@@ -15,6 +15,7 @@ import type {
   HealthStatus,
   WhitelistUser,
   AuditEntry,
+  TierCategory,
 } from "@/lib/types";
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
@@ -292,6 +293,89 @@ export function useRemoveRoleMapping() {
     mutationFn: ({ slug, roleId }: { slug: string; roleId: string }) =>
       api.delete(`/api/admin/roles/${slug}/${roleId}`),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+// ─── Tier Categories ───────────────────────────────────────────────────────
+
+export function useTierCategories() {
+  return useQuery<TierCategory[]>({
+    queryKey: ["tier-categories"],
+    queryFn: async () => {
+      const res = await api.get<{ categories: TierCategory[] }>("/api/admin/tier-categories");
+      return res.categories;
+    },
+  });
+}
+
+export function useCreateTierCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; description?: string }) =>
+      api.post("/api/admin/tier-categories", data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useUpdateTierCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; description?: string }) =>
+      api.put(`/api/admin/tier-categories/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useDeleteTierCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/admin/tier-categories/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useAddTierEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ categoryId, ...data }: { categoryId: number; role_id: string; role_name: string; slot_limit: number; display_name?: string }) =>
+      api.post(`/api/admin/tier-categories/${categoryId}/entries`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useUpdateTierEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number }) =>
+      api.put(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
+export function useRemoveTierEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ categoryId, entryId }: { categoryId: number; entryId: number }) =>
+      api.delete(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tier-categories"] });
       qc.invalidateQueries({ queryKey: ["settings"] });
     },
   });

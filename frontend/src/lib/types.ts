@@ -34,8 +34,27 @@ export interface Panel {
   channel_id: string | null;
   log_channel_id: string | null;
   whitelist_id: number | null;
+  tier_category_id: number | null;
   panel_message_id: string | null;
   is_default: boolean;
+}
+
+export interface TierCategory {
+  id: number;
+  name: string;
+  description: string;
+  is_default: boolean;
+  entries: TierEntry[];
+}
+
+export interface TierEntry {
+  id: number;
+  role_id: string;
+  role_name: string;
+  slot_limit: number;
+  display_name: string | null;
+  sort_order: number;
+  is_active: boolean;
 }
 
 export interface RoleMapping {
