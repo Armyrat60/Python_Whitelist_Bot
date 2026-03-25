@@ -2334,21 +2334,54 @@ async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
+    db = bot.db
 
-    whitelists = await bot.db.get_whitelists(guild_id)
+    whitelists = await db.get_whitelists(guild_id)
     web_server = request.app.get("web_server")
+    output_mode = await db.get_setting(guild_id, "output_mode", "combined")
+    combined_filename = await db.get_setting(guild_id, "combined_filename", "whitelist.txt")
 
     urls = []
-    for wl in whitelists:
+
+    if output_mode == "combined":
+        # In combined mode, show one URL for the combined file
         url = ""
-        if web_server and wl.get("output_filename"):
-            url = web_server.get_file_url(guild_id, wl["output_filename"])
+        if web_server and combined_filename:
+            url = web_server.get_file_url(guild_id, combined_filename)
         urls.append({
-            "slug": wl["slug"],
-            "name": wl["name"],
-            "filename": wl.get("output_filename", ""),
+            "slug": "_combined",
+            "name": "Combined Whitelist",
+            "filename": combined_filename,
             "url": url,
-            "enabled": wl["enabled"],
+            "enabled": True,
+            "note": "All enabled whitelists combined into one file",
+        })
+    else:
+        # Separate or hybrid mode: show per-whitelist URLs
+        for wl in whitelists:
+            url = ""
+            if web_server and wl.get("output_filename"):
+                url = web_server.get_file_url(guild_id, wl["output_filename"])
+            urls.append({
+                "slug": wl["slug"],
+                "name": wl["name"],
+                "filename": wl.get("output_filename", ""),
+                "url": url,
+                "enabled": wl["enabled"],
+            })
+
+    # In hybrid mode, also show the combined URL
+    if output_mode == "hybrid":
+        url = ""
+        if web_server and combined_filename:
+            url = web_server.get_file_url(guild_id, combined_filename)
+        urls.insert(0, {
+            "slug": "_combined",
+            "name": "Combined Whitelist",
+            "filename": combined_filename,
+            "url": url,
+            "enabled": True,
+            "note": "All enabled whitelists combined",
         })
 
     return web.json_response({"urls": urls})
