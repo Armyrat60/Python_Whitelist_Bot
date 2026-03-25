@@ -6,6 +6,7 @@ import { Plus, Trash2, Check, Crown, X, GripVertical } from "lucide-react";
 import {
   useTierCategories,
   useCreateTierCategory,
+  useUpdateTierCategory,
   useDeleteTierCategory,
   useAddTierEntry,
   useUpdateTierEntry,
@@ -176,10 +177,13 @@ function CategoryCard({
   roles: { id: string; name: string; color: string; position: number }[];
 }) {
   const deleteCategory = useDeleteTierCategory();
+  const updateCategory = useUpdateTierCategory();
   const addEntry = useAddTierEntry();
   const updateEntry = useUpdateTierEntry();
   const removeEntry = useRemoveTierEntry();
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(category.name);
   const [newRoleId, setNewRoleId] = useState("");
   const [newSlotCount, setNewSlotCount] = useState("1");
   const [newDisplayName, setNewDisplayName] = useState("");
@@ -279,9 +283,66 @@ function CategoryCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {category.name}
+          {editingName ? (
+            <div className="flex items-center gap-1">
+              <Input
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                className="h-7 w-40 text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    updateCategory.mutate(
+                      { id: category.id, name: nameValue.trim() },
+                      {
+                        onSuccess: () => { toast.success("Renamed"); setEditingName(false); },
+                        onError: () => toast.error("Failed to rename"),
+                      }
+                    );
+                  }
+                  if (e.key === "Escape") { setNameValue(category.name); setEditingName(false); }
+                }}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-emerald-500"
+                onClick={() => {
+                  updateCategory.mutate(
+                    { id: category.id, name: nameValue.trim() },
+                    {
+                      onSuccess: () => { toast.success("Renamed"); setEditingName(false); },
+                      onError: () => toast.error("Failed to rename"),
+                    }
+                  );
+                }}
+              >
+                <Check className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => { setNameValue(category.name); setEditingName(false); }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <span
+              className="cursor-pointer hover:underline"
+              onClick={() => setEditingName(true)}
+              title="Click to rename"
+            >
+              {category.name}
+            </span>
+          )}
           {category.is_default && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge
+              variant="secondary"
+              className="text-[10px] cursor-help"
+              title="Default category — cannot be deleted but can be renamed"
+            >
               Default
             </Badge>
           )}
