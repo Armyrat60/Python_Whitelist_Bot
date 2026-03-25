@@ -203,6 +203,29 @@ async def callback(request: web.Request) -> web.Response:
     raise web.HTTPFound("/dashboard")
 
 
+async def session_info(request: web.Request) -> web.Response:
+    """Return current session data as JSON (for React frontend)."""
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        return web.json_response({"logged_in": False})
+
+    active_guild_id = session.get("active_guild_id")
+    guilds = session.get("guilds", [])
+    active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
+
+    return web.json_response({
+        "logged_in": True,
+        "discord_id": session.get("discord_id", ""),
+        "username": session.get("username", ""),
+        "discriminator": session.get("discriminator", "0"),
+        "avatar": session.get("avatar", ""),
+        "guilds": guilds,
+        "active_guild_id": active_guild_id,
+        "is_mod": active_guild["is_mod"] if active_guild else False,
+        "roles": active_guild.get("roles", []) if active_guild else [],
+    })
+
+
 async def logout(request: web.Request) -> web.Response:
     """Clear the session and redirect to home."""
     session = await aiohttp_session.get_session(request)
@@ -213,4 +236,5 @@ async def logout(request: web.Request) -> web.Response:
 def setup_routes(app: web.Application):
     app.router.add_get("/login", login)
     app.router.add_get("/callback", callback)
+    app.router.add_get("/api/auth/session", session_info)
     app.router.add_get("/logout", logout)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 import ssl
 import time
@@ -62,6 +63,36 @@ def _get_client_ip(request: web.Request) -> str:
         return forwarded.split(",")[0].strip()
     peername = request.transport.get_extra_info("peername")
     return peername[0] if peername else "unknown"
+
+
+CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "")  # e.g. "https://squadwhitelister.com"
+
+
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    """Handle CORS for cross-origin requests from the React frontend."""
+    origin = request.headers.get("Origin", "")
+    allowed = CORS_ORIGIN or WEB_BASE_URL
+
+    # Handle preflight OPTIONS requests
+    if request.method == "OPTIONS":
+        response = web.Response(status=204)
+    else:
+        try:
+            response = await handler(request)
+        except web.HTTPException as exc:
+            response = exc
+
+    if allowed and origin:
+        # Allow the configured origin (or exact match)
+        if origin == allowed or origin.rstrip("/") == allowed.rstrip("/"):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Max-Age"] = "86400"
+
+    return response
 
 
 @web.middleware
@@ -127,7 +158,7 @@ class WebServer:
             log.info("WEB_FILE_SECRET not set, generated random token. Set it in .env for stable URLs across restarts.")
 
         self.app = web.Application(
-            middlewares=[error_logging_middleware, security_headers_middleware, rate_limit_middleware],
+            middlewares=[cors_middleware, error_logging_middleware, security_headers_middleware, rate_limit_middleware],
         )
 
         # Rate limiter: 60 requests/minute for general, applied globally
