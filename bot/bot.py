@@ -418,13 +418,23 @@ class WhitelistBot(commands.Bot):
         wl_name = wl["name"]
         wl_id = wl["id"]
 
-        # Get role mappings for tier info — use <@&ID> for colored role mentions
-        role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
+        # Get tier entries from panel's category, or fall back to role_mappings
+        panels = await self.db.get_panels(guild_id)
+        panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+
         tier_lines = []
-        for rm in role_mappings:
-            role_id = rm[0] if len(rm) > 0 else 0
-            slot_limit = rm[2] if len(rm) > 2 else 1
-            tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+        if panel and panel.get("tier_category_id"):
+            tier_entries = await self.db.get_tier_entries(guild_id, panel["tier_category_id"])
+            for te in tier_entries:
+                name = te[4] or te[2]  # display_name or role_name
+                slot_limit = te[3]
+                tier_lines.append(f"**{name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+        else:
+            role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
+            for rm in role_mappings:
+                role_name = rm[1] if len(rm) > 1 else "Unknown"
+                slot_limit = rm[2] if len(rm) > 2 else 1
+                tier_lines.append(f"**{role_name}** — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
 
         description = "Use the buttons below to manage your whitelist entry.\n\n"
         if tier_lines:

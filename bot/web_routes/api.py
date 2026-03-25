@@ -2623,27 +2623,26 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     wl_name = wl["name"] if wl else "Whitelist"
 
     # Get tiers: prefer tier_category_id on panel, fall back to role_mappings
+    # Use plain text names (not role mentions) to avoid pinging members on embed update
     tier_lines = []
     if panel.get("tier_category_id"):
         tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
         for te in tier_entries:
-            # Tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
             if not bool(te[6]):
                 continue
-            role_id = te[1]
+            display = te[4] or te[2]  # display_name or role_name
             slots = te[3]
-            display = te[4] or te[2]
-            tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
+            tier_lines.append(f"**{display}** — {slots} {'slot' if slots == 1 else 'slots'}")
     else:
         role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
         for rm in role_mappings:
             if isinstance(rm, tuple):
-                role_id = rm[0] if len(rm) > 0 else 0
+                name = rm[1] if len(rm) > 1 else "Unknown"
                 slots = rm[2] if len(rm) > 2 else 1
             else:
-                role_id = rm.get("role_id", 0)
+                name = rm.get("role_name", "Unknown")
                 slots = rm.get("slot_limit", 1)
-            tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
+            tier_lines.append(f"**{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
 
     description = "Use the buttons below to manage your whitelist entry.\n\n"
     if tier_lines:

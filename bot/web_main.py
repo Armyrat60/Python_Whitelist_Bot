@@ -94,7 +94,7 @@ class DiscordRESTClient:
     async def send_message(self, channel_id: int, content: str = None, embed: dict = None, components: list = None) -> dict | None:
         """Send a message to a channel via REST API."""
         await self._ensure_session()
-        payload = {}
+        payload = {"allowed_mentions": {"parse": []}}  # Suppress all pings
         if content:
             payload["content"] = content
         if embed:
