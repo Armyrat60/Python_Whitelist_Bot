@@ -199,22 +199,30 @@ function CategoryCard({
   );
 
   // Build role options, excluding roles already in this category
-  const roleOptions: ComboboxOption[] = useMemo(
-    () =>
-      roles
-        .filter((r) => !category.entries.some((e) => e.role_id === r.id))
-        .map((role) => ({
-          value: role.id,
-          label: role.name,
-          icon: (
-            <span
-              className="mr-2 inline-block h-3 w-3 rounded-full"
-              style={{ backgroundColor: role.color || "#99AAB5" }}
-            />
-          ),
-        })),
-    [roles, category.entries]
-  );
+  // Show color dot + role ID suffix to distinguish duplicates
+  const roleOptions: ComboboxOption[] = useMemo(() => {
+    const filtered = roles.filter(
+      (r) => !category.entries.some((e) => e.role_id === r.id)
+    );
+    // Check for duplicate names to know when to show IDs
+    const nameCounts: Record<string, number> = {};
+    for (const r of filtered) {
+      nameCounts[r.name] = (nameCounts[r.name] || 0) + 1;
+    }
+    return filtered.map((role) => ({
+      value: role.id,
+      label:
+        nameCounts[role.name] > 1
+          ? `${role.name}  (ID: ...${role.id.slice(-6)})`
+          : role.name,
+      icon: (
+        <span
+          className="mr-2 inline-block h-3 w-3 shrink-0 rounded-full"
+          style={{ backgroundColor: role.color || "#99AAB5" }}
+        />
+      ),
+    }));
+  }, [roles, category.entries]);
 
   function handleAddEntry() {
     if (!newRoleId) return;
