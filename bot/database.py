@@ -563,6 +563,22 @@ POSTGRES_MIGRATIONS = [
     WHERE w.guild_id = audit_log.guild_id AND w.slug = audit_log.whitelist_type
       AND audit_log.whitelist_id IS NULL AND audit_log.whitelist_type IS NOT NULL
     """,
+
+    # --- Ensure unique constraints exist for ON CONFLICT to work ---
+    # Delete orphaned rows with NULL whitelist_id before adding constraints
+    "DELETE FROM whitelist_users WHERE whitelist_id IS NULL",
+    "DELETE FROM whitelist_identifiers WHERE whitelist_id IS NULL AND id_value IS NULL",
+    # Make whitelist_id NOT NULL now that migration is done
+    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_id SET NOT NULL",
+    # Add unique constraint if not exists (idempotent via DO NOTHING on error)
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_wu_guild_discord_wl') THEN
+            ALTER TABLE whitelist_users ADD CONSTRAINT uq_wu_guild_discord_wl UNIQUE (guild_id, discord_id, whitelist_id);
+        END IF;
+    END $$
+    """,
 ]
 
 
@@ -1109,7 +1125,7 @@ class Database:
                 INSERT INTO whitelist_users
                 (guild_id, discord_id, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (guild_id, discord_id, whitelist_id) DO UPDATE SET
+                ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                     discord_name=EXCLUDED.discord_name,
                     status=EXCLUDED.status,
                     slot_limit_override=EXCLUDED.slot_limit_override,
