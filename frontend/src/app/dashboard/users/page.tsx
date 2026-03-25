@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useReactTable,
   getCoreRowModel,
@@ -440,19 +441,51 @@ function AddUserDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [discordId, setDiscordId] = useState("");
+  const [discordName, setDiscordName] = useState("");
   const [whitelistSlug, setWhitelistSlug] = useState("");
+  const [steamIds, setSteamIds] = useState("");
+  const [eosIds, setEosIds] = useState("");
+  const queryClient = useQueryClient();
 
   async function handleAdd() {
-    if (!discordId || !whitelistSlug) return;
+    if (!discordId || !whitelistSlug) {
+      toast.error("Discord ID and whitelist are required");
+      return;
+    }
+    // Parse comma/newline separated IDs
+    const steamList = steamIds.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const eosList = eosIds.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+
+    if (steamList.length === 0 && eosList.length === 0) {
+      toast.error("At least one Steam64 or EOS ID is required");
+      return;
+    }
+
+    // Validate Steam64 format
+    for (const sid of steamList) {
+      if (!/^7656119\d{10}$/.test(sid)) {
+        toast.error(`Invalid Steam64 ID: ${sid}`);
+        return;
+      }
+    }
+
     try {
       await api.post(`/api/admin/users`, {
         discord_id: discordId,
+        discord_name: discordName || `User ${discordId}`,
         whitelist_slug: whitelistSlug,
+        steam_ids: steamList,
+        eos_ids: eosList,
       });
-      toast.success("User added");
+      toast.success("User added successfully");
       setDiscordId("");
+      setDiscordName("");
       setWhitelistSlug("");
+      setSteamIds("");
+      setEosIds("");
       setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
     } catch {
       toast.error("Failed to add user");
     }
@@ -464,24 +497,34 @@ function AddUserDialog({
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         Add User
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add User</DialogTitle>
           <DialogDescription>
-            Add a user to a whitelist by Discord ID.
+            Manually add a user to a whitelist with their IDs.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-2">
-            <Label>Discord ID</Label>
-            <Input
-              value={discordId}
-              onChange={(e) => setDiscordId(e.target.value)}
-              placeholder="e.g. 123456789012345678"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Discord ID <span className="text-destructive">*</span></Label>
+              <Input
+                value={discordId}
+                onChange={(e) => setDiscordId(e.target.value)}
+                placeholder="e.g. 123456789012345678"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Discord Name</Label>
+              <Input
+                value={discordName}
+                onChange={(e) => setDiscordName(e.target.value)}
+                placeholder="e.g. username"
+              />
+            </div>
           </div>
           <div className="space-y-2">
-            <Label>Whitelist</Label>
+            <Label>Whitelist <span className="text-destructive">*</span></Label>
             <Select value={whitelistSlug} onValueChange={(v) => setWhitelistSlug(v ?? "")}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select whitelist" />
@@ -495,9 +538,30 @@ function AddUserDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label>Steam64 IDs <span className="text-destructive">*</span></Label>
+            <Input
+              value={steamIds}
+              onChange={(e) => setSteamIds(e.target.value)}
+              placeholder="e.g. 76561198012345678 (comma-separated for multiple)"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Must start with 7656119 and be 17 digits. Separate multiple with commas.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>EOS IDs <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <Input
+              value={eosIds}
+              onChange={(e) => setEosIds(e.target.value)}
+              placeholder="e.g. 0002a10186d9453eb8e43a8e67e4f25c"
+            />
+          </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleAdd}>Add</Button>
+          <Button onClick={handleAdd} disabled={!discordId || !whitelistSlug}>
+            Add User
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
