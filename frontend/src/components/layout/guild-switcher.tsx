@@ -21,6 +21,8 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 function guildIconUrl(guildId: string, icon: string | null) {
   if (!icon) return null;
+  // If it's already a full URL (from session), use as-is
+  if (icon.startsWith("http")) return icon;
   return `https://cdn.discordapp.com/icons/${guildId}/${icon}.webp?size=64`;
 }
 

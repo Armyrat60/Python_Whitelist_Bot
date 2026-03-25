@@ -4,7 +4,7 @@ import {
   Users,
   Hash,
   Shield,
-  Columns3,
+  PanelTop,
   RefreshCw,
   Settings2,
   AlertTriangle,
@@ -81,7 +81,7 @@ export default function DashboardPage() {
         <StatCard
           label="Panels"
           value={panelCount}
-          icon={Columns3}
+          icon={PanelTop}
           loading={statsLoading}
         />
       </div>
