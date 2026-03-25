@@ -333,7 +333,9 @@ function PanelCard({
           <Label className="text-xs">Whitelist</Label>
           <Select value={whitelistId} onValueChange={(v) => setWhitelistId(v ?? "")}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select whitelist" />
+              <SelectValue placeholder="Select whitelist">
+                {wlName !== "None" ? wlName : "Select whitelist"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {whitelists.map((wl) => (
