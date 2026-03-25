@@ -50,6 +50,21 @@ class WhitelistBot(commands.Bot):
         for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications"):
             await self.load_extension(ext)
 
+        # Register persistent views for ALL whitelist panels BEFORE gateway connects.
+        # This ensures button interactions are handled immediately, even during reconnects.
+        from bot.cogs.whitelist import WhitelistPanelView
+        all_guild_whitelists = await self.db.fetchall(
+            "SELECT guild_id, id, slug FROM whitelists"
+        )
+        for row in all_guild_whitelists:
+            g_id, wl_id, slug = int(row[0]), int(row[1]), row[2]
+            key = (g_id, wl_id)
+            if key not in self.panel_views:
+                view = WhitelistPanelView(self, slug, whitelist_id=wl_id)
+                self.panel_views[key] = view
+                self.add_view(view)
+        log.info("Registered %d persistent panel views", len(self.panel_views))
+
         # Sync commands globally
         synced = await self.tree.sync()
         log.info("Synced %s global app commands", len(synced))
@@ -64,14 +79,14 @@ class WhitelistBot(commands.Bot):
         # Seed defaults for all guilds
         for guild in self.guilds:
             await self.db.seed_guild_defaults(guild.id)
-        # Register persistent views for whitelist panels per guild
+        # Panel views already registered in setup_hook — just check for any new ones
         from bot.cogs.whitelist import WhitelistPanelView
         for guild in self.guilds:
             whitelists = await self.db.get_whitelists(guild.id)
             for wl in whitelists:
                 key = (guild.id, wl["id"])
                 if key not in self.panel_views:
-                    view = WhitelistPanelView(self, wl["slug"])
+                    view = WhitelistPanelView(self, wl["slug"], whitelist_id=wl["id"])
                     self.panel_views[key] = view
                     self.add_view(view)
         # Prime the web cache with current content for all guilds
