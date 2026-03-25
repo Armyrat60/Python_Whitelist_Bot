@@ -41,7 +41,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950">
       {/* Brand */}
       <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#5865F2]">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500">
           <span className="text-sm font-bold text-white">SW</span>
         </div>
         <span className="text-sm font-semibold text-foreground">
@@ -113,7 +113,7 @@ function NavLink({
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
         active
-          ? "bg-zinc-800 text-foreground"
+          ? "bg-orange-500/10 text-orange-400 border-l-2 border-orange-500"
           : "text-muted-foreground hover:bg-zinc-900 hover:text-foreground"
       )}
     >
