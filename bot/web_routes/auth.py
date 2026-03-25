@@ -7,7 +7,12 @@ import aiohttp
 import aiohttp_session
 from aiohttp import web
 
+import os
+
 from bot.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, WEB_BASE_URL, log
+
+# Frontend URL for post-login redirect (separate from API's WEB_BASE_URL)
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/") or WEB_BASE_URL
 
 DISCORD_API = "https://discord.com/api/v10"
 OAUTH2_SCOPES = "identify guilds guilds.members.read"
@@ -227,7 +232,7 @@ async def session_info(request: web.Request) -> web.Response:
 
 
 async def logout(request: web.Request) -> web.Response:
-    """Clear the session and redirect to home."""
+    """Clear the session and redirect to frontend home."""
     session = await aiohttp_session.get_session(request)
     session.invalidate()
     raise web.HTTPFound("/")
