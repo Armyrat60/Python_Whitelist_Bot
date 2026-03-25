@@ -1128,8 +1128,8 @@ class Database:
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                     discord_name=EXCLUDED.discord_name,
                     status=EXCLUDED.status,
@@ -1138,14 +1138,14 @@ class Database:
                     last_plan_name=EXCLUDED.last_plan_name,
                     updated_at=EXCLUDED.updated_at
                 """,
-                (guild_id, discord_id, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
             )
         else:
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
                     discord_name=VALUES(discord_name),
                     status=VALUES(status),
@@ -1154,7 +1154,7 @@ class Database:
                     last_plan_name=VALUES(last_plan_name),
                     updated_at=VALUES(updated_at)
                 """,
-                (guild_id, discord_id, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
             )
 
     async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):
@@ -1181,10 +1181,10 @@ class Database:
             queries.append((
                 """
                 INSERT INTO whitelist_identifiers
-                (guild_id, discord_id, whitelist_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                (guild_id, discord_id, whitelist_id, id_type, id_value, verified, verification_source, now, now),
+                (guild_id, discord_id, '', whitelist_id, id_type, id_value, verified, verification_source, now, now),
             ))
         await self._adapter.execute_transaction(queries)
 
