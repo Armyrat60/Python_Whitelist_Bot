@@ -583,21 +583,51 @@ function WhitelistsTab() {
           <DialogHeader>
             <DialogTitle>Create Whitelist</DialogTitle>
             <DialogDescription>
-              Give your new whitelist a name.
+              Choose a template or enter a custom name.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Name</Label>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. VIP Whitelist"
-            />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { name: "Subscribers", file: "subscribers.txt" },
+                { name: "Clan", file: "clan.txt" },
+                { name: "Staff", file: "staff.txt" },
+                { name: "VIP", file: "vip.txt" },
+              ].map((tpl) => (
+                <Button
+                  key={tpl.name}
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={() => {
+                    setNewName(tpl.name);
+                  }}
+                >
+                  {tpl.name}
+                </Button>
+              ))}
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-zinc-700" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-card px-2 text-muted-foreground">or custom</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Tournament Whitelist"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
               onClick={handleCreate}
-              disabled={createWhitelist.isPending}
+              disabled={createWhitelist.isPending || !newName.trim()}
             >
               Create
             </Button>
