@@ -3,7 +3,10 @@ from discord import app_commands
 from discord.ext import commands
 from typing import List
 
+from bot.config import WEB_BASE_URL
 from bot.utils import _modal_on_error
+
+_DASHBOARD_URL = WEB_BASE_URL or "https://squadwhitelister.com"
 
 
 async def setup_autocomplete(interaction: discord.Interaction, current: str):
@@ -80,7 +83,7 @@ class WhitelistPanelView(discord.ui.View):
         web_btn = discord.ui.Button(
             label="Web Dashboard",
             style=discord.ButtonStyle.link,
-            url="https://squadwhitelister.com/my-whitelist",
+            url=f"{_DASHBOARD_URL}/my-whitelist",
             emoji="🌐",
             row=0,
         )
@@ -126,7 +129,7 @@ class WhitelistPanelView(discord.ui.View):
             embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
         else:
             embed.add_field(name="Your IDs", value="None submitted yet", inline=False)
-        embed.set_footer(text="Squad Whitelister • squadwhitelister.com")
+        embed.set_footer(text=f"Squad Whitelister • {_DASHBOARD_URL.replace('https://', '')}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def _manage_callback(self, interaction: discord.Interaction):
@@ -155,7 +158,7 @@ class ManagerMenuView(discord.ui.View):
         self.add_item(discord.ui.Button(
             label="Open Dashboard",
             style=discord.ButtonStyle.link,
-            url="https://squadwhitelister.com/dashboard",
+            url=f"{_DASHBOARD_URL}/dashboard",
             emoji="🌐",
         ))
 

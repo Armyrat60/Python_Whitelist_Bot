@@ -2566,13 +2566,14 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     description = f"Submit your Steam64 ID to get whitelisted on the server.\n\n"
     if tier_lines:
         description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
-    description += "Use the `/whitelist` command or visit the [web dashboard](https://squadwhitelister.com/my-whitelist) to manage your IDs."
+    description += f"Use the `/whitelist` command or visit the [web dashboard]({WEB_BASE_URL}/my-whitelist) to manage your IDs."
 
+    _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
     embed = {
         "title": f"🛡️ {panel['name']} — {wl_name}",
         "description": description,
         "color": 0xF97316,  # Orange
-        "footer": {"text": "Squad Whitelister • squadwhitelister.com"},
+        "footer": {"text": f"Squad Whitelister • {_domain}"},
     }
 
     # Try to send or edit the message

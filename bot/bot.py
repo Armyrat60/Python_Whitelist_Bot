@@ -414,7 +414,7 @@ class WhitelistBot(commands.Bot):
             description=description,
             color=discord.Color.from_rgb(249, 115, 22),  # Orange
         )
-        embed.set_footer(text="Squad Whitelister • squadwhitelister.com")
+        embed.set_footer(text=f"Squad Whitelister • {WEB_BASE_URL.replace('https://', '') if WEB_BASE_URL else 'squadwhitelister.com'}")
         return embed
 
     async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):

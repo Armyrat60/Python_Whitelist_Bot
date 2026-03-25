@@ -46,6 +46,13 @@ class RateLimiter:
         if len(self._hits[ip]) >= self.max_requests:
             return True
         self._hits[ip].append(now)
+
+        # Periodic cleanup: every 100 requests, remove stale IPs
+        if len(self._hits) > 100:
+            stale = [k for k, v in self._hits.items() if not v or (now - v[-1]) > self.window * 2]
+            for k in stale:
+                del self._hits[k]
+
         return False
 
 

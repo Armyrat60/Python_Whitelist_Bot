@@ -588,6 +588,12 @@ POSTGRES_MIGRATIONS = [
     # --- Clean up legacy whitelist_types table to prevent re-migration ---
     # This stops old clan/staff/subscription from being re-created after deletion
     "TRUNCATE TABLE whitelist_types",
+
+    # --- Performance indexes ---
+    "CREATE INDEX IF NOT EXISTS idx_wu_guild_wl ON whitelist_users (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
 ]
 
 
