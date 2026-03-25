@@ -403,10 +403,9 @@ class WhitelistBot(commands.Bot):
         if tier_lines:
             description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
         description += (
-            "**How it works:**\n"
-            "1. Click **Submit / Update ID** to enter your Steam64 ID\n"
-            "2. Click **View My Whitelist** to check your current entry\n"
-            "3. Or use the **Web Dashboard** for full management"
+            "🛡️ **Submit / Update ID** — Enter your Steam64 or EOS ID\n"
+            "📋 **View My Whitelist** — Check your current entry and slots\n"
+            "🌐 **Web Dashboard** — Manage everything from the browser"
         )
 
         embed = discord.Embed(

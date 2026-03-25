@@ -908,11 +908,16 @@ function UserDetailSheet({
             </div>
           );
         })}
-        {slots.filter(s => s.trim()).length < user.effective_slot_limit && (
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={addSlot}>
             <Plus className="mr-1 h-3 w-3" /> Add Slot
           </Button>
-        )}
+          {usedSlots > user.effective_slot_limit && (
+            <span className="text-[11px] text-amber-400">
+              Over slot limit ({usedSlots}/{user.effective_slot_limit}) — extra slots will be temporary
+            </span>
+          )}
+        </div>
         <p className="text-[11px] text-muted-foreground">
           Paste any ID — Steam64 (17 digits starting with 7656119) or EOS (32 hex chars) are auto-detected.
         </p>

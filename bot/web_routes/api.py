@@ -2606,10 +2606,14 @@ async def admin_push_panel(request: web.Request) -> web.Response:
             slots = rm.get("slot_limit", 1)
         tier_lines.append(f"<@&{role_id}> — {slots} {'slot' if slots == 1 else 'slots'}")
 
-    description = f"Submit your Steam64 ID to get whitelisted on the server.\n\n"
+    description = "Use the buttons below to manage your whitelist entry.\n\n"
     if tier_lines:
         description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
-    description += f"Use the `/whitelist` command or visit the [web dashboard]({WEB_BASE_URL}/my-whitelist) to manage your IDs."
+    description += (
+        "🛡️ **Submit / Update ID** — Enter your Steam64 or EOS ID\n"
+        "📋 **View My Whitelist** — Check your current entry and slots\n"
+        "🌐 **Web Dashboard** — Manage everything from the browser"
+    )
 
     _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
     _dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"

@@ -64,7 +64,8 @@ export default function TiersPage() {
 
   const mappings: RoleMapping[] = useMemo(() => {
     if (!settingsData?.role_mappings || !activeSlug) return [];
-    return settingsData.role_mappings[activeSlug] ?? [];
+    const raw = settingsData.role_mappings[activeSlug] ?? [];
+    return [...raw].sort((a, b) => a.slot_limit - b.slot_limit);
   }, [settingsData, activeSlug]);
 
   const roleOptions: ComboboxOption[] = useMemo(
