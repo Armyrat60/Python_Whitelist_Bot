@@ -224,8 +224,15 @@ class WhitelistBot(commands.Bot):
             log.warning("Missing access to log channel %s", channel_id)
 
     async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None, panel=None) -> tuple:
-        """Calculate effective slots for a member. whitelist_id must be an int. wl is the whitelist dict.
-        If panel is provided, its tier_category_id is checked first for tier_entries."""
+        """Calculate effective slots for a member.
+
+        Returns (slot_count: int, plan_description: str).
+        Every code path is logged at INFO level for audit trail.
+        """
+        if member is None:
+            log.warning("calculate_user_slots called with member=None guild=%s wl=%s", guild_id, whitelist_id)
+            return 0, "error:no_member"
+
         if user_record is None:
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
         override_slots = user_record[2] if user_record else None
@@ -233,7 +240,14 @@ class WhitelistBot(commands.Bot):
             whitelists = await self.db.get_whitelists(guild_id)
             wl = next((w for w in whitelists if w["id"] == whitelist_id), None)
             if not wl:
-                return 0, "unknown"
+                log.warning("calculate_user_slots: whitelist %s not found for guild %s", whitelist_id, guild_id)
+                return 0, "error:whitelist_not_found"
+
+        # Admin override takes priority
+        if override_slots is not None:
+            log.info("Slot calc: guild=%s user=%s (%s) → OVERRIDE %s slots",
+                     guild_id, member.id, member.display_name, override_slots)
+            return int(override_slots), f"override ({override_slots})"
 
         # Check for tier_category_id on the panel first
         tier_category_id = None
@@ -241,31 +255,57 @@ class WhitelistBot(commands.Bot):
             tier_category_id = panel["tier_category_id"]
 
         member_role_ids = {r.id for r in member.roles}
+        member_role_names = {r.id: r.name for r in member.roles}
+
         if tier_category_id:
             # Use tier_entries from the category
             # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
             tier_entries = await self.db.get_tier_entries(guild_id, tier_category_id)
-            matched = [
-                (te[4] or te[2], te[3])  # (display_name or role_name, slot_limit)
-                for te in tier_entries
-                if bool(te[6]) and int(te[1]) in member_role_ids
-            ]
-            log.debug("Tier calc guild=%s member=%s category=%s entries=%d matched=%d member_roles=%s",
-                       guild_id, member.id, tier_category_id, len(tier_entries), len(matched), member_role_ids)
+            matched = []
+            for te in tier_entries:
+                te_role_id = int(te[1])
+                te_active = bool(te[6])
+                te_slots = te[3]
+                te_name = te[4] or te[2]
+                if te_active and te_role_id in member_role_ids:
+                    matched.append((te_name, te_slots))
+                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED tier '%s' (role_id=%s) = %d slots",
+                             guild_id, member.id, member.display_name, te_name, te_role_id, te_slots)
+
+            if not matched:
+                log.info("Slot calc: guild=%s user=%s (%s) → NO MATCH in category %s (%d entries). "
+                         "User roles: %s. Tier role IDs: %s",
+                         guild_id, member.id, member.display_name, tier_category_id,
+                         len(tier_entries),
+                         [(rid, member_role_names.get(rid, '?')) for rid in sorted(member_role_ids)],
+                         [(int(te[1]), te[2], bool(te[6])) for te in tier_entries])
         else:
             # Fall back to role_mappings for the whitelist (backward compat)
             mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-            matched = [(role_name, slot_limit) for role_id, role_name, slot_limit, is_active in mappings if is_active and int(role_id) in member_role_ids]
+            matched = []
+            for mapping in mappings:
+                role_id, role_name, slot_limit, is_active = mapping[0], mapping[1], mapping[2], mapping[3]
+                if is_active and int(role_id) in member_role_ids:
+                    matched.append((role_name, slot_limit))
+                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED role_mapping '%s' = %d slots",
+                             guild_id, member.id, member.display_name, role_name, slot_limit)
 
-        if override_slots is not None:
-            return int(override_slots), f"override ({override_slots})"
         if matched:
-            if wl["stack_roles"]:
+            if wl.get("stack_roles"):
                 total = sum(x[1] for x in matched)
-                return total, " + ".join(f"{n}:{s}" for n, s in matched)
+                plan = " + ".join(f"{n}:{s}" for n, s in matched)
+                log.info("Slot calc: guild=%s user=%s (%s) → STACKED %d total slots (%s)",
+                         guild_id, member.id, member.display_name, total, plan)
+                return total, plan
             winner = max(matched, key=lambda x: x[1])
+            log.info("Slot calc: guild=%s user=%s (%s) → BEST MATCH '%s' = %d slots",
+                     guild_id, member.id, member.display_name, winner[0], winner[1])
             return winner[1], f"{winner[0]}:{winner[1]}"
-        return int(wl["default_slot_limit"]), f"default:{wl['default_slot_limit']}"
+
+        default = int(wl.get("default_slot_limit", 1))
+        log.info("Slot calc: guild=%s user=%s (%s) → DEFAULT %d slots (no tier match)",
+                 guild_id, member.id, member.display_name, default)
+        return default, f"default:{default}"
 
     async def start_whitelist_flow(self, interaction: discord.Interaction, whitelist_type: str):
         """Start the whitelist submission flow. whitelist_type is a slug string (for cog compat)."""
@@ -326,6 +366,8 @@ class WhitelistBot(commands.Bot):
         panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
 
         slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
+        log.info("Submit: guild=%s user=%s (%s) wl=%s slots=%d plan=%s",
+                 guild_id, member.id if member else '?', interaction.user, whitelist_type, slots, plan)
         steam_ids = list(dict.fromkeys(token for token in split_identifier_tokens(steam_raw) if token))
         eos_ids = list(dict.fromkeys(token.lower() for token in split_identifier_tokens(eos_raw) if token))
 
@@ -376,6 +418,17 @@ class WhitelistBot(commands.Bot):
                 plan,
             )
             await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_id, submitted)
+
+            # Post-save verification: read back and confirm
+            saved_ids = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
+            if len(saved_ids) != len(submitted):
+                log.error("DATA INTEGRITY: guild=%s user=%s submitted %d IDs but only %d saved! submitted=%s saved=%s",
+                          guild_id, interaction.user.id, len(submitted), len(saved_ids),
+                          [(t, v) for t, v, *_ in submitted],
+                          [(t, v) for t, v, *_ in saved_ids])
+            else:
+                log.info("Submit verified: guild=%s user=%s (%s) saved %d IDs to wl=%s",
+                         guild_id, interaction.user.id, interaction.user, len(saved_ids), whitelist_type)
             await self.db.audit(
                 guild_id,
                 "user_submit",
