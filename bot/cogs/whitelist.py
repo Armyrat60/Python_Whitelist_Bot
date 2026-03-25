@@ -28,7 +28,7 @@ class IdentifierModal(discord.ui.Modal, title="Submit or Update Whitelist IDs"):
         existing_eos = ", ".join(v for t, v, *_ in existing if t == "eosid")
 
         self.steam_ids = discord.ui.TextInput(
-            label=f"Steam64 IDs (up to {slot_limit} total IDs across all fields)",
+            label=f"Steam64 IDs ({slot_limit} slots)",
             default=existing_steam[:4000],
             required=False,
             style=discord.TextStyle.paragraph,
@@ -36,7 +36,7 @@ class IdentifierModal(discord.ui.Modal, title="Submit or Update Whitelist IDs"):
             max_length=4000,
         )
         self.eos_ids = discord.ui.TextInput(
-            label="EOS IDs (32 hex chars each)",
+            label="EOS IDs (optional)",
             default=existing_eos[:4000],
             required=False,
             style=discord.TextStyle.paragraph,
