@@ -7,13 +7,13 @@ import {
   Columns3,
   RefreshCw,
   Settings2,
-  CheckCircle2,
-  XCircle,
+  AlertTriangle,
+  Info,
   Clock,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useStats, useHealth, useAudit } from "@/hooks/use-settings";
+import { useStats, useHealth, useAudit, useWhitelists, usePanels } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/stats/stat-card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,11 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useStats();
   const { data: health, isLoading: healthLoading } = useHealth();
   const { data: audit, isLoading: auditLoading } = useAudit(1, 10);
+  const { data: whitelists } = useWhitelists();
+  const { data: panels } = usePanels();
+
+  const whitelistCount = whitelists?.length ?? 0;
+  const panelCount = panels?.length ?? 0;
 
   async function handleResync() {
     try {
@@ -48,7 +53,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Users"
-          value={stats?.total_users}
+          value={stats?.total_active_users}
           icon={Users}
           loading={statsLoading}
         />
@@ -60,13 +65,13 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Whitelists"
-          value={stats?.whitelists_count}
+          value={whitelistCount}
           icon={Shield}
           loading={statsLoading}
         />
         <StatCard
           label="Panels"
-          value={stats?.panels_count}
+          value={panelCount}
           icon={Columns3}
           loading={statsLoading}
         />
@@ -86,7 +91,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Charts placeholder + bottom sections */}
+      {/* Charts placeholder + Health */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Placeholder for charts */}
         <Card className="lg:col-span-2">
@@ -113,36 +118,34 @@ export default function DashboardPage() {
                 <Skeleton className="h-5 w-full" />
                 <Skeleton className="h-5 w-full" />
               </>
-            ) : health ? (
-              <>
-                <HealthRow
-                  label="Bot Connected"
-                  ok={health.bot_connected}
-                />
-                <HealthRow
-                  label="Database"
-                  ok={health.db_connected}
-                />
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Guilds Cached</span>
-                  <span className="font-medium">{health.guilds_cached}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Files Cached</span>
-                  <span className="font-medium">{health.files_cached}</span>
-                </div>
-                {health.last_sync && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    Last sync:{" "}
-                    {new Date(health.last_sync).toLocaleString()}
+            ) : health?.alerts?.length ? (
+              <div className="space-y-2">
+                {health.alerts.map((alert, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
+                      alert.level === "warning"
+                        ? "border-amber-800 bg-amber-950/30 text-amber-400"
+                        : alert.level === "error"
+                        ? "border-red-800 bg-red-950/30 text-red-400"
+                        : "border-blue-800 bg-blue-950/30 text-blue-400"
+                    )}
+                  >
+                    {alert.level === "warning" ? (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    ) : (
+                      <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
+                    <span>{alert.message}</span>
                   </div>
-                )}
-              </>
+                ))}
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Unable to load health data
-              </p>
+              <div className="flex items-center gap-2 text-sm text-emerald-400">
+                <Shield className="h-4 w-4" />
+                All systems healthy — no alerts
+              </div>
             )}
           </CardContent>
         </Card>
@@ -161,7 +164,7 @@ export default function DashboardPage() {
                 <Skeleton key={i} className="h-8 w-full" />
               ))}
             </div>
-          ) : audit?.entries.length ? (
+          ) : audit?.entries?.length ? (
             <div className="space-y-2">
               {audit.entries.map((entry) => (
                 <div
@@ -174,11 +177,6 @@ export default function DashboardPage() {
                   <span className="flex-1 truncate text-muted-foreground">
                     {entry.details ?? "No details"}
                   </span>
-                  {entry.whitelist_name && (
-                    <Badge variant="outline" className="shrink-0">
-                      {entry.whitelist_name}
-                    </Badge>
-                  )}
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {new Date(entry.created_at).toLocaleString()}
                   </span>
@@ -192,24 +190,6 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function HealthRow({ label, ok }: { label: string; ok: boolean }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        {ok ? (
-          <CheckCircle2 className={cn("h-4 w-4 text-emerald-500")} />
-        ) : (
-          <XCircle className="h-4 w-4 text-destructive" />
-        )}
-        <span className={cn("font-medium", ok ? "text-emerald-500" : "text-destructive")}>
-          {ok ? "Online" : "Offline"}
-        </span>
-      </div>
     </div>
   );
 }

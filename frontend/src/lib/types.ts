@@ -103,17 +103,17 @@ export interface AuditEntry {
 }
 
 export interface Stats {
-  total_users: number;
-  active_users: number;
+  total_active_users: number;
   total_identifiers: number;
-  whitelists_count: number;
-  panels_count: number;
+  recent_audit_count: number;
+  per_type: Record<string, { active_users: number; total_ids: number }>;
+}
+
+export interface HealthAlert {
+  level: "warning" | "info" | "error";
+  message: string;
 }
 
 export interface HealthStatus {
-  bot_connected: boolean;
-  db_connected: boolean;
-  guilds_cached: number;
-  files_cached: number;
-  last_sync: string | null;
+  alerts: HealthAlert[];
 }
