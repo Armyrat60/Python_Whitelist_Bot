@@ -16,7 +16,7 @@ async def setup_autocomplete(interaction: discord.Interaction, current: str):
     return [app_commands.Choice(name=item, value=item) for item in slugs if current.lower() in item][:25]
 
 
-class IdentifierModal(discord.ui.Modal, title="Submit or Update Whitelist IDs"):
+class IdentifierModal(discord.ui.Modal, title="Manage Whitelist IDs"):
     on_error = _modal_on_error
 
     def __init__(self, bot, whitelist_type: str, slot_limit: int, existing: List[tuple]):
@@ -24,30 +24,46 @@ class IdentifierModal(discord.ui.Modal, title="Submit or Update Whitelist IDs"):
         self.bot = bot
         self.whitelist_type = whitelist_type
         self.slot_limit = slot_limit
-        existing_steam = ", ".join(v for t, v, *_ in existing if t == "steam64")
-        existing_eos = ", ".join(v for t, v, *_ in existing if t == "eosid")
 
-        self.steam_ids = discord.ui.TextInput(
-            label=f"Steam64 IDs ({slot_limit} slots)",
-            default=existing_steam[:4000],
-            required=False,
+        # Combine all existing IDs into one field (Steam64 and EOS together)
+        existing_ids = ", ".join(v for _, v, *_ in existing)
+
+        self.ids_field = discord.ui.TextInput(
+            label=f"Your IDs ({len(existing)}/{slot_limit} slots used)",
+            default=existing_ids[:4000],
+            required=True,
             style=discord.TextStyle.paragraph,
-            placeholder="7656119xxxxxxxxxx, 7656119xxxxxxxxxx",
+            placeholder="Paste Steam64 IDs, EOS IDs, or Steam profile URLs — comma or newline separated",
             max_length=4000,
         )
-        self.eos_ids = discord.ui.TextInput(
-            label="EOS IDs (optional)",
-            default=existing_eos[:4000],
-            required=False,
-            style=discord.TextStyle.paragraph,
-            placeholder="0123456789abcdef0123456789abcdef",
-            max_length=4000,
-        )
-        self.add_item(self.steam_ids)
-        self.add_item(self.eos_ids)
+        self.add_item(self.ids_field)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self.bot.handle_identifier_submission(interaction, self.whitelist_type, self.steam_ids.value, self.eos_ids.value)
+        # Parse the unified input — auto-detect Steam64 vs EOS
+        from bot.utils import split_identifier_tokens
+        from bot.config import STEAM64_RE, EOSID_RE
+
+        raw = self.ids_field.value
+        tokens = split_identifier_tokens(raw)
+
+        # Auto-classify each token
+        steam_ids = []
+        eos_ids = []
+        for token in tokens:
+            if STEAM64_RE.fullmatch(token):
+                steam_ids.append(token)
+            elif EOSID_RE.fullmatch(token.lower()):
+                eos_ids.append(token.lower())
+            else:
+                # Unknown format — try as Steam64 anyway (will fail validation later)
+                steam_ids.append(token)
+
+        await self.bot.handle_identifier_submission(
+            interaction,
+            self.whitelist_type,
+            ", ".join(steam_ids),
+            ", ".join(eos_ids),
+        )
 
 
 class WhitelistPanelView(discord.ui.View):
@@ -60,25 +76,15 @@ class WhitelistPanelView(discord.ui.View):
         self.whitelist_id = whitelist_id
 
         # Row 1: Member buttons
-        submit_btn = discord.ui.Button(
-            label="Submit / Update ID",
+        manage_wl_btn = discord.ui.Button(
+            label="Manage Whitelist",
             style=discord.ButtonStyle.green,
             emoji="🛡️",
             custom_id=f"panel:submit:{whitelist_type}",
             row=0,
         )
-        submit_btn.callback = self._submit_callback
-        self.add_item(submit_btn)
-
-        view_btn = discord.ui.Button(
-            label="View My Whitelist",
-            style=discord.ButtonStyle.primary,
-            emoji="📋",
-            custom_id=f"panel:view:{whitelist_type}",
-            row=0,
-        )
-        view_btn.callback = self._view_callback
-        self.add_item(view_btn)
+        manage_wl_btn.callback = self._manage_whitelist_callback
+        self.add_item(manage_wl_btn)
 
         web_btn = discord.ui.Button(
             label="Web Dashboard",
@@ -97,13 +103,11 @@ class WhitelistPanelView(discord.ui.View):
             custom_id=f"panel:manage:{whitelist_type}",
             row=1,
         )
-        manage_btn.callback = self._manage_callback
+        manage_btn.callback = lambda i: _panel_manage_callback(self.bot, self.whitelist_type, i)
         self.add_item(manage_btn)
 
-    async def _submit_callback(self, interaction: discord.Interaction):
-        await self.bot.start_whitelist_flow(interaction, self.whitelist_type)
-
-    async def _view_callback(self, interaction: discord.Interaction):
+    async def _manage_whitelist_callback(self, interaction: discord.Interaction):
+        """Show user's whitelist info with an Edit button to modify their IDs."""
         try:
             guild_id = interaction.guild.id
             wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
@@ -114,7 +118,7 @@ class WhitelistPanelView(discord.ui.View):
             member = interaction.guild.get_member(interaction.user.id)
             ids = await self.bot.db.get_identifiers(guild_id, interaction.user.id, wl_id)
 
-            # Always recalculate slots from current roles (not stale DB record)
+            # Always recalculate slots from current roles
             panels = await self.bot.db.get_panels(guild_id)
             panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
             slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
@@ -126,24 +130,28 @@ class WhitelistPanelView(discord.ui.View):
                 )
                 return
 
+            tier_name = plan.split(":")[0] if ":" in plan else plan
             embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
+            embed.add_field(name="Tier", value=tier_name, inline=True)
             embed.add_field(name="Slots", value=f"{len(ids)} / {slots} used", inline=True)
-            embed.add_field(name="Tier", value=plan.split(":")[0] if ":" in plan else plan, inline=True)
 
             if ids:
                 id_lines = []
-                for t, v, *_ in ids:
+                for i, (t, v, *_) in enumerate(ids, 1):
                     label = "Steam64" if t == "steam64" else "EOS"
-                    id_lines.append(f"**{label}:** `{v}`")
+                    id_lines.append(f"**Slot {i}** ({label}): `{v}`")
                 embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
             else:
-                embed.add_field(name="Your IDs", value="None submitted yet. Click **Submit / Update ID** to add yours!", inline=False)
+                embed.add_field(name="Your IDs", value="No IDs submitted yet.", inline=False)
 
-            embed.set_footer(text=f"Squad Whitelister • {_DASHBOARD_URL.replace('https://', '')}")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed.set_footer(text=f"Click Edit to add or change your IDs • {_DASHBOARD_URL.replace('https://', '')}")
+
+            # Add an Edit button that opens the modal
+            edit_view = _EditIDsView(self.bot, self.whitelist_type, wl_id, slots, ids)
+            await interaction.response.send_message(embed=embed, view=edit_view, ephemeral=True)
         except Exception:
             from bot.config import log
-            log.exception("Error in view callback for %s", interaction.user)
+            log.exception("Error in manage whitelist callback for %s", interaction.user)
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send("Something went wrong. Please try again.", ephemeral=True)
@@ -152,18 +160,47 @@ class WhitelistPanelView(discord.ui.View):
             except Exception:
                 pass
 
-    async def _manage_callback(self, interaction: discord.Interaction):
-        if not await self.bot.user_is_mod(interaction.guild.id, interaction.user):
-            await interaction.response.send_message("You need manager permissions to use this.", ephemeral=True)
-            return
-        # Show manager menu
-        view = ManagerMenuView(self.bot, self.whitelist_type)
-        embed = discord.Embed(
-            title="⚙️ Manager Tools",
-            description="Select an action below to manage whitelist entries.",
-            color=0xF97316,
+class _EditIDsView(discord.ui.View):
+    """Ephemeral view shown after Manage Whitelist — lets user edit their IDs."""
+
+    def __init__(self, bot, whitelist_type: str, whitelist_id: int, slots: int, existing: List[tuple]):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+        self.whitelist_id = whitelist_id
+        self.slots = slots
+        self.existing = existing
+
+    @discord.ui.button(label="Edit IDs", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(
+            IdentifierModal(self.bot, self.whitelist_type, self.slots, self.existing)
         )
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Clear All", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def clear_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = interaction.guild.id
+        await self.bot.db.replace_identifiers(guild_id, interaction.user.id, self.whitelist_id, [])
+        await self.bot.db.audit(
+            guild_id, "user_clear", interaction.user.id, interaction.user.id,
+            f"Cleared all IDs from {self.whitelist_type}", self.whitelist_id,
+        )
+        await self.bot.sync_github_outputs(guild_id)
+        await interaction.response.send_message("All your IDs have been cleared.", ephemeral=True)
+
+
+async def _panel_manage_callback(bot, whitelist_type: str, interaction: discord.Interaction):
+    """Manager tools callback — standalone function called from WhitelistPanelView."""
+    if not await bot.user_is_mod(interaction.guild.id, interaction.user):
+        await interaction.response.send_message("You need manager permissions to use this.", ephemeral=True)
+        return
+    view = ManagerMenuView(bot, whitelist_type)
+    embed = discord.Embed(
+        title="⚙️ Manager Tools",
+        description="Select an action below to manage whitelist entries.",
+        color=0xF97316,
+    )
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class ManagerMenuView(discord.ui.View):

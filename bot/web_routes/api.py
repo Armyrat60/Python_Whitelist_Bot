@@ -919,6 +919,69 @@ async def admin_delete_user(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "deleted_discord_id": str(discord_id), "whitelist_type": wl_type})
 
 
+@require_admin
+async def admin_bulk_delete_users(request: web.Request) -> web.Response:
+    """Bulk delete users from a whitelist."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON."}, status=400)
+
+    discord_ids = body.get("discord_ids", [])
+    wl_type = body.get("whitelist_slug", "")
+
+    if not discord_ids:
+        return web.json_response({"error": "No users specified."}, status=400)
+
+    wl = await _resolve_whitelist(db, guild_id, wl_type) if wl_type else None
+    deleted = 0
+
+    for did in discord_ids:
+        try:
+            did = int(did)
+        except (ValueError, TypeError):
+            continue
+
+        if wl:
+            wl_id = wl["id"]
+            await db.execute(
+                "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (guild_id, did, wl_id),
+            )
+            await db.execute(
+                "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (guild_id, did, wl_id),
+            )
+        else:
+            # Delete from all whitelists
+            await db.execute(
+                "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s",
+                (guild_id, did),
+            )
+            await db.execute(
+                "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s",
+                (guild_id, did),
+            )
+        deleted += 1
+
+    await db.audit(
+        guild_id, "admin_bulk_delete", actor_id, None,
+        f"Bulk deleted {deleted} users from {wl_type or 'all whitelists'}",
+        wl["id"] if wl else None,
+    )
+
+    log.info("Guild %s: admin %s bulk deleted %d users from %s", guild_id, actor_id, deleted, wl_type or "all")
+    await _trigger_sync(request, guild_id)
+
+    return web.json_response({"ok": True, "deleted": deleted})
+
+
 # ── Admin Setup API routes ───────────────────────────────────────────────────
 
 @require_admin
@@ -3241,6 +3304,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/users", admin_add_user)
     app.router.add_patch("/api/admin/users/{discord_id}/{type}", admin_update_user)
     app.router.add_delete("/api/admin/users/{discord_id}/{type}", admin_delete_user)
+    app.router.add_post("/api/admin/users/bulk-delete", admin_bulk_delete_users)
     app.router.add_get("/api/admin/audit", admin_audit)
     # Admin Setup API
     app.router.add_get("/api/admin/settings", admin_get_settings)
