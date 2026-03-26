@@ -46,10 +46,24 @@ class IdentifierModal(discord.ui.Modal, title="Manage Whitelist IDs"):
         raw = self.ids_field.value
         tokens = split_identifier_tokens(raw)
 
+        # Resolve vanity URLs first
+        from bot.utils import resolve_steam_vanity
+        resolved_tokens = []
+        for token in tokens:
+            if token.startswith("vanity:"):
+                vanity_name = token[7:]
+                steam64 = await resolve_steam_vanity(vanity_name)
+                if steam64:
+                    resolved_tokens.append(steam64)
+                else:
+                    resolved_tokens.append(token)  # Will fail validation with helpful error
+            else:
+                resolved_tokens.append(token)
+
         # Auto-classify each token
         steam_ids = []
         eos_ids = []
-        for token in tokens:
+        for token in resolved_tokens:
             if STEAM64_RE.fullmatch(token):
                 steam_ids.append(token)
             elif EOSID_RE.fullmatch(token.lower()):

@@ -26,6 +26,30 @@ def validate_identifier(id_type: str, id_value: str) -> bool:
 
 
 _STEAM_PROFILE_RE = re.compile(r'steamcommunity\.com/profiles/(\d{17})', re.IGNORECASE)
+_STEAM_VANITY_RE = re.compile(r'steamcommunity\.com/id/([a-zA-Z0-9_-]+)', re.IGNORECASE)
+
+
+async def resolve_steam_vanity(vanity_name: str) -> str | None:
+    """Resolve a Steam vanity URL name to a Steam64 ID using the Steam API.
+
+    Returns the Steam64 ID string, or None if resolution fails.
+    """
+    from bot.config import STEAM_API_KEY
+    if not STEAM_API_KEY:
+        return None
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={STEAM_API_KEY}&vanityurl={vanity_name}"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                if data.get("response", {}).get("success") == 1:
+                    return data["response"]["steamid"]
+    except Exception:
+        pass
+    return None
 
 
 def split_identifier_tokens(raw: str) -> List[str]:
@@ -46,9 +70,13 @@ def split_identifier_tokens(raw: str) -> List[str]:
         m = _STEAM_PROFILE_RE.search(token)
         if m:
             tokens.append(m.group(1))
-        else:
-            # Strip any http(s) prefix that doesn't match the pattern
-            tokens.append(token)
+            continue
+        # Flag vanity URLs for async resolution (prefix with vanity:)
+        vm = _STEAM_VANITY_RE.search(token)
+        if vm:
+            tokens.append(f"vanity:{vm.group(1)}")
+            continue
+        tokens.append(token)
     return tokens
 
 
