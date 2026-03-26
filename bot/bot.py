@@ -99,14 +99,21 @@ class WhitelistBot(commands.Bot):
                 except Exception:
                     log.debug("Could not prime web cache on startup for guild %s", guild.id)
         await self.log_startup_summary()
-        # Refresh panels for all guilds
+        # Refresh all active panels on startup (updates buttons + tier info)
         for guild in self.guilds:
-            whitelists = await self.db.get_whitelists(guild.id)
-            for wl in whitelists:
-                try:
-                    await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
-                except Exception:
-                    log.debug("Could not refresh %s panel for guild %s", wl["slug"], guild.id)
+            panels = await self.db.get_panels(guild.id)
+            for panel in panels:
+                if not panel.get("channel_id") or not panel.get("whitelist_id"):
+                    continue
+                if not panel.get("enabled", True):
+                    continue
+                wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
+                if wl and wl["enabled"]:
+                    try:
+                        await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
+                        log.info("Refreshed panel '%s' in guild %s", panel["name"], guild.name)
+                    except Exception:
+                        log.debug("Could not refresh panel '%s' for guild %s", panel["name"], guild.id)
 
     async def on_guild_join(self, guild: discord.Guild):
         await self.db.seed_guild_defaults(guild.id)
@@ -554,9 +561,9 @@ class WhitelistBot(commands.Bot):
         if tier_lines:
             description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
         description += (
-            "🛡️ **Submit / Update ID** — Enter your Steam64 or EOS ID\n"
-            "📋 **View My Whitelist** — Check your current entry and slots\n"
-            "🌐 **Web Dashboard** — Manage everything from the browser"
+            "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
+            "🌐 **Web Dashboard** — Full management from your browser\n"
+            "⚙️ **Manager Tools** — Admin actions (mods only)"
         )
 
         embed = discord.Embed(
@@ -587,10 +594,14 @@ class WhitelistBot(commands.Bot):
             self.add_view(view)
         panel_view = self.panel_views[view_key]
 
-        # Try to find the existing panel in its stored channel first
+        # Find the panel record that links to this whitelist
+        panels = await self.db.get_panels(guild_id)
+        panel_record = next((p for p in panels if p.get("whitelist_id") == whitelist_id), None)
+
+        # Try to find the existing panel message in its stored channel
         posted = None
-        stored_channel_id = wl["panel_channel_id"]
-        stored_message_id = wl["panel_message_id"]
+        stored_channel_id = panel_record["channel_id"] if panel_record else wl.get("panel_channel_id")
+        stored_message_id = panel_record["panel_message_id"] if panel_record else wl.get("panel_message_id")
         if stored_message_id and stored_channel_id:
             try:
                 stored_ch = self.get_channel(int(stored_channel_id))
@@ -611,9 +622,12 @@ class WhitelistBot(commands.Bot):
                 posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
 
         if posted is not None:
+            # Save message ID to BOTH panels table and whitelists table (for backward compat)
+            if panel_record:
+                await self.db.update_panel(panel_record["id"], panel_message_id=posted.id, channel_id=posted.channel.id)
             await self.db.update_whitelist(whitelist_id, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
             actor = interaction.user.id if interaction else None
-            await self.db.audit(guild_id, "panel_post", actor, None, f"type={wl['slug']} channel={posted.channel.id} message={posted.id}", whitelist_id)
+            await self.db.audit(guild_id, "panel_post", actor, None, f"panel={panel_record['name'] if panel_record else 'unknown'} channel={posted.channel.id} message={posted.id}", whitelist_id)
         return posted
 
     async def enforce_member_roles(self, member: discord.Member):

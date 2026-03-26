@@ -1456,34 +1456,40 @@ async def admin_health(request: web.Request) -> web.Response:
 
     alerts: list[dict] = []
 
-    # Check each whitelist type for missing config
-    whitelists = await db.get_whitelists(guild_id)
-    for wl in whitelists:
-        if not wl["enabled"]:
+    # Check panels for missing config
+    panels = await db.get_panels(guild_id)
+    for panel in panels:
+        if not panel.get("enabled", True):
             continue
-        wl_slug = wl["slug"]
-        wl_id = wl["id"]
-        if not wl.get("panel_channel_id"):
+        panel_name = panel["name"]
+        if not panel.get("channel_id"):
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_slug} type is enabled but has no panel_channel_id configured",
+                "message": f"Panel '{panel_name}' has no channel configured",
             })
-        if not wl.get("log_channel_id"):
+        if not panel.get("log_channel_id"):
+            alerts.append({
+                "level": "info",
+                "message": f"Panel '{panel_name}' has no log channel (optional)",
+            })
+        if not panel.get("whitelist_id"):
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_slug} type is enabled but has no log_channel_id configured",
+                "message": f"Panel '{panel_name}' has no whitelist linked",
             })
-        # Check role mappings
-        is_active_expr = "is_active=TRUE" if db.engine == "postgres" else "is_active=1"
-        role_rows = await db.fetchall(
-            f"SELECT id FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND {is_active_expr}",
-            (guild_id, wl_id),
-        )
-        if not role_rows:
+        if not panel.get("tier_category_id"):
             alerts.append({
                 "level": "warning",
-                "message": f"{wl_slug} type has no role mappings configured",
+                "message": f"Panel '{panel_name}' has no tier category assigned",
             })
+        else:
+            # Check if the tier category has entries
+            entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
+            if not entries:
+                alerts.append({
+                    "level": "warning",
+                    "message": f"Panel '{panel_name}' tier category has no role entries",
+                })
 
     # Duplicate Steam IDs across different whitelists
     dup_rows = await db.fetchall(
