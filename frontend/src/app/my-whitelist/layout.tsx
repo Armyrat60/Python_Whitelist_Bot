@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { LogOut, LayoutDashboard } from "lucide-react";
 import { useSession } from "@/hooks/use-session";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,17 @@ export default function MyWhitelistLayout({
     <div className="flex min-h-screen flex-col bg-zinc-900">
       {/* Simple Topbar */}
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-6 backdrop-blur-sm">
-        <h1 className="text-lg font-semibold">My Whitelist</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold">My Whitelist</h1>
+          {session.is_mod && (
+            <a href="/dashboard">
+              <Button variant="outline" size="sm">
+                <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
+                Dashboard
+              </Button>
+            </a>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Avatar size="sm">

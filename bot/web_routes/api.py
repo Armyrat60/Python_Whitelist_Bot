@@ -215,37 +215,84 @@ async def switch_guild(request: web.Request) -> web.Response:
 
 @require_login
 async def get_my_whitelists_all(request: web.Request) -> web.Response:
-    """Return all whitelists the user is enrolled in with their identifiers."""
+    """Return all whitelists the user qualifies for based on their Discord roles.
+
+    Auto-detects tier from current roles, calculates slots in real-time.
+    Only returns whitelists where the user has a matching tier or existing entries.
+    """
     session = await aiohttp_session.get_session(request)
     bot = request.app["bot"]
     guild_id = int(session["active_guild_id"])
     discord_id = int(session["discord_id"])
     db = bot.db
 
+    # Fetch user's Discord roles via REST API
+    member_role_ids = set()
+    try:
+        if hasattr(bot, "get_member_roles"):
+            roles = await bot.get_member_roles(guild_id, discord_id)
+            member_role_ids = {int(r) for r in roles}
+        elif hasattr(bot, "get_guild"):
+            guild = bot.get_guild(guild_id)
+            if guild:
+                member = guild.get_member(discord_id)
+                if member:
+                    member_role_ids = {r.id for r in member.roles}
+    except Exception:
+        pass
+
     whitelists = await db.get_whitelists(guild_id)
+    panels = await db.get_panels(guild_id)
     results = []
+
     for wl in whitelists:
         if not wl["enabled"]:
             continue
         wl_id = wl["id"]
-        user_record = await db.get_user_record(guild_id, discord_id, wl_id)
-        identifiers = await db.get_identifiers(guild_id, discord_id, wl_id)
 
+        # Find panel for tier calculation
+        panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+
+        # Calculate slots from current roles
+        tier_name = None
+        slots = 0
+
+        if panel and panel.get("tier_category_id"):
+            tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
+            matched = []
+            for te in tier_entries:
+                te_role_id = int(te[1])
+                if bool(te[6]) and te_role_id in member_role_ids:
+                    matched.append((te[4] or te[2], te[3]))  # (name, slot_limit)
+
+            if matched:
+                if wl.get("stack_roles"):
+                    slots = sum(s for _, s in matched)
+                    tier_name = " + ".join(f"{n}" for n, _ in matched)
+                else:
+                    winner = max(matched, key=lambda x: x[1])
+                    slots = winner[1]
+                    tier_name = winner[0]
+
+        # Fall back to default if no tier match
+        if slots <= 0:
+            slots = int(wl.get("default_slot_limit", 1))
+
+        # Get existing identifiers
+        identifiers = await db.get_identifiers(guild_id, discord_id, wl_id)
         steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
         eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
 
-        entry = {
-            "whitelist_slug": wl["slug"],
-            "whitelist_name": wl["name"],
-            "tier_name": None,
-            "effective_slot_limit": wl.get("default_slot_limit", 1),
-            "steam_ids": steam_ids,
-            "eos_ids": eos_ids,
-        }
-        if user_record:
-            entry["tier_name"] = user_record[4]  # last_plan_name
-            entry["effective_slot_limit"] = user_record[3]  # effective_slot_limit
-        results.append(entry)
+        # Only include if user has a tier match OR has existing entries
+        if tier_name or identifiers:
+            results.append({
+                "whitelist_slug": wl["slug"],
+                "whitelist_name": wl["name"],
+                "tier_name": tier_name,
+                "effective_slot_limit": slots,
+                "steam_ids": steam_ids,
+                "eos_ids": eos_ids,
+            })
 
     return web.json_response(results)
 
