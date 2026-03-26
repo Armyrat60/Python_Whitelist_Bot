@@ -19,6 +19,7 @@ import {
   User as UserIcon,
   List,
   LayoutGrid,
+  Download,
 } from "lucide-react";
 import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardHeader,
@@ -89,6 +91,231 @@ const statusVariant: Record<
 
 type ViewMode = "list" | "cards";
 
+/** Unique key for a user row (composite: discord_id + whitelist_slug) */
+function userKey(user: WhitelistUser) {
+  return `${user.discord_id}::${user.whitelist_slug}`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bulk CSV export                                                    */
+/* ------------------------------------------------------------------ */
+
+function exportUsersAsCsv(users: WhitelistUser[]) {
+  const header = [
+    "discord_id",
+    "discord_name",
+    "whitelist_slug",
+    "whitelist_name",
+    "status",
+    "tier",
+    "steam_ids",
+    "eos_ids",
+    "slots_used",
+    "slot_limit",
+  ].join(",");
+
+  const rows = users.map((u) => {
+    const steamIds = (u.steam_ids ?? []).join(";");
+    const eosIds = (u.eos_ids ?? []).join(";");
+    const allIds = [...(u.steam_ids ?? []), ...(u.eos_ids ?? [])];
+    return [
+      u.discord_id,
+      `"${(u.discord_name ?? "").replace(/"/g, '""')}"`,
+      u.whitelist_slug,
+      `"${(u.whitelist_name ?? "").replace(/"/g, '""')}"`,
+      u.status,
+      u.last_plan_name ?? "",
+      steamIds,
+      eosIds,
+      allIds.length,
+      u.effective_slot_limit,
+    ].join(",");
+  });
+
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `whitelist-users-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bulk Action Bar                                                    */
+/* ------------------------------------------------------------------ */
+
+function BulkActionBar({
+  selectedCount,
+  selectedUsers,
+  onClear,
+  onDeleteDone,
+}: {
+  selectedCount: number;
+  selectedUsers: WhitelistUser[];
+  onClear: () => void;
+  onDeleteDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    try {
+      // Group by whitelist_slug for the API
+      const byWhitelist: Record<string, string[]> = {};
+      for (const u of selectedUsers) {
+        if (!byWhitelist[u.whitelist_slug]) byWhitelist[u.whitelist_slug] = [];
+        byWhitelist[u.whitelist_slug].push(u.discord_id);
+      }
+
+      const promises = Object.entries(byWhitelist).map(([slug, ids]) =>
+        api.post("/api/admin/users/bulk-delete", {
+          discord_ids: ids,
+          whitelist_slug: slug,
+        })
+      );
+      await Promise.all(promises);
+
+      toast.success(`Removed ${selectedCount} user(s)`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      onDeleteDone();
+    } catch {
+      toast.error("Failed to bulk delete users");
+    } finally {
+      setBulkDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
+  async function handleBulkStatusChange(newStatus: string) {
+    setBulkStatusChanging(true);
+    try {
+      const promises = selectedUsers.map((u) =>
+        api.patch(`/api/admin/users/${u.discord_id}/${u.whitelist_slug}`, {
+          status: newStatus,
+          steam_ids: u.steam_ids,
+          eos_ids: u.eos_ids,
+        })
+      );
+      await Promise.all(promises);
+
+      toast.success(`Updated ${selectedCount} user(s) to ${newStatus}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClear();
+    } catch {
+      toast.error("Failed to change status");
+    } finally {
+      setBulkStatusChanging(false);
+      setShowStatusMenu(false);
+    }
+  }
+
+  if (selectedCount === 0) return null;
+
+  return (
+    <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-fit items-center gap-3 rounded-xl border border-border bg-background/95 px-5 py-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <span className="text-sm font-medium">
+        {selectedCount} selected
+      </span>
+
+      {/* Delete Selected */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogTrigger
+          render={
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={bulkDeleting}
+            />
+          }
+        >
+          {bulkDeleting ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Delete Selected
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedCount} User(s)</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove {selectedCount} user(s) from their
+              respective whitelists. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleBulkDelete}
+            >
+              {bulkDeleting && (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              )}
+              Delete {selectedCount} User(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Change Status */}
+      <div className="relative">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={bulkStatusChanging}
+          onClick={() => setShowStatusMenu(!showStatusMenu)}
+        >
+          {bulkStatusChanging && (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          )}
+          Change Status
+          <ChevronDown className="ml-1.5 h-3 w-3" />
+        </Button>
+        {showStatusMenu && (
+          <div className="absolute bottom-full left-0 mb-1 w-36 rounded-md border border-border bg-popover p-1 shadow-md">
+            <button
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => handleBulkStatusChange("active")}
+            >
+              Active
+            </button>
+            <button
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => handleBulkStatusChange("inactive")}
+            >
+              Inactive
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Export */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => exportUsersAsCsv(selectedUsers)}
+      >
+        <Download className="mr-1.5 h-3.5 w-3.5" />
+        Export
+      </Button>
+
+      {/* Clear */}
+      <Button variant="ghost" size="sm" onClick={onClear}>
+        <X className="mr-1.5 h-3.5 w-3.5" />
+        Clear
+      </Button>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main Page                                                          */
 /* ------------------------------------------------------------------ */
@@ -100,6 +327,7 @@ export default function UsersPage() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [selectedUser, setSelectedUser] = useState<WhitelistUser | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const perPage = 24; // divisible by 1, 2, 3 for grid
@@ -126,6 +354,49 @@ export default function UsersPage() {
   }
 
   const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+
+  // Selection helpers
+  const allVisibleKeys = useMemo(
+    () => users.map((u) => userKey(u)),
+    [users]
+  );
+
+  const allSelected =
+    users.length > 0 && allVisibleKeys.every((k) => selectedIds.has(k));
+
+  const someSelected = allVisibleKeys.some((k) => selectedIds.has(k));
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        // Deselect all visible
+        for (const k of allVisibleKeys) next.delete(k);
+      } else {
+        // Select all visible
+        for (const k of allVisibleKeys) next.add(k);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelect(key: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const selectedUsers = useMemo(
+    () => users.filter((u) => selectedIds.has(userKey(u))),
+    [users, selectedIds]
+  );
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
 
   return (
     <div className="space-y-6">
@@ -239,6 +510,8 @@ export default function UsersPage() {
               onSelect={() => setSelectedUser(user)}
               whitelists={whitelists ?? []}
               steamNames={steamNames}
+              selected={selectedIds.has(userKey(user))}
+              onToggleSelect={() => toggleSelect(userKey(user))}
             />
           ))}
         </div>
@@ -248,6 +521,11 @@ export default function UsersPage() {
           whitelists={whitelists ?? []}
           steamNames={steamNames}
           onSelect={setSelectedUser}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          allSelected={allSelected}
+          someSelected={someSelected}
+          onToggleSelectAll={toggleSelectAll}
         />
       )}
 
@@ -299,6 +577,14 @@ export default function UsersPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ---- Bulk Action Bar ---- */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        selectedUsers={selectedUsers}
+        onClear={clearSelection}
+        onDeleteDone={clearSelection}
+      />
     </div>
   );
 }
@@ -312,11 +598,21 @@ function UserListView({
   whitelists,
   steamNames,
   onSelect,
+  selectedIds,
+  onToggleSelect,
+  allSelected,
+  someSelected,
+  onToggleSelectAll,
 }: {
   users: WhitelistUser[];
   whitelists: { slug: string; name: string }[];
   steamNames: Record<string, string>;
   onSelect: (user: WhitelistUser) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (key: string) => void;
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggleSelectAll: () => void;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
@@ -324,6 +620,19 @@ function UserListView({
     <div className="divide-y divide-border rounded-lg border border-border">
       {/* Header */}
       <div className="hidden items-center gap-3 px-4 py-2 text-xs font-medium text-muted-foreground sm:flex">
+        <span
+          className="flex w-8 cursor-pointer items-center justify-center"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelectAll();
+          }}
+        >
+          <Checkbox
+            checked={allSelected}
+            indeterminate={!allSelected && someSelected}
+            onCheckedChange={() => onToggleSelectAll()}
+          />
+        </span>
         <span className="w-8" />
         <span className="flex-1">Discord Name</span>
         <span className="w-28 text-center">Tier</span>
@@ -333,18 +642,34 @@ function UserListView({
       </div>
 
       {users.map((user) => {
-        const key = `${user.discord_id}-${user.whitelist_slug}`;
+        const key = userKey(user);
         const isExpanded = expandedKey === key;
         const allIds = [...(user.steam_ids ?? []), ...(user.eos_ids ?? [])];
         const usedSlots = allIds.length;
+        const isSelected = selectedIds.has(key);
 
         return (
           <div key={key}>
             {/* Row */}
             <div
-              className="flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50"
+              className={cn(
+                "flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50",
+                isSelected && "bg-muted/40"
+              )}
               onClick={() => setExpandedKey(isExpanded ? null : key)}
             >
+              <span
+                className="flex w-8 items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(key);
+                }}
+              >
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggleSelect(key)}
+                />
+              </span>
               <Avatar size="sm">
                 <AvatarFallback>
                   {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
@@ -557,11 +882,15 @@ function UserCard({
   onSelect,
   whitelists,
   steamNames,
+  selected,
+  onToggleSelect,
 }: {
   user: WhitelistUser;
   onSelect: () => void;
   whitelists: { slug: string; name: string }[];
   steamNames: Record<string, string>;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const queryClient = useQueryClient();
   const [removing, setRemoving] = useState(false);
@@ -587,9 +916,21 @@ function UserCard({
   }
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn("flex flex-col", selected && "ring-2 ring-primary/50")}>
       <CardHeader>
         <div className="flex items-start gap-3">
+          <span
+            className="flex items-center pt-1"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect();
+            }}
+          >
+            <Checkbox
+              checked={selected}
+              onCheckedChange={() => onToggleSelect()}
+            />
+          </span>
           <Avatar
             size="default"
             className="cursor-pointer"
@@ -730,13 +1071,52 @@ function UserCard({
 /*  User Detail Sheet                                                  */
 /* ------------------------------------------------------------------ */
 
-// Auto-detect ID type
-function detectIdType(value: string): "steam64" | "eosid" | "invalid" | "empty" {
+// Auto-detect ID type — now supports Steam profile URLs
+function detectIdType(
+  value: string
+): "steam64" | "eosid" | "steam_url" | "invalid" | "empty" {
   const v = value.trim();
   if (!v) return "empty";
   if (/^7656119\d{10}$/.test(v)) return "steam64";
   if (/^[0-9a-fA-F]{32}$/.test(v)) return "eosid";
+  if (v.includes("steamcommunity.com/profiles/")) return "steam_url";
   return "invalid";
+}
+
+/** Extract Steam64 from a Steam profile URL */
+function extractSteam64FromUrl(value: string): string | null {
+  const match = value.match(
+    /steamcommunity\.com\/profiles\/(\d{17})/
+  );
+  return match?.[1] ?? null;
+}
+
+/** Normalize an input value: if it's a Steam URL, extract the ID */
+function normalizeSlotValue(value: string): string {
+  const type = detectIdType(value);
+  if (type === "steam_url") {
+    return extractSteam64FromUrl(value) ?? value;
+  }
+  return value.trim();
+}
+
+/** Display label for detected type */
+function idTypeLabel(
+  value: string
+): { label: string; color: string } | null {
+  const type = detectIdType(value);
+  switch (type) {
+    case "steam64":
+      return { label: "Steam64", color: "text-emerald-400 border-emerald-500/30" };
+    case "eosid":
+      return { label: "EOS", color: "text-blue-400 border-blue-500/30" };
+    case "steam_url":
+      return { label: "Steam URL", color: "text-violet-400 border-violet-500/30" };
+    case "invalid":
+      return { label: "Invalid", color: "text-red-400 border-red-500/30" };
+    default:
+      return null;
+  }
 }
 
 function UserDetailSheet({
@@ -768,6 +1148,18 @@ function UserDetailSheet({
     });
   }
 
+  /** When the input loses focus, auto-normalize Steam URLs to Steam64 */
+  function handleSlotBlur(idx: number) {
+    setSlots((prev) => {
+      const next = [...prev];
+      const normalized = normalizeSlotValue(next[idx]);
+      if (normalized !== next[idx]) {
+        next[idx] = normalized;
+      }
+      return next;
+    });
+  }
+
   function addSlot() {
     setSlots((prev) => [...prev, ""]);
   }
@@ -781,7 +1173,8 @@ function UserDetailSheet({
     const eosIds: string[] = [];
 
     for (const slot of slots) {
-      const v = slot.trim();
+      // Normalize before saving
+      const v = normalizeSlotValue(slot);
       if (!v) continue;
       const type = detectIdType(v);
       if (type === "steam64") steamIds.push(v);
@@ -864,13 +1257,13 @@ function UserDetailSheet({
         </div>
       </div>
 
-      {/* Unified Slots — auto-detect Steam64 or EOS ID */}
+      {/* Unified Slots — auto-detect Steam64, EOS ID, or Steam URL */}
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">
           Slots ({usedSlots}/{user.effective_slot_limit})
         </Label>
         {slots.map((id, idx) => {
-          const type = detectIdType(id);
+          const typeInfo = idTypeLabel(id);
           return (
             <div key={idx} className="flex items-center gap-2">
               <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
@@ -880,22 +1273,16 @@ function UserDetailSheet({
                 className="h-8 flex-1 font-mono text-xs"
                 value={id}
                 onChange={(e) => updateSlot(idx, e.target.value)}
-                placeholder="Steam64 or EOS ID..."
+                onBlur={() => handleSlotBlur(idx)}
+                placeholder="Paste Steam64, EOS ID, or Steam profile URL"
               />
               {/* Type indicator */}
-              {type === "steam64" && (
-                <Badge variant="outline" className="shrink-0 text-[10px] text-emerald-400 border-emerald-500/30">
-                  Steam64
-                </Badge>
-              )}
-              {type === "eosid" && (
-                <Badge variant="outline" className="shrink-0 text-[10px] text-blue-400 border-blue-500/30">
-                  EOS
-                </Badge>
-              )}
-              {type === "invalid" && (
-                <Badge variant="outline" className="shrink-0 text-[10px] text-red-400 border-red-500/30">
-                  Invalid
+              {typeInfo && (
+                <Badge
+                  variant="outline"
+                  className={cn("shrink-0 text-[10px]", typeInfo.color)}
+                >
+                  {typeInfo.label}
                 </Badge>
               )}
               <Button
@@ -919,7 +1306,7 @@ function UserDetailSheet({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Paste any ID — Steam64 (17 digits starting with 7656119) or EOS (32 hex chars) are auto-detected.
+          Paste any ID — Steam64 (17 digits starting with 7656119), EOS (32 hex chars), or a Steam profile URL are auto-detected. URLs are converted to Steam64 on blur.
         </p>
       </div>
 
