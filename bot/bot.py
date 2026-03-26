@@ -557,13 +557,14 @@ class WhitelistBot(commands.Bot):
                 slot_limit = rm[2] if len(rm) > 2 else 1
                 tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
 
+        _domain = WEB_BASE_URL.replace('https://', '').replace('http://', '') if WEB_BASE_URL else 'squadwhitelister.com'
         description = "Use the buttons below to manage your whitelist entry.\n\n"
         if tier_lines:
             description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
         description += (
             "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
-            "🌐 **Web Dashboard** — Full management from your browser\n"
-            "⚙️ **Manager Tools** — Admin actions (mods only)"
+            "⚙️ **Manager Tools** — Admin lookup and management (mods only)\n\n"
+            f"🌐 Web Dashboard: **{_domain}**"
         )
 
         embed = discord.Embed(
@@ -571,7 +572,7 @@ class WhitelistBot(commands.Bot):
             description=description,
             color=discord.Color.from_rgb(249, 115, 22),  # Orange
         )
-        embed.set_footer(text=f"Squad Whitelister • {WEB_BASE_URL.replace('https://', '') if WEB_BASE_URL else 'squadwhitelister.com'}")
+        embed.set_footer(text=f"Squad Whitelister • {_domain}")
         return embed
 
     async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):
@@ -679,6 +680,14 @@ class WhitelistBot(commands.Bot):
     async def daily_housekeeping(self):
         for guild in self.guilds:
             guild_id = guild.id
+            # Expire timed whitelists
+            expired = await self.db.expire_timed_whitelists(guild_id)
+            if expired:
+                log.info("Expired %d timed whitelist entries for guild %s", len(expired), guild_id)
+                for discord_id, whitelist_id in expired:
+                    await self.db.audit(guild_id, "auto_expire", None, discord_id, f"Timed whitelist expired", whitelist_id)
+                self.schedule_github_sync(guild_id)
+            # Purge old inactive records
             retention = int(await self.db.get_setting(guild_id, "retention_days", "90"))
             purged = await self.db.purge_inactive_older_than(guild_id, retention)
             if purged:

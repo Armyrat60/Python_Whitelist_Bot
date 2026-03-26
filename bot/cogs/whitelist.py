@@ -111,15 +111,6 @@ class WhitelistPanelView(discord.ui.View):
         view_compat_btn.callback = self._manage_whitelist_callback  # Route to same handler
         self.add_item(view_compat_btn)
 
-        web_btn = discord.ui.Button(
-            label="Web Dashboard",
-            style=discord.ButtonStyle.link,
-            url=f"{_DASHBOARD_URL}/my-whitelist",
-            emoji="🌐",
-            row=0,
-        )
-        self.add_item(web_btn)
-
         # Row 2: Manager button
         manage_btn = discord.ui.Button(
             label="Manager Tools",

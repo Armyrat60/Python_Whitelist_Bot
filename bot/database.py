@@ -590,6 +590,18 @@ MYSQL_MIGRATIONS = [
 
     # --- Panel enabled column ---
     "ALTER TABLE panels ADD COLUMN enabled TINYINT(1) NOT NULL DEFAULT 1",
+
+    # --- Timed whitelist: optional expiration ---
+    "ALTER TABLE whitelist_users ADD COLUMN expires_at DATETIME NULL",
+
+    # --- Steam name cache ---
+    """
+    CREATE TABLE IF NOT EXISTS steam_name_cache (
+        steam_id VARCHAR(20) PRIMARY KEY,
+        persona_name VARCHAR(255) NOT NULL,
+        cached_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 
 POSTGRES_MIGRATIONS = [
@@ -684,6 +696,18 @@ POSTGRES_MIGRATIONS = [
 
     # --- Panel enabled column ---
     "ALTER TABLE panels ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
+
+    # --- Timed whitelist: optional expiration ---
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NULL",
+
+    # --- Steam name cache ---
+    """
+    CREATE TABLE IF NOT EXISTS steam_name_cache (
+        steam_id VARCHAR(20) PRIMARY KEY,
+        persona_name VARCHAR(255) NOT NULL,
+        cached_at TIMESTAMP NOT NULL
+    )
+    """,
 ]
 
 
@@ -1313,39 +1337,41 @@ class Database:
             (guild_id, discord_id, whitelist_id),
         )
 
-    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None):
+    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None):
         now = utcnow()
         if self.engine == "postgres":
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                     discord_name=EXCLUDED.discord_name,
                     status=EXCLUDED.status,
                     slot_limit_override=EXCLUDED.slot_limit_override,
                     effective_slot_limit=EXCLUDED.effective_slot_limit,
                     last_plan_name=EXCLUDED.last_plan_name,
+                    expires_at=EXCLUDED.expires_at,
                     updated_at=EXCLUDED.updated_at
                 """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now),
             )
         else:
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
                     discord_name=VALUES(discord_name),
                     status=VALUES(status),
                     slot_limit_override=VALUES(slot_limit_override),
                     effective_slot_limit=VALUES(effective_slot_limit),
                     last_plan_name=VALUES(last_plan_name),
+                    expires_at=VALUES(expires_at),
                     updated_at=VALUES(updated_at)
                 """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now),
             )
 
     async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):
@@ -1432,6 +1458,53 @@ class Database:
         ))
         await self._adapter.execute_transaction(queries)
         return len(rows)
+
+    async def expire_timed_whitelists(self, guild_id: int) -> List[tuple]:
+        """Deactivate whitelist entries that have passed their expires_at date.
+        Returns list of (discord_id, whitelist_id) that were expired."""
+        now = utcnow()
+        rows = await self.fetchall(
+            "SELECT discord_id, whitelist_id FROM whitelist_users "
+            "WHERE guild_id=%s AND status='active' AND expires_at IS NOT NULL AND expires_at < %s",
+            (guild_id, now),
+        )
+        for discord_id, whitelist_id in (rows or []):
+            await self.execute(
+                "UPDATE whitelist_users SET status='expired', updated_at=%s "
+                "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (now, guild_id, discord_id, whitelist_id),
+            )
+        return rows or []
+
+    # ── Steam Name Cache ──
+
+    async def get_steam_names(self, steam_ids: List[str]) -> dict:
+        """Get cached Steam names. Returns {steam_id: persona_name}."""
+        if not steam_ids:
+            return {}
+        placeholders = ",".join(["%s"] * len(steam_ids))
+        rows = await self.fetchall(
+            f"SELECT steam_id, persona_name FROM steam_name_cache WHERE steam_id IN ({placeholders})",
+            tuple(steam_ids),
+        )
+        return {r[0]: r[1] for r in (rows or [])}
+
+    async def cache_steam_names(self, names: dict):
+        """Cache Steam names. names = {steam_id: persona_name}."""
+        now = utcnow()
+        for steam_id, name in names.items():
+            if self.engine == "postgres":
+                await self.execute(
+                    "INSERT INTO steam_name_cache (steam_id, persona_name, cached_at) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (steam_id) DO UPDATE SET persona_name=EXCLUDED.persona_name, cached_at=EXCLUDED.cached_at",
+                    (steam_id, name, now),
+                )
+            else:
+                await self.execute(
+                    "INSERT INTO steam_name_cache (steam_id, persona_name, cached_at) "
+                    "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE persona_name=VALUES(persona_name), cached_at=VALUES(cached_at)",
+                    (steam_id, name, now),
+                )
 
     # ── Squad Groups & Permissions ──
 

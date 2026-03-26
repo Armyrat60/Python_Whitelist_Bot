@@ -2760,18 +2760,17 @@ async def admin_push_panel(request: web.Request) -> web.Response:
                 slots = rm.get("slot_limit", 1)
             tier_lines.append(f"**{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
 
+    _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
+    wl_slug = wl["slug"] if wl else "default"
+
     description = "Use the buttons below to manage your whitelist entry.\n\n"
     if tier_lines:
         description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
     description += (
         "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
-        "🌐 **Web Dashboard** — Full management from your browser\n"
-        "⚙️ **Manager Tools** — Admin actions (mods only)"
+        "⚙️ **Manager Tools** — Admin lookup and management (mods only)\n\n"
+        f"🌐 Web Dashboard: **{_domain}**"
     )
-
-    _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
-    _dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"
-    wl_slug = wl["slug"] if wl else "default"
 
     embed = {
         "title": f"🛡️ {panel['name']} — {wl_name}",
@@ -2792,13 +2791,6 @@ async def admin_push_panel(request: web.Request) -> web.Response:
                     "label": "Manage Whitelist",
                     "emoji": {"name": "🛡️"},
                     "custom_id": f"panel:submit:{wl_slug}",
-                },
-                {
-                    "type": 2,  # BUTTON
-                    "style": 5,  # LINK
-                    "label": "Web Dashboard",
-                    "emoji": {"name": "🌐"},
-                    "url": f"{_dashboard_url}/my-whitelist",
                 },
             ],
         },
@@ -2832,6 +2824,12 @@ async def admin_push_panel(request: web.Request) -> web.Response:
         if result:
             log.info("Guild %s: edited panel embed in channel %s message %s", guild_id, channel_id, message_id)
             return web.json_response({"ok": True, "panel_id": panel_id, "action": "edited"})
+        else:
+            # Edit failed (message deleted or channel changed) — try to delete old message
+            try:
+                await discord_client.delete_message(channel_id, message_id)
+            except Exception:
+                pass  # Old message already gone
 
     # Send new message
     result = await discord_client.send_message(channel_id, embed=embed, components=components)
