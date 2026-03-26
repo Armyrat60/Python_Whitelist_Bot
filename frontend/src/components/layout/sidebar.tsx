@@ -53,7 +53,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-zinc-800 bg-zinc-950 md:flex">
       {/* Brand */}
       <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
         <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
@@ -132,15 +132,18 @@ function NavLink({
   label,
   icon: Icon,
   active,
+  onClick,
 }: {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   active: boolean;
+  onClick?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
         active
@@ -151,5 +154,51 @@ function NavLink({
       <Icon className="h-4 w-4 shrink-0" />
       {label}
     </Link>
+  );
+}
+
+export function MobileSidebar({ onClose }: { onClose: () => void }) {
+  const pathname = usePathname();
+  const isActive = (href: string) => {
+    if (href === "/dashboard" && pathname === "/dashboard") return true;
+    if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
+    if (href !== "/dashboard" && pathname.startsWith(href)) return true;
+    return false;
+  };
+
+  const allLinks = [
+    ...mainLinks,
+    ...manageLinks,
+    ...settingsLinks,
+    ...userLinks,
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/50 md:hidden"
+        onClick={onClose}
+      />
+      {/* Slide-in panel */}
+      <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950 md:hidden">
+        <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
+          <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
+          <span className="text-sm font-semibold text-foreground">Squad Whitelister</span>
+        </div>
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+          {allLinks.map((link) => (
+            <NavLink
+              key={link.href}
+              href={link.href}
+              label={link.label}
+              icon={link.icon}
+              active={isActive(link.href)}
+              onClick={onClose}
+            />
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
+import { useState } from "react";
+import { MobileSidebar } from "@/components/layout/sidebar";
 import { useSession } from "@/hooks/use-session";
 import { GuildSwitcher } from "@/components/layout/guild-switcher";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -28,12 +30,24 @@ function avatarUrl(userId: string, avatar: string) {
 export function Topbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const title = pageTitles[pathname] ?? "Dashboard";
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-6 backdrop-blur-sm">
-      <h1 className="text-lg font-semibold">{title}</h1>
+    <>
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-4 md:px-6 backdrop-blur-sm">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={() => setMobileOpen(!mobileOpen)}
+        >
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+        <h1 className="text-lg font-semibold">{title}</h1>
+      </div>
 
       <div className="flex items-center gap-3">
         <GuildSwitcher />
@@ -63,5 +77,7 @@ export function Topbar() {
         </a>
       </div>
     </header>
+    {mobileOpen && <MobileSidebar onClose={() => setMobileOpen(false)} />}
+    </>
   );
 }
