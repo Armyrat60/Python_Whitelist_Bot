@@ -318,7 +318,12 @@ function PanelCard({
             <p className="text-[10px] font-semibold uppercase text-orange-400/70 mb-1">Tiers</p>
             <div className="flex flex-wrap gap-1">
               {tierEntries.map((entry) => (
-                <Badge key={entry.id} variant="secondary" className="text-[10px]">
+                <Badge
+                  key={entry.id}
+                  variant="secondary"
+                  className="text-[10px] cursor-help"
+                  title={`Role ID: ${entry.role_id}`}
+                >
                   @{entry.role_name} = {entry.slot_limit} {entry.slot_limit === 1 ? "slot" : "slots"}
                 </Badge>
               ))}

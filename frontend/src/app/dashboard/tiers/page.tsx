@@ -382,16 +382,19 @@ function CategoryCard({
                 >
                   {/* Role color dot */}
                   <span
-                    className="h-3.5 w-3.5 shrink-0 rounded-full"
+                    className="h-3.5 w-3.5 shrink-0 rounded-full border border-zinc-600"
                     style={{
                       backgroundColor: role?.color || "#99AAB5",
                     }}
                   />
 
-                  {/* Role name */}
+                  {/* Role name + ID */}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">
                       {entry.role_name}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">
+                      ID: {entry.role_id}
                     </p>
                   </div>
 
