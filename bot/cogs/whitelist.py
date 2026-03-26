@@ -160,18 +160,47 @@ class WhitelistPanelView(discord.ui.View):
             embed.add_field(name="Tier", value=tier_name, inline=True)
             embed.add_field(name="Slots", value=f"{len(ids)} / {slots} used", inline=True)
 
+            # Resolve Steam names for display
+            from bot.config import STEAM_API_KEY
+            steam_names = {}
+            steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
+            if steam64_ids and STEAM_API_KEY:
+                try:
+                    import aiohttp as _aiohttp
+                    ids_param = ",".join(steam64_ids)
+                    async with _aiohttp.ClientSession() as http:
+                        async with http.get(
+                            f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids_param}",
+                            timeout=_aiohttp.ClientTimeout(total=5),
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                for player in data.get("response", {}).get("players", []):
+                                    steam_names[player["steamid"]] = player.get("personaname", "")
+                except Exception:
+                    pass  # Steam API failed, show IDs without names
+
             if ids:
                 id_lines = []
                 for i, (t, v, *_) in enumerate(ids, 1):
                     label = "Steam64" if t == "steam64" else "EOS"
-                    id_lines.append(f"**Slot {i}** ({label}): `{v}`")
+                    name = steam_names.get(v, "")
+                    name_str = f" — **{name}**" if name else ""
+                    id_lines.append(f"`{i}.` `{v}`{name_str}")
                 embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
+
+                # Show empty slots
+                for i in range(len(ids) + 1, slots + 1):
+                    id_lines.append(f"`{i}.` *— empty —*")
+                embed.description = None  # Clear description, use fields only
+                embed.set_field_at(len(embed.fields) - 1, name="Your IDs", value="\n".join(id_lines), inline=False)
             else:
-                embed.add_field(name="Your IDs", value="No IDs submitted yet.", inline=False)
+                empty_lines = [f"`{i}.` *— empty —*" for i in range(1, slots + 1)]
+                embed.add_field(name="Your Slots", value="\n".join(empty_lines), inline=False)
 
-            embed.set_footer(text=f"Click Edit to add or change your IDs • {_DASHBOARD_URL.replace('https://', '')}")
+            embed.set_footer(text=f"Use Edit to modify a slot or Add to fill empty ones • {_DASHBOARD_URL.replace('https://', '')}")
 
-            # Add an Edit button that opens the modal
+            # Add Edit (opens full modal) and slot selector for individual edits
             edit_view = _EditIDsView(self.bot, self.whitelist_type, wl_id, slots, ids)
             await interaction.response.send_message(embed=embed, view=edit_view, ephemeral=True)
         except Exception:
@@ -185,6 +214,75 @@ class WhitelistPanelView(discord.ui.View):
             except Exception:
                 pass
 
+class _SingleSlotModal(discord.ui.Modal, title="Edit Slot"):
+    """Modal for editing a single slot."""
+    on_error = _modal_on_error
+
+    def __init__(self, bot, whitelist_type: str, whitelist_id: int, slot_number: int, current_value: str, total_slots: int, all_existing: List[tuple]):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+        self.whitelist_id = whitelist_id
+        self.slot_number = slot_number
+        self.all_existing = all_existing
+
+        self.id_field = discord.ui.TextInput(
+            label=f"Slot {slot_number} — Paste Steam64, EOS, or Profile URL",
+            default=current_value,
+            required=False,
+            style=discord.TextStyle.short,
+            placeholder="76561198xxxxxxxxx or steamcommunity.com/id/username",
+            max_length=200,
+        )
+        self.add_item(self.id_field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from bot.utils import split_identifier_tokens, resolve_steam_vanity
+        from bot.config import STEAM64_RE, EOSID_RE
+
+        raw = self.id_field.value.strip()
+
+        # Build the updated ID list
+        new_ids = list(self.all_existing)  # Copy existing
+
+        if raw:
+            # Parse and resolve the input
+            tokens = split_identifier_tokens(raw)
+            resolved = []
+            for token in tokens:
+                if token.startswith("vanity:"):
+                    steam64 = await resolve_steam_vanity(token[7:])
+                    resolved.append(steam64 if steam64 else token)
+                else:
+                    resolved.append(token)
+
+            if resolved:
+                val = resolved[0]
+                if STEAM64_RE.fullmatch(val):
+                    entry = ("steam64", val, True, "format_only")
+                elif EOSID_RE.fullmatch(val.lower()):
+                    entry = ("eosid", val.lower(), False, "unverified")
+                else:
+                    await interaction.response.send_message(f"Invalid ID format: `{val}`", ephemeral=True)
+                    return
+
+                idx = self.slot_number - 1
+                if idx < len(new_ids):
+                    new_ids[idx] = entry
+                else:
+                    new_ids.append(entry)
+        else:
+            # Empty = remove this slot
+            idx = self.slot_number - 1
+            if idx < len(new_ids):
+                new_ids.pop(idx)
+
+        guild_id = interaction.guild.id
+        await self.bot.db.replace_identifiers(guild_id, interaction.user.id, self.whitelist_id, new_ids)
+        await self.bot.sync_github_outputs(guild_id)
+        await interaction.response.send_message(f"Slot {self.slot_number} updated!", ephemeral=True)
+
+
 class _EditIDsView(discord.ui.View):
     """Ephemeral view shown after Manage Whitelist — lets user edit their IDs."""
 
@@ -196,13 +294,37 @@ class _EditIDsView(discord.ui.View):
         self.slots = slots
         self.existing = existing
 
-    @discord.ui.button(label="Edit IDs", style=discord.ButtonStyle.primary, emoji="✏️")
+        # Slot selector dropdown (only if there are slots to edit)
+        if slots > 0:
+            options = []
+            for i in range(1, min(slots + 1, 26)):  # Discord max 25 options
+                current = existing[i - 1] if i - 1 < len(existing) else None
+                label = f"Slot {i}"
+                desc = f"{current[1][:30]}..." if current else "Empty"
+                options.append(discord.SelectOption(label=label, value=str(i), description=desc))
+
+            select = discord.ui.Select(
+                placeholder="Select a slot to edit...",
+                options=options,
+                custom_id="slot_select",
+            )
+            select.callback = self._slot_selected
+            self.add_item(select)
+
+    async def _slot_selected(self, interaction: discord.Interaction):
+        slot_num = int(interaction.data["values"][0])
+        current = self.existing[slot_num - 1][1] if slot_num - 1 < len(self.existing) else ""
+        await interaction.response.send_modal(
+            _SingleSlotModal(self.bot, self.whitelist_type, self.whitelist_id, slot_num, current, self.slots, self.existing)
+        )
+
+    @discord.ui.button(label="Edit All", style=discord.ButtonStyle.primary, emoji="✏️", row=2)
     async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(
             IdentifierModal(self.bot, self.whitelist_type, self.slots, self.existing)
         )
 
-    @discord.ui.button(label="Clear All", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="Clear All", style=discord.ButtonStyle.danger, emoji="🗑️", row=2)
     async def clear_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild.id
         await self.bot.db.replace_identifiers(guild_id, interaction.user.id, self.whitelist_id, [])
