@@ -423,6 +423,7 @@ class WhitelistBot(commands.Bot):
             )
             duplicate_warnings = [f"{r[0]}:{r[1]}" for r in rows]
 
+        existing_before_save = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
         async with self.write_lock:
             await self.db.upsert_user_record(
                 guild_id,
@@ -454,11 +455,26 @@ class WhitelistBot(commands.Bot):
                 whitelist_id,
             )
         changed = await self.sync_github_outputs(guild_id)
-        msg = f"Saved {len(submitted)} identifier(s). GitHub files changed: {changed}."
+        msg = f"Saved {len(submitted)} identifier(s)."
         if duplicate_warnings:
             msg += "\nWarning: duplicate identifiers exist elsewhere; published output is deduped."
         await interaction.response.send_message(msg, ephemeral=True)
         await self.send_log_embed(guild_id, whitelist_id, "Whitelist Updated", f"User: <@{interaction.user.id}>\nType: `{whitelist_type}`\nSlots: `{slots}`\nPlan: `{plan}`\nIDs: `{len(submitted)}`", discord.Color.green())
+
+        # Send welcome DM on first submission
+        try:
+            is_first = not bool(existing_before_save)
+            if is_first and to_bool(await self.db.get_setting(guild_id, "welcome_dm_enabled", "false")):
+                welcome_text = await self.db.get_setting(guild_id, "welcome_dm_text", "")
+                if welcome_text:
+                    guild_name = interaction.guild.name if interaction.guild else "the server"
+                    dm_text = welcome_text.replace("{user}", str(interaction.user)).replace("{guild}", guild_name).replace("{slots}", str(slots)).replace("{tier}", plan.split(":")[0] if ":" in plan else plan)
+                    try:
+                        await interaction.user.send(dm_text)
+                    except discord.Forbidden:
+                        pass  # User has DMs disabled
+        except Exception:
+            pass  # Don't fail the submission over a DM error
 
     async def get_output_contents(self, guild_id: int) -> dict:
         """Generate whitelist output files using shared module."""
