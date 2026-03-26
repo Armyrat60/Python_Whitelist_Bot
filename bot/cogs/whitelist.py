@@ -100,6 +100,17 @@ class WhitelistPanelView(discord.ui.View):
         manage_wl_btn.callback = self._manage_whitelist_callback
         self.add_item(manage_wl_btn)
 
+        # Backward compat: handle old "View My Whitelist" buttons from panels posted before the redesign
+        view_compat_btn = discord.ui.Button(
+            label="View My Whitelist",
+            style=discord.ButtonStyle.primary,
+            emoji="📋",
+            custom_id=f"panel:view:{whitelist_type}",
+            row=3,  # Hidden row (won't show on new panels but catches old button clicks)
+        )
+        view_compat_btn.callback = self._manage_whitelist_callback  # Route to same handler
+        self.add_item(view_compat_btn)
+
         web_btn = discord.ui.Button(
             label="Web Dashboard",
             style=discord.ButtonStyle.link,
