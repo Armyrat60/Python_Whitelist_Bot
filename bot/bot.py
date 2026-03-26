@@ -242,9 +242,24 @@ class WhitelistBot(commands.Bot):
             return
         embed = discord.Embed(title=title, description=description, color=color, timestamp=datetime.now(timezone.utc))
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except discord.Forbidden:
             log.warning("Missing access to log channel %s", channel_id)
+
+    async def send_notification(self, guild_id: int, title: str, description: str, color: discord.Color = discord.Color.orange()):
+        """Send a system notification to the guild's configured notification channel."""
+        channel_id = await self.db.get_setting(guild_id, "notification_channel_id")
+        if not channel_id:
+            return
+        channel = self.get_channel(int(channel_id))
+        if not channel:
+            return
+        embed = discord.Embed(title=title, description=description, color=color, timestamp=datetime.now(timezone.utc))
+        embed.set_footer(text="Squad Whitelister System Alert")
+        try:
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except discord.Forbidden:
+            log.warning("Missing access to notification channel %s", channel_id)
 
     async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None, panel=None) -> tuple:
         """Calculate effective slots for a member.
@@ -684,9 +699,12 @@ class WhitelistBot(commands.Bot):
             expired = await self.db.expire_timed_whitelists(guild_id)
             if expired:
                 log.info("Expired %d timed whitelist entries for guild %s", len(expired), guild_id)
+                names = []
                 for discord_id, whitelist_id in expired:
                     await self.db.audit(guild_id, "auto_expire", None, discord_id, f"Timed whitelist expired", whitelist_id)
+                    names.append(f"<@{discord_id}>")
                 self.schedule_github_sync(guild_id)
+                await self.send_notification(guild_id, "⏰ Timed Whitelists Expired", f"{len(expired)} entries expired:\n" + "\n".join(names[:20]))
             # Purge old inactive records
             retention = int(await self.db.get_setting(guild_id, "retention_days", "90"))
             purged = await self.db.purge_inactive_older_than(guild_id, retention)
