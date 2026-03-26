@@ -89,8 +89,13 @@ async def callback(request: web.Request) -> web.Response:
         user_guild_ids = {int(g["id"]) for g in user_guilds_list}
         user_guilds_by_id = {int(g["id"]): g for g in user_guilds_list}
 
-        # Intersect with bot's guilds
+        # Intersect with bot's guilds (refresh cache first so new guilds appear instantly)
         bot = request.app["bot"]
+        if hasattr(bot, "fetch_guilds"):
+            try:
+                await bot.fetch_guilds()
+            except Exception:
+                pass  # Use stale cache if refresh fails
         bot_guild_ids = {g.id for g in bot.guilds}
         mutual_guild_ids = user_guild_ids & bot_guild_ids
 
