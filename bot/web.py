@@ -131,12 +131,20 @@ async def security_headers_middleware(request: web.Request, handler):
 
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler):
-    """Rate limit requests per IP."""
+    """Rate limit requests per IP. Stricter limits for auth endpoints."""
+    ip = _get_client_ip(request)
+
+    # Stricter limit for auth endpoints: 10 requests/minute
+    if request.path in ("/login", "/callback", "/api/auth/login"):
+        auth_limiter = request.app.get("auth_rate_limiter")
+        if auth_limiter and auth_limiter.is_rate_limited(ip):
+            raise web.HTTPTooManyRequests(text="Too many login attempts. Try again later.")
+
+    # General rate limit: 60 requests/minute
     limiter = request.app.get("rate_limiter")
-    if limiter:
-        ip = _get_client_ip(request)
-        if limiter.is_rate_limited(ip):
-            raise web.HTTPTooManyRequests(text="Rate limit exceeded. Try again later.")
+    if limiter and limiter.is_rate_limited(ip):
+        raise web.HTTPTooManyRequests(text="Rate limit exceeded. Try again later.")
+
     return await handler(request)
 
 
@@ -168,8 +176,9 @@ class WebServer:
             middlewares=[cors_middleware, error_logging_middleware, security_headers_middleware, rate_limit_middleware],
         )
 
-        # Rate limiter: 60 requests/minute for general, applied globally
+        # Rate limiters
         self.app["rate_limiter"] = RateLimiter(max_requests=60, window_seconds=60)
+        self.app["auth_rate_limiter"] = RateLimiter(max_requests=10, window_seconds=60)
 
         # Store bot reference for route handlers
         self.app["bot"] = bot
