@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: whitelist_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  bot:
+    build: .
+    command: python -m bot bot
+    depends_on:
+      - postgres
+    env_file: .env
+    environment:
+      DB_ENGINE: postgres
+      DATABASE_URL: postgresql://postgres:devpass@postgres:5432/whitelist_bot
+      WEB_ENABLED: "false"
+
+  web:
+    build: .
+    command: python -m bot web
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      DB_ENGINE: postgres
+      DATABASE_URL: postgresql://postgres:devpass@postgres:5432/whitelist_bot
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+
+volumes:
+  pgdata:
