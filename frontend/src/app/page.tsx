@@ -116,7 +116,13 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t border-zinc-800 px-4 py-6 text-center text-xs text-muted-foreground">
-        <p>Squad Whitelister — squadwhitelister.com</p>
+        <div className="flex items-center justify-center gap-4">
+          <span>Squad Whitelister</span>
+          <span>·</span>
+          <a href="/terms" className="hover:text-foreground">Terms</a>
+          <span>·</span>
+          <a href="/privacy" className="hover:text-foreground">Privacy</a>
+        </div>
       </footer>
     </div>
   );
