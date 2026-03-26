@@ -368,8 +368,9 @@ class ManagerMenuView(discord.ui.View):
 
     @discord.ui.button(label="Lookup User", style=discord.ButtonStyle.primary, emoji="🔍")
     async def lookup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = LookupModal(self.bot, self.whitelist_type)
-        await interaction.response.send_modal(modal)
+        # Show a user select menu instead of a text modal
+        view = _UserLookupView(self.bot, self.whitelist_type)
+        await interaction.response.send_message("Select a member to look up:", view=view, ephemeral=True)
 
     @discord.ui.button(label="View Stats", style=discord.ButtonStyle.secondary, emoji="📊")
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -394,61 +395,76 @@ class ManagerMenuView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-class LookupModal(discord.ui.Modal, title="Lookup User"):
-    on_error = _modal_on_error
+class _UserLookupView(discord.ui.View):
+    """View with Discord's built-in user select menu for looking up members."""
 
     def __init__(self, bot, whitelist_type: str):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)
         self.bot = bot
         self.whitelist_type = whitelist_type
-        self.user_input = discord.ui.TextInput(
-            label="Discord Username or ID",
-            placeholder="e.g. armyrat60 or 268871213479231489",
-            required=True,
-            max_length=100,
-        )
-        self.add_item(self.user_input)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    @discord.ui.select(cls=discord.ui.UserSelect, placeholder="Search for a member...", min_values=1, max_values=1)
+    async def user_select(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
+        target = select.values[0]
+        target_id = target.id
         guild_id = interaction.guild.id
-        query = self.user_input.value.strip()
+
         wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
         if not wl:
             await interaction.response.send_message("Whitelist not found.", ephemeral=True)
             return
         wl_id = wl["id"]
 
-        # Try to find by Discord ID or name
-        target_id = None
-        if query.isdigit():
-            target_id = int(query)
-        else:
-            # Search by name in the guild
-            member = discord.utils.find(lambda m: m.name.lower() == query.lower() or m.display_name.lower() == query.lower(), interaction.guild.members)
-            if member:
-                target_id = member.id
-
-        if not target_id:
-            await interaction.response.send_message(f"Could not find user `{query}`. Try their Discord ID.", ephemeral=True)
-            return
-
         row = await self.bot.db.get_user_record(guild_id, target_id, wl_id)
         ids = await self.bot.db.get_identifiers(guild_id, target_id, wl_id)
 
         if not row and not ids:
-            await interaction.response.send_message(f"No whitelist entry found for <@{target_id}>.", ephemeral=True)
+            # Check if user has a qualifying role
+            member = interaction.guild.get_member(target_id)
+            role_info = ""
+            if member:
+                panels = await self.bot.db.get_panels(guild_id)
+                panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+                slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
+                if slots > 0:
+                    role_info = f"\n\nThis user has the **{plan.split(':')[0] if ':' in plan else plan}** role ({slots} slots) but hasn't submitted any IDs yet."
+            await interaction.response.send_message(f"No whitelist entry found for <@{target_id}>.{role_info}", ephemeral=True)
             return
 
-        embed = discord.Embed(title=f"Whitelist Entry for <@{target_id}>", color=0xF97316)
+        # Resolve Steam names
+        from bot.config import STEAM_API_KEY
+        steam_names = {}
+        steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
+        if steam64_ids and STEAM_API_KEY:
+            try:
+                import aiohttp as _aiohttp
+                async with _aiohttp.ClientSession() as http:
+                    async with http.get(
+                        f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={','.join(steam64_ids)}",
+                        timeout=_aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            for player in data.get("response", {}).get("players", []):
+                                steam_names[player["steamid"]] = player.get("personaname", "")
+            except Exception:
+                pass
+
+        embed = discord.Embed(title=f"Whitelist: {target.display_name}", color=0xF97316)
+        embed.set_thumbnail(url=target.display_avatar.url)
         if row:
             embed.add_field(name="Status", value=row[1], inline=True)
-            embed.add_field(name="Slots", value=str(row[3]), inline=True)
+            embed.add_field(name="Slots", value=f"{len(ids)} / {row[3]}", inline=True)
             if row[4]:
-                embed.add_field(name="Tier", value=row[4], inline=True)
+                embed.add_field(name="Tier", value=row[4].split(":")[0] if ":" in str(row[4]) else row[4], inline=True)
         if ids:
-            id_lines = [f"**{'Steam64' if t == 'steam64' else 'EOS'}:** `{v}`" for t, v, *_ in ids]
+            id_lines = []
+            for i, (t, v, *_) in enumerate(ids, 1):
+                name = steam_names.get(v, "")
+                name_str = f" — {name}" if name else ""
+                id_lines.append(f"`{i}.` `{v}`{name_str}")
             embed.add_field(name="IDs", value="\n".join(id_lines), inline=False)
-        embed.set_footer(text="Squad Whitelister")
+        embed.set_footer(text=f"Discord ID: {target_id}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
