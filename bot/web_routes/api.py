@@ -2764,9 +2764,9 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     if tier_lines:
         description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
     description += (
-        "🛡️ **Submit / Update ID** — Enter your Steam64 or EOS ID\n"
-        "📋 **View My Whitelist** — Check your current entry and slots\n"
-        "🌐 **Web Dashboard** — Manage everything from the browser"
+        "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
+        "🌐 **Web Dashboard** — Full management from your browser\n"
+        "⚙️ **Manager Tools** — Admin actions (mods only)"
     )
 
     _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
@@ -2789,16 +2789,9 @@ async def admin_push_panel(request: web.Request) -> web.Response:
                 {
                     "type": 2,  # BUTTON
                     "style": 3,  # SUCCESS (green)
-                    "label": "Submit / Update ID",
+                    "label": "Manage Whitelist",
                     "emoji": {"name": "🛡️"},
                     "custom_id": f"panel:submit:{wl_slug}",
-                },
-                {
-                    "type": 2,  # BUTTON
-                    "style": 1,  # PRIMARY (blue)
-                    "label": "View My Whitelist",
-                    "emoji": {"name": "📋"},
-                    "custom_id": f"panel:view:{wl_slug}",
                 },
                 {
                     "type": 2,  # BUTTON
