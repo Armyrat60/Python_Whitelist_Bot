@@ -11,14 +11,14 @@ import {
 
 /* ─── Presets ─── */
 export const ACCENT_PRESETS = {
-  "Operator":     { primary: "#22C55E", secondary: "#38BDF8" }, // emerald + sky — default military
-  "Command Gold": { primary: "#EAB308", secondary: "#F97316" }, // amber + orange — authority / rank
-  "Spectre":      { primary: "#A78BFA", secondary: "#38BDF8" }, // violet + sky — elite / premium
-  "Crimson":      { primary: "#F43F5E", secondary: "#FB923C" }, // rose + amber — danger / alert
-  "Arctic":       { primary: "#22D3EE", secondary: "#818CF8" }, // cyan + indigo — cold precision
-  "Cobalt":       { primary: "#60A5FA", secondary: "#34D399" }, // blue + teal — clean / enterprise
-  "Night Vision": { primary: "#84CC16", secondary: "#22D3EE" }, // lime + cyan — NVG readout
-  "Phantom":      { primary: "#C084FC", secondary: "#F472B6" }, // purple + pink — esports / flair
+  "Precision Intel": { primary: "#22D3EE", secondary: "#818CF8" }, // cyan + indigo — command-center default
+  "Operator":        { primary: "#22C55E", secondary: "#38BDF8" }, // emerald + sky — military green
+  "Command Gold":    { primary: "#EAB308", secondary: "#F97316" }, // amber + orange — authority / rank
+  "Spectre":         { primary: "#A78BFA", secondary: "#38BDF8" }, // violet + sky — elite / premium
+  "Crimson":         { primary: "#F43F5E", secondary: "#FB923C" }, // rose + amber — danger / alert
+  "Cobalt":          { primary: "#60A5FA", secondary: "#34D399" }, // blue + teal — clean / enterprise
+  "Night Vision":    { primary: "#84CC16", secondary: "#22D3EE" }, // lime + cyan — NVG readout
+  "Phantom":         { primary: "#C084FC", secondary: "#F472B6" }, // purple + pink — esports / flair
 } as const;
 
 export type PresetName = keyof typeof ACCENT_PRESETS;
@@ -35,8 +35,8 @@ interface AccentContextType {
 }
 
 const AccentContext = createContext<AccentContextType>({
-  primary: "#22C55E",
-  secondary: "#38BDF8",
+  primary: "#22D3EE",
+  secondary: "#818CF8",
   setPrimary: () => {},
   setSecondary: () => {},
   applyPreset: () => {},
@@ -45,13 +45,20 @@ const AccentContext = createContext<AccentContextType>({
 
 function applyToDom(primary: string, secondary: string) {
   const root = document.documentElement;
+  // User-facing accent vars (used in inline styles throughout the app)
   root.style.setProperty("--accent-primary", primary);
   root.style.setProperty("--accent-secondary", secondary);
+  // Keep shadcn --primary in sync so Tailwind classes like bg-primary/10 and
+  // text-primary also reflect the chosen accent color
+  root.style.setProperty("--primary", primary);
+  root.style.setProperty("--ring", primary);
+  root.style.setProperty("--sidebar-primary", primary);
+  root.style.setProperty("--sidebar-ring", primary);
 }
 
 export function AccentProvider({ children }: { children: ReactNode }) {
-  const [primary, setPrimaryState] = useState("#22C55E");
-  const [secondary, setSecondaryState] = useState("#38BDF8");
+  const [primary, setPrimaryState] = useState("#22D3EE");
+  const [secondary, setSecondaryState] = useState("#818CF8");
 
   // Load from localStorage once on mount
   useEffect(() => {

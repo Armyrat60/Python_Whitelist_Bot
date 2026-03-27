@@ -25,8 +25,13 @@ export function StatCard({
   return (
     <Card className={cn("relative overflow-hidden", className)}>
       <CardContent className="flex items-center gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)" }}
+        >
+          <span style={{ color: "var(--accent-primary)" }}>
+            <Icon className="h-5 w-5" />
+          </span>
         </div>
         <div className="flex-1 space-y-1">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
@@ -39,12 +44,8 @@ export function StatCard({
           )}
           {trend && !loading && (
             <p
-              className={cn(
-                "text-xs",
-                trend.value >= 0
-                  ? "text-emerald-500"
-                  : "text-destructive"
-              )}
+              className={cn("text-xs", trend.value < 0 && "text-destructive")}
+              style={trend.value >= 0 ? { color: "var(--accent-primary)" } : undefined}
             >
               {trend.value >= 0 ? "+" : ""}
               {trend.value}% {trend.label}

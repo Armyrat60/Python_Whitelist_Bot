@@ -158,7 +158,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-sm text-emerald-400">
+              <div className="flex items-center gap-2 text-sm" style={{ color: "var(--accent-primary)" }}>
                 <Shield className="h-4 w-4" />
                 All systems healthy — no alerts
               </div>

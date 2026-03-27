@@ -863,7 +863,7 @@ export default function UsersPage() {
             </Button>
           </div>
           {gapData.gap.length === 0 ? (
-            <p className="text-sm text-emerald-400">All role holders have registered!</p>
+            <p className="text-sm" style={{ color: "var(--accent-primary)" }}>All role holders have registered!</p>
           ) : (
             <div className="max-h-64 overflow-y-auto space-y-1">
               {gapData.gap.map((m) => (
@@ -2048,8 +2048,17 @@ function AddUserDialog({
 
           {/* Verify result feedback */}
           {verifyState.step === "verified" && (
-            <div className="flex items-start gap-3 rounded-lg border border-green-500/30 bg-green-500/5 p-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-500" />
+            <div
+              className="flex items-start gap-3 rounded-lg p-3"
+              style={{
+                border: "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                background: "color-mix(in srgb, var(--accent-primary) 5%, transparent)",
+              }}
+            >
+              <CheckCircle2
+                className="mt-0.5 h-5 w-5 shrink-0"
+                style={{ color: "var(--accent-primary)" }}
+              />
               <div className="space-y-1 text-sm">
                 <p className="font-medium">
                   {verifyState.result.name}

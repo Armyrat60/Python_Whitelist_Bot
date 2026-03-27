@@ -48,10 +48,10 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ─── User-configurable accent CSS vars (defaults: green + sky-blue) ─── */
+/* ─── User-configurable accent CSS vars (defaults: Precision Intel — cyan + indigo) ─── */
 :root {
-  --accent-primary: #22C55E;
-  --accent-secondary: #38BDF8;
+  --accent-primary: #22D3EE;
+  --accent-secondary: #818CF8;
 }
 
 :root {
@@ -106,8 +106,8 @@
   --popover: oklch(0.30 0.016 240);          /* popover — highest surface, fully opaque */
   --popover-foreground: oklch(0.93 0.005 240);
 
-  /* Green primary accent */
-  --primary: oklch(0.73 0.20 142);           /* #22C55E */
+  /* Precision Intel primary — cyan #22D3EE */
+  --primary: oklch(0.82 0.13 200);
   --primary-foreground: oklch(0.09 0 0);
 
   /* Surfaces */
@@ -115,7 +115,7 @@
   --secondary-foreground: oklch(0.93 0.005 240);
   --muted: oklch(0.29 0.013 240);
   --muted-foreground: oklch(0.62 0.006 240);
-  --accent: oklch(0.26 0.020 142);
+  --accent: oklch(0.24 0.018 200);
   --accent-foreground: oklch(0.93 0.005 240);
 
   /* Danger */
@@ -124,24 +124,24 @@
   /* Structure */
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.73 0.20 142);
+  --ring: oklch(0.82 0.13 200);
 
-  /* Charts: green → blue gradient */
-  --chart-1: oklch(0.73 0.20 142);
-  --chart-2: oklch(0.75 0.15 212);
-  --chart-3: oklch(0.63 0.16 142);
-  --chart-4: oklch(0.65 0.12 212);
-  --chart-5: oklch(0.50 0.10 200);
+  /* Charts: cyan → indigo gradient */
+  --chart-1: oklch(0.82 0.13 200);
+  --chart-2: oklch(0.70 0.18 265);
+  --chart-3: oklch(0.70 0.11 200);
+  --chart-4: oklch(0.60 0.15 265);
+  --chart-5: oklch(0.50 0.10 230);
 
   /* Sidebar: L1 — always the darkest layer */
   --sidebar: oklch(0.14 0.018 240);
   --sidebar-foreground: oklch(0.93 0.005 240);
-  --sidebar-primary: oklch(0.73 0.20 142);
+  --sidebar-primary: oklch(0.82 0.13 200);
   --sidebar-primary-foreground: oklch(0.09 0 0);
-  --sidebar-accent: oklch(0.20 0.022 142);
+  --sidebar-accent: oklch(0.20 0.018 200);
   --sidebar-accent-foreground: oklch(0.93 0.005 240);
   --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.73 0.20 142);
+  --sidebar-ring: oklch(0.82 0.13 200);
 }
 
 @layer base {
@@ -150,10 +150,10 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Subtle radial depth — blue-teal bloom that reads on the lighter bg */
+    /* Subtle radial depth — cyan bloom top-left, indigo bloom bottom-right */
     background-image:
-      radial-gradient(ellipse 80% 50% at 10% -10%, oklch(0.32 0.05 220 / 0.40) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 90% 100%, oklch(0.28 0.04 200 / 0.25) 0%, transparent 55%);
+      radial-gradient(ellipse 80% 50% at 10% -10%, oklch(0.35 0.06 200 / 0.35) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 90% 100%, oklch(0.30 0.07 265 / 0.20) 0%, transparent 55%);
     background-attachment: fixed;
   }
   html {

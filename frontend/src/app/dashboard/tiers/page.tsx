@@ -314,7 +314,8 @@ function CategoryCard({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0 text-emerald-500"
+                className="h-7 w-7 p-0"
+                style={{ color: "var(--accent-primary)" }}
                 onClick={() => {
                   updateCategory.mutate(
                     { id: category.id, name: nameValue.trim() },
