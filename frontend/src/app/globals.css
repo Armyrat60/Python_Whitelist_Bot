@@ -48,6 +48,12 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ─── User-configurable accent CSS vars (defaults: green + sky-blue) ─── */
+:root {
+  --accent-primary: #22C55E;
+  --accent-secondary: #38BDF8;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -83,40 +89,52 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ─── Tactical Dark Theme ─── */
 .dark {
-  --background: oklch(0.12 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.17 0.005 250);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.17 0.005 250);
-  --popover-foreground: oklch(0.985 0 0);
-  /* Orange accent as primary */
-  --primary: oklch(0.75 0.18 55);
-  --primary-foreground: oklch(0.12 0 0);
-  --secondary: oklch(0.24 0.005 250);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.24 0.005 250);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.24 0.01 55);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.75 0.18 55);
-  /* Orange-tinted chart colors */
-  --chart-1: oklch(0.75 0.18 55);
-  --chart-2: oklch(0.65 0.14 55);
-  --chart-3: oklch(0.55 0.10 55);
-  --chart-4: oklch(0.45 0.06 55);
-  --chart-5: oklch(0.35 0.03 55);
-  --sidebar: oklch(0.14 0.005 250);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.75 0.18 55);
-  --sidebar-primary-foreground: oklch(0.12 0 0);
-  --sidebar-accent: oklch(0.22 0.01 55);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.75 0.18 55);
+  /* Background layers */
+  --background: oklch(0.09 0.012 240);       /* #0B0F14 — deepest layer */
+  --foreground: oklch(0.92 0.005 240);       /* #E5E7EB — primary text */
+  --card: oklch(0.13 0.015 240);             /* #111827 — panel surface */
+  --card-foreground: oklch(0.92 0.005 240);
+  --popover: oklch(0.13 0.015 240);
+  --popover-foreground: oklch(0.92 0.005 240);
+
+  /* Green primary accent */
+  --primary: oklch(0.73 0.20 142);           /* #22C55E */
+  --primary-foreground: oklch(0.09 0 0);
+
+  /* Surfaces */
+  --secondary: oklch(0.19 0.015 240);
+  --secondary-foreground: oklch(0.92 0.005 240);
+  --muted: oklch(0.19 0.015 240);
+  --muted-foreground: oklch(0.60 0.006 240); /* #9CA3AF */
+  --accent: oklch(0.17 0.025 142);
+  --accent-foreground: oklch(0.92 0.005 240);
+
+  /* Danger */
+  --destructive: oklch(0.62 0.22 25);
+
+  /* Structure */
+  --border: oklch(1 0 0 / 7%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.73 0.20 142);
+
+  /* Charts: green → blue gradient */
+  --chart-1: oklch(0.73 0.20 142);           /* green */
+  --chart-2: oklch(0.75 0.15 212);           /* sky blue */
+  --chart-3: oklch(0.63 0.16 142);           /* darker green */
+  --chart-4: oklch(0.65 0.12 212);           /* darker blue */
+  --chart-5: oklch(0.50 0.10 200);
+
+  /* Sidebar: slightly darker than bg */
+  --sidebar: oklch(0.10 0.012 240);
+  --sidebar-foreground: oklch(0.92 0.005 240);
+  --sidebar-primary: oklch(0.73 0.20 142);
+  --sidebar-primary-foreground: oklch(0.09 0 0);
+  --sidebar-accent: oklch(0.16 0.022 142);
+  --sidebar-accent-foreground: oklch(0.92 0.005 240);
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: oklch(0.73 0.20 142);
 }
 
 @layer base {
@@ -125,8 +143,53 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Subtle noise texture via SVG data URI */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    background-size: 128px 128px;
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ─── Tactical Utility Classes ─── */
+@layer utilities {
+  /* Sidebar nav active state — reads from --accent-primary CSS var */
+  .nav-active {
+    color: var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+    border-left: 2px solid var(--accent-primary);
+    box-shadow:
+      inset 6px 0 18px color-mix(in srgb, var(--accent-primary) 8%, transparent),
+      0 0 8px color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  }
+  .nav-inactive:hover {
+    background: color-mix(in srgb, var(--accent-primary) 5%, transparent);
+    color: oklch(0.92 0.005 240);
+  }
+
+  /* Table row effects */
+  .row-hover {
+    transition: background 150ms ease, box-shadow 150ms ease;
+  }
+  .row-hover:hover {
+    background: color-mix(in srgb, var(--accent-secondary) 5%, transparent);
+  }
+  .row-selected {
+    background: color-mix(in srgb, var(--accent-secondary) 8%, transparent) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-secondary) 35%, transparent);
+  }
+
+  /* Focus glow */
+  .glow-primary {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent-primary) 35%, transparent);
+  }
+  .glow-secondary {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent-secondary) 35%, transparent);
+  }
+
+  /* Card depth shadow */
+  .card-depth {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   }
 }

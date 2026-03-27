@@ -42,28 +42,41 @@ const userLinks = [
 export function Sidebar() {
   const pathname = usePathname();
 
-  // Match setup tabs to their new sidebar routes
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
     if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
     if (href !== "/dashboard" && pathname.startsWith(href)) return true;
-    // Legacy setup route mapping
     if (href === "/dashboard/panels" && pathname === "/dashboard/setup") return true;
     return false;
   };
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-zinc-800 bg-zinc-950 md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-white/[0.06] bg-[oklch(0.10_0.012_240)] md:flex"
+      style={{ boxShadow: "1px 0 0 rgba(255,255,255,0.04)" }}
+    >
       {/* Brand */}
-      <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
-        <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
-        <span className="text-sm font-semibold text-foreground">
-          Squad Whitelister
-        </span>
+      <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
+        <div className="relative">
+          <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
+          <span
+            className="absolute inset-0 rounded-lg"
+            style={{ boxShadow: "0 0 10px color-mix(in srgb, var(--accent-primary) 40%, transparent)" }}
+          />
+        </div>
+        <div>
+          <span className="block text-sm font-semibold tracking-wide text-white/90">
+            Squad Whitelister
+          </span>
+          <span className="block text-[10px] font-medium uppercase tracking-widest"
+            style={{ color: "var(--accent-primary)" }}
+          >
+            Command Center
+          </span>
+        </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
         {mainLinks.map((link) => (
           <NavLink
             key={link.href}
@@ -99,7 +112,7 @@ export function Sidebar() {
         ))}
 
         <div className="py-2">
-          <Separator className="bg-zinc-800" />
+          <Separator className="bg-white/[0.06]" />
         </div>
 
         {userLinks.map((link) => (
@@ -112,15 +125,23 @@ export function Sidebar() {
           />
         ))}
       </nav>
+
+      {/* Bottom accent bar */}
+      <div
+        className="h-0.5 w-full"
+        style={{ background: "linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)", opacity: 0.4 }}
+      />
     </aside>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="py-2">
-      <Separator className="bg-zinc-800" />
-      <p className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-orange-400/60">
+    <div className="pt-4 pb-1">
+      <p
+        className="px-3 text-[10px] font-semibold uppercase tracking-widest"
+        style={{ color: "color-mix(in srgb, var(--accent-primary) 60%, #9CA3AF)" }}
+      >
         {children}
       </p>
     </div>
@@ -140,18 +161,26 @@ function NavLink({
   active: boolean;
   onClick?: () => void;
 }) {
+  if (active) {
+    return (
+      <Link
+        href={href}
+        onClick={onClick}
+        className="nav-active flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150"
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {label}
+      </Link>
+    );
+  }
+
   return (
     <Link
       href={href}
       onClick={onClick}
-      className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        active
-          ? "bg-orange-500/10 text-orange-400 border-l-2 border-orange-500"
-          : "text-muted-foreground hover:bg-zinc-900 hover:text-foreground"
-      )}
+      className="nav-inactive flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/40 transition-all duration-150"
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="h-4 w-4 shrink-0 opacity-60" />
       {label}
     </Link>
   );
@@ -177,16 +206,23 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/50 md:hidden"
+        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
         onClick={onClose}
       />
       {/* Slide-in panel */}
-      <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-zinc-800 bg-zinc-950 md:hidden">
-        <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-4">
+      <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/[0.06] bg-[oklch(0.10_0.012_240)] md:hidden">
+        <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
           <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
-          <span className="text-sm font-semibold text-foreground">Squad Whitelister</span>
+          <div>
+            <span className="block text-sm font-semibold text-white/90">Squad Whitelister</span>
+            <span className="block text-[10px] font-medium uppercase tracking-widest"
+              style={{ color: "var(--accent-primary)" }}
+            >
+              Command Center
+            </span>
+          </div>
         </div>
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
           {allLinks.map((link) => (
             <NavLink
               key={link.href}
@@ -198,6 +234,10 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
             />
           ))}
         </nav>
+        <div
+          className="h-0.5 w-full"
+          style={{ background: "linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)", opacity: 0.4 }}
+        />
       </aside>
     </>
   );

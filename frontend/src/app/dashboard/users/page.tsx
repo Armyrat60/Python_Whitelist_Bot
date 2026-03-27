@@ -82,16 +82,122 @@ import { cn } from "@/lib/utils";
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const statusVariant: Record<
-  string,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  active: "default",
-  inactive: "secondary",
-  expired: "destructive",
-};
-
 type ViewMode = "list" | "cards";
+
+/* ------------------------------------------------------------------ */
+/*  Tactical UI Components                                             */
+/* ------------------------------------------------------------------ */
+
+/** Status badge — green/gray/red dot with glow */
+function StatusBadge({ status }: { status: string }) {
+  const cfgs: Record<string, { dot: string; text: string; bg: string; border: string }> = {
+    active: {
+      dot: "#22C55E",
+      text: "#4ADE80",
+      bg: "rgba(34,197,94,0.10)",
+      border: "rgba(34,197,94,0.28)",
+    },
+    inactive: {
+      dot: "#64748B",
+      text: "#94A3B8",
+      bg: "rgba(100,116,139,0.10)",
+      border: "rgba(100,116,139,0.22)",
+    },
+    expired: {
+      dot: "#EF4444",
+      text: "#F87171",
+      bg: "rgba(239,68,68,0.10)",
+      border: "rgba(239,68,68,0.28)",
+    },
+  };
+  const c = cfgs[status] ?? cfgs.inactive;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: c.bg, borderColor: c.border, color: c.text }}
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{
+          background: c.dot,
+          boxShadow: status === "active" ? `0 0 5px ${c.dot}` : "none",
+        }}
+      />
+      {status}
+    </span>
+  );
+}
+
+/** Tier / whitelist badge — colored pill by keyword */
+function TierBadge({ tier, whitelist }: { tier: string | null | undefined; whitelist: string | null | undefined }) {
+  const label = tier ?? whitelist ?? "—";
+  const lower = label.toLowerCase();
+
+  let bg: string, border: string, color: string;
+  if (lower.includes("spectre") || lower.includes("command") || lower.includes("elite")) {
+    bg = "rgba(168,85,247,0.13)"; border = "rgba(168,85,247,0.30)"; color = "#C084FC";
+  } else if (lower.includes("ghost") || lower.includes("squad") || lower.includes("recon")) {
+    bg = "rgba(56,189,248,0.12)"; border = "rgba(56,189,248,0.28)"; color = "#7DD3FC";
+  } else if (lower.includes("duo") || lower.includes("fire")) {
+    bg = "rgba(20,184,166,0.12)"; border = "rgba(20,184,166,0.28)"; color = "#5EEAD4";
+  } else if (lower.includes("vip") || lower.includes("gold")) {
+    bg = "rgba(245,158,11,0.12)"; border = "rgba(245,158,11,0.28)"; color = "#FCD34D";
+  } else {
+    // Solo / default
+    bg = "rgba(148,163,184,0.09)"; border = "rgba(148,163,184,0.20)"; color = "#94A3B8";
+  }
+
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: bg, borderColor: border, color }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** Slot visualization — segmented blocks + numeric */
+function SlotBar({
+  used,
+  total,
+}: {
+  used: number;
+  total: number;
+}) {
+  const maxBlocks = Math.min(Math.max(total, 1), 10);
+  const filled = Math.min(used, maxBlocks);
+  const pct = total > 0 ? used / total : 0;
+  const isOver = used > total;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex gap-[2px]">
+        {Array.from({ length: maxBlocks }).map((_, i) => (
+          <span
+            key={i}
+            className="h-[6px] w-[5px] rounded-[1px] transition-all"
+            style={{
+              background:
+                i < filled
+                  ? isOver
+                    ? "#F87171"
+                    : "var(--accent-primary)"
+                  : "rgba(255,255,255,0.10)",
+              boxShadow:
+                i < filled && !isOver
+                  ? "0 0 3px color-mix(in srgb, var(--accent-primary) 60%, transparent)"
+                  : "none",
+            }}
+          />
+        ))}
+      </div>
+      <span className={cn("text-[11px] tabular-nums", isOver ? "text-red-400" : "text-muted-foreground")}>
+        {used}/{total}
+      </span>
+    </div>
+  );
+}
 
 /** Unique key for a user row (composite: discord_id + whitelist_slug) */
 function userKey(user: WhitelistUser) {
@@ -793,7 +899,7 @@ function UserListView({
         <span className="w-8" />
         <span className="flex-1">Discord Name</span>
         <span className="w-28 text-center">Tier</span>
-        <span className="w-20 text-center">Slots</span>
+        <span className="w-28 text-center">Slots</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
       </div>
@@ -810,8 +916,8 @@ function UserListView({
             {/* Row */}
             <div
               className={cn(
-                "flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50",
-                isSelected && "bg-muted/40"
+                "row-hover flex cursor-pointer items-center gap-3 px-4 py-2.5",
+                isSelected && "row-selected"
               )}
               onClick={() => setExpandedKey(isExpanded ? null : key)}
             >
@@ -832,28 +938,17 @@ function UserListView({
                   {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
                 </AvatarFallback>
               </Avatar>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
                 {user.discord_name}
               </span>
               <span className="hidden w-28 text-center sm:block">
-                <Badge variant="outline" className="text-[11px]">
-                  {user.last_plan_name ?? user.whitelist_name}
-                </Badge>
+                <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
               </span>
-              <span className="w-20 text-center text-xs text-muted-foreground">
-                {usedSlots}/{user.effective_slot_limit}
+              <span className="flex w-28 items-center justify-center">
+                <SlotBar used={usedSlots} total={user.effective_slot_limit} />
               </span>
               <span className="w-20 text-center">
-                <Badge
-                  variant={statusVariant[user.status] ?? "outline"}
-                  className={cn(
-                    "text-[11px]",
-                    user.status === "active" &&
-                      "bg-orange-500/15 text-orange-400 dark:bg-orange-500/20 dark:text-orange-300"
-                  )}
-                >
-                  {user.status}
-                </Badge>
+                <StatusBadge status={user.status} />
               </span>
               <ChevronDown
                 className={cn(
@@ -1108,31 +1203,16 @@ function UserCard({
               {user.discord_id}
             </CardDescription>
           </div>
-          <Badge
-            variant={statusVariant[user.status] ?? "outline"}
-            className={cn(
-              user.status === "active" &&
-                "bg-orange-500/15 text-orange-400 dark:bg-orange-500/20 dark:text-orange-300"
-            )}
-          >
-            {user.status}
-          </Badge>
+          <StatusBadge status={user.status} />
         </div>
       </CardHeader>
 
       <CardContent className="flex-1 space-y-3">
-        {/* Role / tier badge */}
+        {/* Tier + slot bar */}
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
-            @{user.whitelist_name}
-          </Badge>
-          {user.last_plan_name && (
-            <span className="text-xs text-muted-foreground">
-              {user.last_plan_name}
-            </span>
-          )}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {usedSlots}/{slotLimit} slots
+          <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+          <span className="ml-auto">
+            <SlotBar used={usedSlots} total={slotLimit} />
           </span>
         </div>
 

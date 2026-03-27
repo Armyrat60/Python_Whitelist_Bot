@@ -10,6 +10,7 @@ import {
   useSaveSettings,
 } from "@/hooks/use-settings";
 import type { Settings } from "@/lib/types";
+import { useAccent, ACCENT_PRESETS, type PresetName } from "@/components/accent-context";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,196 @@ const REPORT_FREQUENCIES = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
 ];
+
+/* ─── Appearance Card ─── */
+
+function ColorSwatch({
+  color,
+  active,
+  onClick,
+}: {
+  color: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-7 w-7 rounded-full border-2 transition-all duration-150 hover:scale-110"
+      style={{
+        background: color,
+        borderColor: active ? "white" : "transparent",
+        boxShadow: active
+          ? `0 0 0 1px ${color}, 0 0 8px ${color}60`
+          : "none",
+      }}
+      title={color}
+    />
+  );
+}
+
+function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
+  const { primary, secondary, setPrimary, setSecondary, applyPreset } = accent;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Appearance</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          Customize the accent colors used throughout the dashboard. Changes are saved locally.
+        </p>
+
+        {/* Live preview strip */}
+        <div
+          className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-4 py-3"
+          style={{ background: "oklch(0.13 0.015 240)" }}
+        >
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: primary, boxShadow: `0 0 8px ${primary}80` }}
+          />
+          <span className="text-xs font-medium" style={{ color: primary }}>
+            Primary Accent
+          </span>
+          <div className="mx-2 h-4 w-px bg-white/10" />
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: secondary, boxShadow: `0 0 8px ${secondary}80` }}
+          />
+          <span className="text-xs font-medium" style={{ color: secondary }}>
+            Secondary Accent
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+              style={{
+                color: primary,
+                borderColor: `${primary}40`,
+                background: `${primary}15`,
+              }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: primary }} />
+              Active
+            </span>
+            <span
+              className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+              style={{
+                color: secondary,
+                borderColor: `${secondary}40`,
+                background: `${secondary}15`,
+              }}
+            >
+              Roster
+            </span>
+          </div>
+        </div>
+
+        {/* Presets */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Presets
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(Object.entries(ACCENT_PRESETS) as [PresetName, { primary: string; secondary: string }][]).map(
+              ([name, colors]) => {
+                const isActive =
+                  primary === colors.primary && secondary === colors.secondary;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => applyPreset(name)}
+                    className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 hover:scale-[1.02]"
+                    style={{
+                      borderColor: isActive ? colors.primary : "rgba(255,255,255,0.08)",
+                      background: isActive
+                        ? `color-mix(in srgb, ${colors.primary} 10%, transparent)`
+                        : "rgba(255,255,255,0.03)",
+                      color: isActive ? colors.primary : "#9CA3AF",
+                    }}
+                  >
+                    <span
+                      className="h-3 w-3 rounded-full border border-white/20"
+                      style={{ background: colors.primary }}
+                    />
+                    <span
+                      className="h-3 w-3 rounded-full border border-white/20"
+                      style={{ background: colors.secondary }}
+                    />
+                    {name}
+                  </button>
+                );
+              }
+            )}
+          </div>
+        </div>
+
+        {/* Custom pickers */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Primary Color</Label>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <input
+                  type="color"
+                  value={primary}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  className="h-8 w-8 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                />
+              </div>
+              <input
+                type="text"
+                value={primary}
+                onChange={(e) => {
+                  if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                    setPrimary(e.target.value);
+                  }
+                }}
+                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                style={{ "--tw-ring-color": primary } as React.CSSProperties}
+                maxLength={7}
+                placeholder="#22C55E"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Secondary Color</Label>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <input
+                  type="color"
+                  value={secondary}
+                  onChange={(e) => setSecondary(e.target.value)}
+                  className="h-8 w-8 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                />
+              </div>
+              <input
+                type="text"
+                value={secondary}
+                onChange={(e) => {
+                  if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                    setSecondary(e.target.value);
+                  }
+                }}
+                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                style={{ "--tw-ring-color": secondary } as React.CSSProperties}
+                maxLength={7}
+                placeholder="#38BDF8"
+              />
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          Primary controls active nav, badges, and progress bars. Secondary controls row highlights and selection rings.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const { data, isLoading } = useSettings();
@@ -121,8 +312,13 @@ export default function SettingsPage() {
     );
   }
 
+  const accent = useAccent();
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {/* Appearance */}
+      <AppearanceCard accent={accent} />
+
       {/* Mod Roles */}
       <Card>
         <CardHeader>
