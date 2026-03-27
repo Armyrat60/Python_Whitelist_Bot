@@ -106,6 +106,8 @@ export interface WhitelistUser {
   status: string;
   effective_slot_limit: number;
   last_plan_name: string | null;
+  notes: string | null;
+  expires_at: string | null;
   steam_ids: string[];
   eos_ids: string[];
   updated_at: string;

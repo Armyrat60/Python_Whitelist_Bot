@@ -517,7 +517,7 @@ async def admin_users(request: web.Request) -> web.Response:
     rows = await db.fetchall(
         f"""
         SELECT u.discord_id, u.discord_name, w.slug, u.status,
-               u.effective_slot_limit, u.last_plan_name, u.updated_at
+               u.effective_slot_limit, u.last_plan_name, u.updated_at, w.name
         FROM whitelist_users u
         LEFT JOIN whitelists w ON w.id = u.whitelist_id
         {where}
@@ -568,6 +568,7 @@ async def admin_users(request: web.Request) -> web.Response:
             "discord_name": row[1],
             "whitelist_type": row[2] or "",
             "whitelist_slug": row[2] or "",
+            "whitelist_name": row[7] or row[2] or "",
             "status": row[3],
             "effective_slot_limit": row[4],
             "last_plan_name": meta["plan"],
@@ -678,11 +679,13 @@ async def admin_add_user(request: web.Request) -> web.Response:
 
     # -- Required fields --
     discord_name = body.get("discord_name", "").strip()
-    wl_type = body.get("whitelist_type", "").strip()
+    wl_type = (body.get("whitelist_slug") or body.get("whitelist_type", "")).strip()
     steam_ids = body.get("steam_ids", [])
 
     if not discord_name:
         return web.json_response({"error": "discord_name is required."}, status=400)
+    if not wl_type:
+        return web.json_response({"error": "whitelist_slug is required."}, status=400)
     wl = await _resolve_whitelist(bot.db, guild_id, wl_type)
     if not wl:
         return web.json_response({"error": "Invalid whitelist type."}, status=400)
@@ -1027,6 +1030,104 @@ async def admin_bulk_delete_users(request: web.Request) -> web.Response:
     await _trigger_sync(request, guild_id)
 
     return web.json_response({"ok": True, "deleted": deleted})
+
+
+@require_admin
+async def admin_bulk_move_users(request: web.Request) -> web.Response:
+    """Move users from one whitelist to another, preserving their identifiers."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON."}, status=400)
+
+    discord_ids = body.get("discord_ids", [])
+    from_slug = body.get("from_whitelist_slug", "")
+    to_slug = body.get("to_whitelist_slug", "")
+
+    if not discord_ids:
+        return web.json_response({"error": "No users specified."}, status=400)
+    if not from_slug or not to_slug:
+        return web.json_response({"error": "from_whitelist_slug and to_whitelist_slug are required."}, status=400)
+    if from_slug == to_slug:
+        return web.json_response({"error": "Source and destination whitelists must be different."}, status=400)
+
+    from_wl = await _resolve_whitelist(db, guild_id, from_slug)
+    if not from_wl:
+        return web.json_response({"error": f"Source whitelist '{from_slug}' not found."}, status=404)
+    to_wl = await _resolve_whitelist(db, guild_id, to_slug)
+    if not to_wl:
+        return web.json_response({"error": f"Destination whitelist '{to_slug}' not found."}, status=404)
+
+    from_id = from_wl["id"]
+    to_id = to_wl["id"]
+    moved = 0
+    skipped = 0
+
+    for did in discord_ids:
+        try:
+            did = int(did)
+        except (ValueError, TypeError):
+            continue
+
+        # Fetch the user record from the source whitelist
+        user_record = await db.get_user_record(guild_id, did, from_id)
+        if not user_record:
+            skipped += 1
+            continue
+
+        discord_name = user_record[0]
+        status = user_record[1]
+        slot_override = user_record[2]
+        plan_name = user_record[4]
+
+        # Determine effective slot limit from destination whitelist default
+        new_effective = slot_override if slot_override is not None else (to_wl.get("default_slot_limit") or 1)
+
+        # Fetch identifiers from source
+        rows = await db.fetchall(
+            "SELECT id_type, id_value, is_verified, verification_source FROM whitelist_identifiers "
+            "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+            (guild_id, did, from_id),
+        )
+        identifiers = [(r[0], r[1], bool(r[2]), r[3] or "admin_web") for r in rows]
+
+        # Upsert user into destination whitelist
+        await db.upsert_user_record(
+            guild_id, did, to_id, discord_name or "", status,
+            new_effective, plan_name or "",
+            slot_limit_override=slot_override,
+        )
+
+        # Move identifiers: replace in destination
+        await db.replace_identifiers(guild_id, did, to_id, identifiers)
+
+        # Remove from source
+        await db.execute(
+            "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+            (guild_id, did, from_id),
+        )
+        await db.execute(
+            "DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+            (guild_id, did, from_id),
+        )
+        moved += 1
+
+    await db.audit(
+        guild_id, "admin_bulk_move", actor_id, None,
+        f"Bulk moved {moved} users from {from_slug} to {to_slug}",
+        to_id,
+    )
+
+    log.info("Guild %s: admin %s bulk moved %d users from %s to %s", guild_id, actor_id, moved, from_slug, to_slug)
+    await _trigger_sync(request, guild_id)
+
+    return web.json_response({"ok": True, "moved": moved, "skipped": skipped})
 
 
 # ── Admin Setup API routes ───────────────────────────────────────────────────
@@ -2320,6 +2421,93 @@ async def admin_export(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_members_gap(request: web.Request) -> web.Response:
+    """Return Discord members who have a whitelisted role but haven't registered.
+
+    Checks both role_mappings (legacy) and tier_entries (new system).
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    # Collect all role IDs that grant whitelist access for this guild
+    whitelisted_role_ids: set[int] = set()
+
+    # From role_mappings
+    rm_rows = await db.fetchall(
+        "SELECT DISTINCT role_id FROM role_mappings WHERE guild_id=%s AND is_active=true",
+        (guild_id,),
+    ) if db.engine == "postgres" else await db.fetchall(
+        "SELECT DISTINCT role_id FROM role_mappings WHERE guild_id=%s AND is_active=1",
+        (guild_id,),
+    )
+    for r in (rm_rows or []):
+        try:
+            whitelisted_role_ids.add(int(r[0]))
+        except (ValueError, TypeError):
+            pass
+
+    # From tier_entries
+    te_rows = await db.fetchall(
+        "SELECT DISTINCT role_id FROM tier_entries WHERE guild_id=%s AND is_active=true",
+        (guild_id,),
+    ) if db.engine == "postgres" else await db.fetchall(
+        "SELECT DISTINCT role_id FROM tier_entries WHERE guild_id=%s AND is_active=1",
+        (guild_id,),
+    )
+    for r in (te_rows or []):
+        try:
+            whitelisted_role_ids.add(int(r[0]))
+        except (ValueError, TypeError):
+            pass
+
+    if not whitelisted_role_ids:
+        return web.json_response({"gap": [], "total_role_holders": 0, "total_registered": 0})
+
+    # Get Discord guild members who have any of those roles
+    guild = bot.get_guild(guild_id) if hasattr(bot, "get_guild") else None
+    if not guild:
+        return web.json_response({"error": "Bot not connected to this guild."}, status=503)
+
+    role_holders: dict[int, dict] = {}  # discord_id -> {name, roles}
+    for member in guild.members:
+        member_role_ids = {r.id for r in member.roles}
+        matched_roles = member_role_ids & whitelisted_role_ids
+        if matched_roles:
+            role_holders[member.id] = {
+                "discord_id": str(member.id),
+                "name": member.display_name,
+                "matched_roles": [r.name for r in member.roles if r.id in matched_roles],
+            }
+
+    if not role_holders:
+        return web.json_response({"gap": [], "total_role_holders": 0, "total_registered": 0})
+
+    # Get all registered discord_ids for this guild (active status)
+    reg_rows = await db.fetchall(
+        "SELECT DISTINCT discord_id FROM whitelist_users WHERE guild_id=%s AND status='active'",
+        (guild_id,),
+    )
+    registered_ids: set[int] = {int(r[0]) for r in (reg_rows or [])}
+
+    # Build the gap list
+    gap = []
+    for member_id, info in role_holders.items():
+        if member_id not in registered_ids:
+            gap.append(info)
+
+    # Sort by name
+    gap.sort(key=lambda x: x["name"].lower())
+
+    return web.json_response({
+        "gap": gap,
+        "total_role_holders": len(role_holders),
+        "total_registered": len(registered_ids & set(role_holders.keys())),
+    })
+
+
+@require_admin
 async def admin_verify_roles(request: web.Request) -> web.Response:
     """Verify Discord roles for a list of Discord IDs and suggest plan mappings."""
     session = await aiohttp_session.get_session(request)
@@ -3349,6 +3537,8 @@ def setup_routes(app: web.Application):
     app.router.add_patch("/api/admin/users/{discord_id}/{type}", admin_update_user)
     app.router.add_delete("/api/admin/users/{discord_id}/{type}", admin_delete_user)
     app.router.add_post("/api/admin/users/bulk-delete", admin_bulk_delete_users)
+    app.router.add_post("/api/admin/users/bulk-move", admin_bulk_move_users)
+    app.router.add_get("/api/admin/members/gap", admin_members_gap)
     app.router.add_get("/api/admin/audit", admin_audit)
     # Admin Setup API
     app.router.add_get("/api/admin/settings", admin_get_settings)

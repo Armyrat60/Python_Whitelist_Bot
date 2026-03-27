@@ -17,9 +17,11 @@ import {
   X,
   Save,
   User as UserIcon,
+  Users,
   List,
   LayoutGrid,
   Download,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
@@ -149,19 +151,24 @@ function exportUsersAsCsv(users: WhitelistUser[]) {
 function BulkActionBar({
   selectedCount,
   selectedUsers,
+  whitelists,
   onClear,
   onDeleteDone,
 }: {
   selectedCount: number;
   selectedUsers: WhitelistUser[];
+  whitelists: { slug: string; name: string }[];
   onClear: () => void;
   onDeleteDone: () => void;
 }) {
   const queryClient = useQueryClient();
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
+  const [bulkMoving, setBulkMoving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [moveTargetSlug, setMoveTargetSlug] = useState("");
 
   async function handleBulkDelete() {
     setBulkDeleting(true);
@@ -213,6 +220,40 @@ function BulkActionBar({
     } finally {
       setBulkStatusChanging(false);
       setShowStatusMenu(false);
+    }
+  }
+
+  async function handleBulkMove() {
+    if (!moveTargetSlug) return;
+    setBulkMoving(true);
+    try {
+      // Group selected users by their source whitelist
+      const bySource: Record<string, string[]> = {};
+      for (const u of selectedUsers) {
+        if (u.whitelist_slug === moveTargetSlug) continue; // already there
+        if (!bySource[u.whitelist_slug]) bySource[u.whitelist_slug] = [];
+        bySource[u.whitelist_slug].push(u.discord_id);
+      }
+
+      const promises = Object.entries(bySource).map(([fromSlug, ids]) =>
+        api.post("/api/admin/users/bulk-move", {
+          discord_ids: ids,
+          from_whitelist_slug: fromSlug,
+          to_whitelist_slug: moveTargetSlug,
+        })
+      );
+      await Promise.all(promises);
+
+      toast.success(`Moved ${selectedCount} user(s) to ${moveTargetSlug}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      setShowMoveDialog(false);
+      setMoveTargetSlug("");
+      onClear();
+    } catch {
+      toast.error("Failed to move users");
+    } finally {
+      setBulkMoving(false);
     }
   }
 
@@ -297,6 +338,59 @@ function BulkActionBar({
         )}
       </div>
 
+      {/* Move to Whitelist */}
+      <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
+        <DialogTrigger
+          render={
+            <Button variant="outline" size="sm" disabled={bulkMoving} />
+          }
+        >
+          {bulkMoving ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Move to Whitelist
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move {selectedCount} User(s) to Whitelist</DialogTitle>
+            <DialogDescription>
+              Select the destination whitelist. Users will be moved with their
+              identifiers intact. Users already in the target whitelist will be
+              skipped.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label className="mb-1.5 block text-sm">Destination Whitelist</Label>
+            <Select value={moveTargetSlug} onValueChange={setMoveTargetSlug}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a whitelist..." />
+              </SelectTrigger>
+              <SelectContent>
+                {whitelists.map((wl) => (
+                  <SelectItem key={wl.slug} value={wl.slug}>
+                    {wl.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMoveDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!moveTargetSlug || bulkMoving}
+              onClick={handleBulkMove}
+            >
+              {bulkMoving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Move Users
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Export */}
       <Button
         variant="outline"
@@ -333,6 +427,23 @@ export default function UsersPage() {
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+  const [showGapReport, setShowGapReport] = useState(false);
+  const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
+  const [gapLoading, setGapLoading] = useState(false);
+
+  async function loadGapReport() {
+    setGapLoading(true);
+    setShowGapReport(true);
+    try {
+      const data = await api.get<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number}>("/api/admin/members/gap");
+      setGapData(data);
+    } catch {
+      toast.error("Failed to load gap report");
+      setShowGapReport(false);
+    } finally {
+      setGapLoading(false);
+    }
+  }
 
   const users = data?.users ?? [];
   const steamNames = useSteamNames(users);
@@ -480,7 +591,52 @@ export default function UsersPage() {
         </div>
 
         <AddUserDialog whitelists={whitelists ?? []} />
+        <Button variant="outline" size="sm" onClick={loadGapReport} disabled={gapLoading}>
+          {gapLoading ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Users className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Gap Report
+        </Button>
       </div>
+
+      {/* ---- Member Gap Report ---- */}
+      {showGapReport && gapData && (
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold">Unregistered Members</h3>
+              <p className="text-xs text-muted-foreground">
+                {gapData.gap.length} member(s) have a whitelist role but haven't submitted IDs
+                &nbsp;·&nbsp;{gapData.total_registered}/{gapData.total_role_holders} registered
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setShowGapReport(false)}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          {gapData.gap.length === 0 ? (
+            <p className="text-sm text-emerald-400">All role holders have registered!</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {gapData.gap.map((m) => (
+                <div key={m.discord_id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs hover:bg-yellow-500/10">
+                  <div>
+                    <span className="font-medium">{m.name}</span>
+                    <span className="ml-2 font-mono text-muted-foreground">{m.discord_id}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {m.matched_roles.map((r) => (
+                      <Badge key={r} variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-400">{r}</Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---- Content ---- */}
       {isLoading ? (
@@ -582,6 +738,7 @@ export default function UsersPage() {
       <BulkActionBar
         selectedCount={selectedIds.size}
         selectedUsers={selectedUsers}
+        whitelists={whitelists ?? []}
         onClear={clearSelection}
         onDeleteDone={clearSelection}
       />
@@ -1137,6 +1294,8 @@ function UserDetailSheet({
 
   const [slots, setSlots] = useState<string[]>(initialSlots);
   const [status, setStatus] = useState(user.status);
+  const [expiresAt, setExpiresAt] = useState(user.expires_at ?? "");
+  const [notes, setNotes] = useState(user.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -1194,7 +1353,13 @@ function UserDetailSheet({
     try {
       await api.patch(
         `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`,
-        { status, steam_ids: steamIds, eos_ids: eosIds }
+        {
+          status,
+          steam_ids: steamIds,
+          eos_ids: eosIds,
+          expires_at: expiresAt || null,
+          notes: notes || null,
+        }
       );
       toast.success("User updated");
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -1310,6 +1475,31 @@ function UserDetailSheet({
         </p>
       </div>
 
+      {/* Expiry & Notes */}
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            Expiry Date{" "}
+            <span className="text-muted-foreground/60">(optional — leave blank for no expiry)</span>
+          </Label>
+          <Input
+            type="date"
+            className="h-8 text-xs"
+            value={expiresAt ? expiresAt.split("T")[0] : ""}
+            onChange={(e) => setExpiresAt(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+          <Input
+            className="h-8 text-xs"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Internal admin note..."
+          />
+        </div>
+      </div>
+
       {/* Timestamps */}
       <div className="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
         <div>
@@ -1398,6 +1588,7 @@ function AddUserDialog({
   const [whitelistSlug, setWhitelistSlug] = useState("");
   const [steamIds, setSteamIds] = useState("");
   const [eosIds, setEosIds] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
   const [verifyState, setVerifyState] = useState<VerifyState>({
     step: "idle",
   });
@@ -1409,6 +1600,7 @@ function AddUserDialog({
     setWhitelistSlug("");
     setSteamIds("");
     setEosIds("");
+    setExpiresAt("");
     setVerifyState({ step: "idle" });
     setSubmitting(false);
   }
@@ -1483,6 +1675,7 @@ function AddUserDialog({
         whitelist_slug: whitelistSlug,
         steam_ids: steamList,
         eos_ids: eosList,
+        expires_at: expiresAt || null,
       });
       toast.success("User added successfully");
       resetForm();
@@ -1647,6 +1840,19 @@ function AddUserDialog({
                   value={eosIds}
                   onChange={(e) => setEosIds(e.target.value)}
                   placeholder="e.g. 0002a10186d9453eb8e43a8e67e4f25c"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Expiry Date{" "}
+                  <span className="text-xs text-muted-foreground">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  type="date"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
                 />
               </div>
             </>
