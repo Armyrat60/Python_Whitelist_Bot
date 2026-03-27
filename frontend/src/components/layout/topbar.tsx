@@ -36,7 +36,7 @@ export function Topbar() {
 
   return (
     <>
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-4 md:px-6 backdrop-blur-sm">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 md:px-6 backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"

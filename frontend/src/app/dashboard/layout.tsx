@@ -30,7 +30,7 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-900">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="space-y-4">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-4 w-64" />
@@ -46,7 +46,7 @@ export default function DashboardLayout({
   // No mutual guilds — user's servers aren't registered
   if (!hasGuilds) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900 px-4 text-center">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
         <img src="/logo.png" alt="Squad Whitelister" className="mb-6 h-16 w-16 rounded-xl" />
         <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
         <p className="mb-4 max-w-md text-muted-foreground">
@@ -69,7 +69,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-zinc-900">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
       <div className="flex flex-1 flex-col md:pl-60">
         <Topbar />

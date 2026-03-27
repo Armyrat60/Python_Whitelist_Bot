@@ -157,7 +157,7 @@ function TierBadge({ tier, whitelist }: { tier: string | null | undefined; white
   );
 }
 
-/** Slot visualization — segmented blocks + numeric */
+/** Slot visualization — smooth progress bar + numeric */
 function SlotBar({
   used,
   total,
@@ -165,34 +165,29 @@ function SlotBar({
   used: number;
   total: number;
 }) {
-  const maxBlocks = Math.min(Math.max(total, 1), 10);
-  const filled = Math.min(used, maxBlocks);
-  const pct = total > 0 ? used / total : 0;
+  const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
   const isOver = used > total;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex gap-[2px]">
-        {Array.from({ length: maxBlocks }).map((_, i) => (
-          <span
-            key={i}
-            className="h-[6px] w-[5px] rounded-[1px] transition-all"
-            style={{
-              background:
-                i < filled
-                  ? isOver
-                    ? "#F87171"
-                    : "var(--accent-primary)"
-                  : "rgba(255,255,255,0.10)",
-              boxShadow:
-                i < filled && !isOver
-                  ? "0 0 3px color-mix(in srgb, var(--accent-primary) 60%, transparent)"
-                  : "none",
-            }}
-          />
-        ))}
+    <div className="flex items-center gap-2">
+      <div className="relative h-[3px] w-16 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+          style={{
+            width: `${pct}%`,
+            background: isOver ? "#F87171" : "var(--accent-primary)",
+            boxShadow: !isOver
+              ? "0 0 6px color-mix(in srgb, var(--accent-primary) 80%, transparent)"
+              : "none",
+          }}
+        />
       </div>
-      <span className={cn("text-[11px] tabular-nums", isOver ? "text-red-400" : "text-muted-foreground")}>
+      <span
+        className={cn(
+          "min-w-[28px] text-[11px] tabular-nums",
+          isOver ? "text-red-400" : "text-muted-foreground"
+        )}
+      >
         {used}/{total}
       </span>
     </div>
@@ -366,10 +361,24 @@ function BulkActionBar({
   if (selectedCount === 0) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-fit items-center gap-3 rounded-xl border border-border bg-background/95 px-5 py-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <span className="text-sm font-medium">
+    <div
+      className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-fit items-center gap-2 rounded-2xl border px-5 py-3 shadow-2xl backdrop-blur-md"
+      style={{
+        background: "color-mix(in srgb, oklch(0.13 0.015 240) 92%, transparent)",
+        borderColor: "rgba(255,255,255,0.10)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset",
+      }}
+    >
+      <span
+        className="mr-1 rounded-lg px-2.5 py-1 text-sm font-semibold"
+        style={{
+          background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)",
+          color: "var(--accent-primary)",
+        }}
+      >
         {selectedCount} selected
       </span>
+      <div className="mx-1 h-4 w-px bg-white/10" />
 
       {/* Delete Selected */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
@@ -880,9 +889,9 @@ function UserListView({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   return (
-    <div className="divide-y divide-border rounded-lg border border-border">
+    <div className="overflow-hidden rounded-xl border border-white/[0.06]" style={{ background: "oklch(0.13 0.015 240)" }}>
       {/* Header */}
-      <div className="hidden items-center gap-3 px-4 py-2 text-xs font-medium text-muted-foreground sm:flex">
+      <div className="hidden items-center gap-3 border-b border-white/[0.05] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 sm:flex">
         <span
           className="flex w-8 cursor-pointer items-center justify-center"
           onClick={(e) => {
@@ -912,11 +921,11 @@ function UserListView({
         const isSelected = selectedIds.has(key);
 
         return (
-          <div key={key}>
+          <div key={key} className="border-b border-white/[0.04] last:border-0">
             {/* Row */}
             <div
               className={cn(
-                "row-hover flex cursor-pointer items-center gap-3 px-4 py-2.5",
+                "row-hover flex cursor-pointer items-center gap-3 px-4 py-3",
                 isSelected && "row-selected"
               )}
               onClick={() => setExpandedKey(isExpanded ? null : key)}
@@ -1821,7 +1830,17 @@ function AddUserDialog({
         if (!o) resetForm();
       }}
     >
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+      <DialogTrigger render={
+        <Button
+          size="sm"
+          style={{
+            background: "color-mix(in srgb, var(--accent-secondary) 15%, transparent)",
+            color: "var(--accent-secondary)",
+            border: "1px solid color-mix(in srgb, var(--accent-secondary) 35%, transparent)",
+          }}
+          className="hover:opacity-90 transition-opacity"
+        />
+      }>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         Add User
       </DialogTrigger>
