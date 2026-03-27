@@ -392,7 +392,7 @@ export function useAddTierEntry() {
 export function useUpdateTierEntry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number }) =>
+    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number; is_active?: boolean }) =>
       api.put(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });

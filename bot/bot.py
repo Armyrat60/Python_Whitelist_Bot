@@ -590,20 +590,24 @@ class WhitelistBot(commands.Bot):
         tier_lines = []
         if panel and panel.get("tier_category_id"):
             tier_entries = await self.db.get_tier_entries(guild_id, panel["tier_category_id"])
-            # Sort by slot_limit ascending
-            tier_entries = sorted(tier_entries, key=lambda te: te[3])
+            # Only show active tiers, sorted by slot_limit ascending
+            tier_entries = sorted(
+                [te for te in tier_entries if te[6]],  # te[6] = is_active
+                key=lambda te: te[3],
+            )
             for te in tier_entries:
-                role_id = te[1]  # role_id
+                role_id = te[1]
                 slot_limit = te[3]
-                display_name = te[4] or te[2]  # display_name or role_name
-                # Use role mention for colored display (pings suppressed via allowed_mentions)
+                # Role mention for colored display in Discord; pings suppressed via allowed_mentions
                 tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
         else:
             role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
             for rm in role_mappings:
                 role_id = rm[0] if len(rm) > 0 else 0
-                role_name = rm[1] if len(rm) > 1 else "Unknown"
                 slot_limit = rm[2] if len(rm) > 2 else 1
+                is_active = rm[3] if len(rm) > 3 else True
+                if not is_active:
+                    continue
                 tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
 
         _domain = WEB_BASE_URL.replace('https://', '').replace('http://', '') if WEB_BASE_URL else 'squadwhitelister.com'
@@ -611,9 +615,9 @@ class WhitelistBot(commands.Bot):
         if tier_lines:
             description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
         description += (
-            "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
-            "⚙️ **Manager Tools** — Admin lookup and management (mods only)\n\n"
-            f"🌐 Web Dashboard: **{_domain}**"
+            "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
+            "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
+            f"🌐 {_domain}"
         )
 
         embed = discord.Embed(

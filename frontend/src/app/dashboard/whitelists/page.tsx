@@ -8,6 +8,8 @@ import {
   Trash2,
   Save,
   Copy,
+  Check,
+  X,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -209,27 +211,64 @@ function WhitelistCard({
   });
   const url = urlsData?.urls?.find((u) => u.slug === whitelist.slug)?.url ?? "Loading...";
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(whitelist.name);
+  const [savingName, setSavingName] = useState(false);
+
   function copyUrl() {
     navigator.clipboard.writeText(url);
     toast.success("URL copied to clipboard");
   }
 
+  async function handleRename() {
+    if (!nameValue.trim() || nameValue === whitelist.name) { setEditingName(false); return; }
+    setSavingName(true);
+    try {
+      await api.put(`/api/admin/whitelists/${whitelist.slug}`, { name: nameValue.trim() });
+      toast.success("Renamed");
+      setEditingName(false);
+    } catch {
+      toast.error("Failed to rename");
+    } finally {
+      setSavingName(false);
+    }
+  }
+
   return (
-    <Card>
+    <Card className={`border-l-4 ${whitelist.enabled ? "border-l-emerald-500" : "border-l-red-500 opacity-60"}`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {whitelist.name}
-          {whitelist.is_default && (
-            <Badge variant="secondary" className="text-[10px]">
-              Default
-            </Badge>
+          {editingName ? (
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Input
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                className="h-7 text-sm flex-1 min-w-0"
+                autoFocus
+                disabled={savingName}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRename();
+                  if (e.key === "Escape") { setNameValue(whitelist.name); setEditingName(false); }
+                }}
+              />
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={handleRename} disabled={savingName}>
+                <Check className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={() => { setNameValue(whitelist.name); setEditingName(false); }}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <span className="cursor-pointer hover:underline truncate" onClick={() => setEditingName(true)} title="Click to rename">
+              {whitelist.name}
+            </span>
           )}
-          <Badge
-            variant={whitelist.enabled ? "default" : "destructive"}
-            className="text-[10px]"
-          >
-            {whitelist.enabled ? "Enabled" : "Disabled"}
-          </Badge>
+          {whitelist.is_default && (
+            <Badge variant="secondary" className="text-[10px] shrink-0">Default</Badge>
+          )}
+          <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0 ml-auto" title="Whitelist ID">
+            #{whitelist.id}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">

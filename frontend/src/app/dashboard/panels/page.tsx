@@ -9,6 +9,7 @@ import {
   Send,
   X,
   Pencil,
+  Check,
 } from "lucide-react";
 import {
   usePanels,
@@ -264,16 +265,30 @@ function PanelCard({
   }
 
   return (
-    <Card className={!enabled ? "opacity-50" : undefined}>
+    <Card className={`border-l-4 ${enabled ? "border-l-emerald-500" : "border-l-red-500 opacity-60"}`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${getStatusColor(panel)}`} />
-          {panel.name}
+          <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${getStatusColor(panel)}`} />
+          {/* Inline name edit */}
+          {configMode ? (
+            <span className="truncate">{panelName || panel.name}</span>
+          ) : (
+            <span
+              className="cursor-pointer truncate hover:underline"
+              title="Click to rename"
+              onClick={() => setConfigMode(true)}
+            >
+              {panel.name}
+            </span>
+          )}
           {panel.is_default && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" className="text-[10px] shrink-0">
               Default
             </Badge>
           )}
+          <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0" title="Panel ID">
+            #{panel.id}
+          </span>
           <Switch
             checked={enabled}
             onCheckedChange={(checked) => {
@@ -286,7 +301,7 @@ function PanelCard({
                 }
               );
             }}
-            className="ml-auto scale-75"
+            className="ml-auto scale-75 shrink-0"
           />
         </CardTitle>
       </CardHeader>

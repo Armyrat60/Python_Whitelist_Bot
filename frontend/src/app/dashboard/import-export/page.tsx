@@ -838,8 +838,16 @@ function RoleSyncTab() {
   useEffect(() => {
     setRolesLoading(true);
     fetch("/api/admin/roles", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => setRoles(d.roles ?? []))
+      .then(async (r) => {
+        const text = await r.text();
+        let d: Record<string, unknown> = {};
+        try { d = JSON.parse(text); } catch { /* ignore parse error */ }
+        if (!r.ok) {
+          toast.error((d.error as string) || `Failed to load roles: ${r.status} ${r.statusText}`);
+          return;
+        }
+        setRoles((d.roles as { id: string; name: string }[]) ?? []);
+      })
       .catch(() => toast.error("Failed to load Discord roles"))
       .finally(() => setRolesLoading(false));
   }, []);
@@ -855,11 +863,13 @@ function RoleSyncTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role_id: selectedRole, whitelist_slug: targetWhitelist, dry_run }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Role sync failed");
-      setResult(data);
+      const text = await res.text();
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(text); } catch { /* proxy returned plain-text error */ }
+      if (!res.ok) throw new Error((data.error as string) || `Server error: ${res.status} ${res.statusText}`);
+      setResult(data as unknown as RoleSyncResult);
       if (!dry_run) {
-        toast.success(`Pulled ${data.added?.length ?? 0} members into ${targetWhitelist}`);
+        toast.success(`Pulled ${(data.added as unknown[])?.length ?? 0} members into ${targetWhitelist}`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Role sync failed");
@@ -892,7 +902,7 @@ function RoleSyncTab() {
             </SelectTrigger>
             <SelectContent>
               {roles.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
+                <SelectItem key={r.id} value={r.id} textValue={r.name}>
                   <span className="flex items-center gap-2">
                     <Users className="h-3 w-3 opacity-50" />
                     {r.name}

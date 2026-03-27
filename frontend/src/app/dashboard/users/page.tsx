@@ -785,7 +785,7 @@ export default function UsersPage() {
         <div className="flex-1">
           <div className="flex gap-2">
             <Input
-              placeholder="Search users..."
+              placeholder="Search name, Discord ID, Steam ID…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}

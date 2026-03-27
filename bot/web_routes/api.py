@@ -550,8 +550,13 @@ async def admin_users(request: web.Request) -> web.Response:
 
     if search:
         cast_expr = "CAST(u.discord_id AS TEXT)" if db.engine == "postgres" else "CAST(u.discord_id AS CHAR)"
-        conditions.append(f"(u.discord_name LIKE %s OR {cast_expr} LIKE %s)")
-        params.extend([f"%{search}%", f"%{search}%"])
+        id_cast_expr = "CAST(i.id_value AS TEXT)" if db.engine == "postgres" else "CAST(i.id_value AS CHAR)"
+        conditions.append(
+            f"(u.discord_name LIKE %s OR {cast_expr} LIKE %s OR EXISTS ("
+            f"SELECT 1 FROM whitelist_identifiers i "
+            f"WHERE i.guild_id=u.guild_id AND i.discord_id=u.discord_id AND {id_cast_expr} LIKE %s))"
+        )
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if wl_type:
         wl_resolved = await _resolve_whitelist(bot.db, guild_id, wl_type)
         if wl_resolved:
@@ -2722,17 +2727,45 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
         valid = await _get_whitelist_slugs(db, guild_id)
         return web.json_response({"error": f"Invalid whitelist. Must be one of: {', '.join(valid)}"}, status=400)
 
-    # Requires gateway bot access to fetch role.members
+    # Fetch role members — gateway preferred, REST fallback
+    role_name = f"role:{role_id}"
+    members_raw: list[dict] = []  # each: {id: int, name: str}
+
     guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
-    if not guild:
+    if guild and hasattr(guild, "get_role"):
+        # Full gateway bot — use cached guild
+        role = guild.get_role(role_id)
+        if not role:
+            return web.json_response({"error": f"Role {role_id} not found in guild."}, status=404)
+        role_name = role.name
+        members_raw = [
+            {"id": m.id, "name": m.display_name or str(m)}
+            for m in role.members
+        ]
+    elif hasattr(bot, "get_role_members"):
+        # Standalone web service — fetch via REST API
+        try:
+            members_raw = await bot.get_role_members(guild_id, role_id)
+            # Try to get the role name from the roles list
+            if hasattr(bot, "get_roles"):
+                all_roles = await bot.get_roles(guild_id)
+                for r in all_roles:
+                    if int(r.get("id", 0)) == role_id:
+                        role_name = r.get("name", role_name)
+                        break
+        except Exception as exc:
+            log.error("REST role member fetch failed for role %s: %s", role_id, exc)
+            return web.json_response({"error": f"Failed to fetch role members: {exc}"}, status=500)
+        if not members_raw and not members_raw == []:
+            return web.json_response(
+                {"error": "Could not fetch role members. Check bot token permissions (GUILD_MEMBERS intent required)."},
+                status=503,
+            )
+    else:
         return web.json_response(
             {"error": "Bot gateway required to fetch role members. Ensure the bot is running."},
             status=503,
         )
-
-    role = guild.get_role(role_id)
-    if not role:
-        return web.json_response({"error": f"Role {role_id} not found in guild."}, status=404)
 
     # Existing whitelist members (any status — avoid re-adding removed users without merge)
     existing_rows = await db.fetchall(
@@ -2745,31 +2778,32 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
     added: list[dict] = []
     already_exist_count = 0
 
-    for member in role.members:
-        if member.id in existing_ids:
+    for member in members_raw:
+        mid = member["id"]
+        if mid in existing_ids:
             already_exist_count += 1
             continue
-        name = member.display_name or str(member)
+        name = member["name"]
         if not dry_run:
             await db.upsert_user_record(
-                guild_id, member.id, wl["id"], name, "active", default_slot, "", None,
+                guild_id, mid, wl["id"], name, "active", default_slot, "", None,
             )
             await db.audit(
-                guild_id, "role_sync_pull", actor_id, member.id,
-                f"role={role.name}, whitelist={whitelist_slug}", wl["id"],
+                guild_id, "role_sync_pull", actor_id, mid,
+                f"role={role_name}, whitelist={whitelist_slug}", wl["id"],
             )
-        added.append({"discord_id": str(member.id), "discord_name": name})
+        added.append({"discord_id": str(mid), "discord_name": name})
 
     if not dry_run and added:
         await _trigger_sync(request, guild_id)
         log.info("Guild %s: role sync pull added %d to %s from role %s",
-                 guild_id, len(added), whitelist_slug, role.name)
+                 guild_id, len(added), whitelist_slug, role_name)
 
     return web.json_response({
         "ok": True,
-        "role_name": role.name,
+        "role_name": role_name,
         "whitelist_slug": whitelist_slug,
-        "total_role_members": len(role.members),
+        "total_role_members": len(members_raw) + already_exist_count,
         "added": added,
         "already_exist": already_exist_count,
         "dry_run": dry_run,

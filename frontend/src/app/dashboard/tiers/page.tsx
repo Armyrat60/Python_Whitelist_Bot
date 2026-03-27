@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Check, Crown, X, GripVertical } from "lucide-react";
+import { Plus, Trash2, Check, Crown, X, RefreshCw } from "lucide-react";
 import {
   useTierCategories,
   useCreateTierCategory,
@@ -12,6 +12,7 @@ import {
   useUpdateTierEntry,
   useRemoveTierEntry,
   useRoles,
+  useWhitelists,
 } from "@/hooks/use-settings";
 import type { TierCategory, TierEntry } from "@/lib/types";
 
@@ -19,7 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Card,
   CardHeader,
@@ -30,12 +33,12 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -181,6 +184,7 @@ function CategoryCard({
   const addEntry = useAddTierEntry();
   const updateEntry = useUpdateTierEntry();
   const removeEntry = useRemoveTierEntry();
+  const { data: whitelists } = useWhitelists();
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(category.name);
@@ -188,6 +192,9 @@ function CategoryCard({
   const [newSlotCount, setNewSlotCount] = useState("1");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [editingSlots, setEditingSlots] = useState<Record<number, string>>({});
+  const [syncPromptRole, setSyncPromptRole] = useState<{ id: string; name: string } | null>(null);
+  const [syncWhitelistSlug, setSyncWhitelistSlug] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   // Sort entries by sort_order then slot_limit
   const sortedEntries = useMemo(
@@ -227,6 +234,7 @@ function CategoryCard({
   function handleAddEntry() {
     if (!newRoleId) return;
     const role = roles.find((r) => r.id === newRoleId);
+    const roleForPrompt = role ? { id: role.id, name: role.name } : null;
     addEntry.mutate(
       {
         categoryId: category.id,
@@ -241,8 +249,47 @@ function CategoryCard({
           setNewRoleId("");
           setNewSlotCount("1");
           setNewDisplayName("");
+          // Prompt to sync role members into a whitelist
+          if (roleForPrompt) {
+            setSyncPromptRole(roleForPrompt);
+            setSyncWhitelistSlug(whitelists?.[0]?.slug ?? "");
+          }
         },
         onError: () => toast.error("Failed to add tier entry"),
+      }
+    );
+  }
+
+  async function handleRoleSync() {
+    if (!syncPromptRole || !syncWhitelistSlug) return;
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/admin/role-sync/pull", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role_id: syncPromptRole.id, whitelist_slug: syncWhitelistSlug, dry_run: false }),
+      });
+      const text = await res.text();
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(text); } catch { /* plain-text error */ }
+      if (!res.ok) throw new Error((data.error as string) || `Server error ${res.status}`);
+      const added = (data.added as unknown[])?.length ?? 0;
+      toast.success(`Pulled ${added} member${added !== 1 ? "s" : ""} from @${syncPromptRole.name} → ${syncWhitelistSlug}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Role sync failed");
+    } finally {
+      setSyncing(false);
+      setSyncPromptRole(null);
+    }
+  }
+
+  function handleToggleActive(entry: TierEntry) {
+    updateEntry.mutate(
+      { categoryId: category.id, entryId: entry.id, is_active: !entry.is_active },
+      {
+        onSuccess: () => toast.success(entry.is_active ? "Tier deactivated" : "Tier activated"),
+        onError: () => toast.error("Failed to toggle tier"),
       }
     );
   }
@@ -288,7 +335,41 @@ function CategoryCard({
   }
 
   return (
-    <Card>
+    <>
+    {/* Role sync prompt dialog */}
+    {syncPromptRole && (
+      <Dialog open onOpenChange={(open) => { if (!open) setSyncPromptRole(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sync Role Members?</DialogTitle>
+            <DialogDescription>
+              Pull all current members of <strong>@{syncPromptRole.name}</strong> into a whitelist now?
+              They&apos;ll be added as active users and can self-register their Steam IDs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs">Target Whitelist</Label>
+            <Select value={syncWhitelistSlug} onValueChange={setSyncWhitelistSlug}>
+              <SelectTrigger><SelectValue placeholder="Select whitelist" /></SelectTrigger>
+              <SelectContent>
+                {whitelists?.map((wl) => (
+                  <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSyncPromptRole(null)}>Skip</Button>
+            <Button onClick={handleRoleSync} disabled={syncing || !syncWhitelistSlug}
+              style={{ background: "var(--accent-primary)" }} className="text-black font-semibold">
+              {syncing ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+              Sync Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )}
+    <Card className="border-l-4 border-l-emerald-500">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {editingName ? (
@@ -355,6 +436,9 @@ function CategoryCard({
               Default
             </Badge>
           )}
+          <span className="ml-auto text-[10px] font-mono text-muted-foreground/40 select-all" title="Category ID">
+            #{category.id}
+          </span>
         </CardTitle>
         {category.description && (
           <CardDescription>{category.description}</CardDescription>
@@ -378,7 +462,11 @@ function CategoryCard({
               return (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                  className={`flex items-center gap-3 rounded-lg border border-l-4 px-3 py-2 ${
+                    entry.is_active
+                      ? "border-white/[0.06] border-l-emerald-500"
+                      : "border-white/[0.06] border-l-red-500 opacity-60"
+                  }`}
                   title={`Role ID: ${entry.role_id}`}
                 >
                   {/* Role color dot */}
@@ -434,6 +522,14 @@ function CategoryCard({
                       {(isEditing ? Number(editValue) : entry.slot_limit) === 1 ? "slot" : "slots"}
                     </span>
                   </div>
+
+                  {/* Active toggle */}
+                  <Switch
+                    checked={entry.is_active}
+                    onCheckedChange={() => handleToggleActive(entry)}
+                    className="scale-75"
+                    title={entry.is_active ? "Deactivate tier" : "Activate tier"}
+                  />
 
                   {/* Remove entry */}
                   <Button
@@ -529,5 +625,6 @@ function CategoryCard({
         </CardFooter>
       )}
     </Card>
+    </>
   );
 }

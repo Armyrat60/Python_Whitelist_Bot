@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from difflib import SequenceMatcher
 from typing import List
 
 from bot.config import WEB_BASE_URL
@@ -14,6 +15,33 @@ async def setup_autocomplete(interaction: discord.Interaction, current: str):
     whitelists = await interaction.client.db.get_whitelists(guild_id)
     slugs = [wl["slug"] for wl in whitelists]
     return [app_commands.Choice(name=item, value=item) for item in slugs if current.lower() in item][:25]
+
+
+def _name_similarity(a: str, b: str) -> float:
+    """Return 0–1 similarity between two display names (case-insensitive)."""
+    a, b = a.lower().strip(), b.lower().strip()
+    if a == b:
+        return 1.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+async def _find_orphan_candidate(db, guild_id: int, whitelist_id: int, display_name: str):
+    """Return the best-matching orphan record for a user, or None if no good match."""
+    rows = await db.fetchall(
+        "SELECT discord_id, discord_name FROM whitelist_users "
+        "WHERE guild_id=%s AND whitelist_id=%s AND discord_id < 0",
+        (guild_id, whitelist_id),
+    )
+    if not rows:
+        return None
+    best_score = 0.0
+    best_row = None
+    for row in rows:
+        score = _name_similarity(display_name, row[1] or "")
+        if score > best_score:
+            best_score = score
+            best_row = row
+    return best_row if best_score >= 0.70 else None
 
 
 class IdentifierModal(discord.ui.Modal, title="Manage Whitelist IDs"):
@@ -80,6 +108,79 @@ class IdentifierModal(discord.ui.Modal, title="Manage Whitelist IDs"):
         )
 
 
+class _ClaimOrphanView(discord.ui.View):
+    """Shown to first-time users when we find an orphan record that matches their name."""
+
+    def __init__(self, bot, whitelist_type: str, whitelist_id: int, orphan_id: int,
+                 slots: int, existing_ids: List[tuple]):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.whitelist_type = whitelist_type
+        self.whitelist_id = whitelist_id
+        self.orphan_id = orphan_id
+        self.slots = slots
+        self.existing_ids = existing_ids
+
+    @discord.ui.button(label="Yes, that's me!", style=discord.ButtonStyle.green, emoji="✅")
+    async def claim_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = interaction.guild.id
+        real_id = interaction.user.id
+        orphan_id = self.orphan_id
+        try:
+            # Re-parent orphan record to real Discord ID
+            await self.bot.db.execute_transaction([
+                (
+                    "UPDATE whitelist_identifiers SET discord_id=%s WHERE guild_id=%s AND discord_id=%s",
+                    (real_id, guild_id, orphan_id),
+                ),
+                (
+                    "UPDATE whitelist_users SET discord_id=%s, discord_name=%s WHERE guild_id=%s AND discord_id=%s",
+                    (real_id, interaction.user.display_name, guild_id, orphan_id),
+                ),
+            ])
+            await self.bot.db.audit(
+                guild_id, "orphan_self_claimed", real_id, real_id,
+                f"User claimed orphan record (orphan_id={orphan_id})", self.whitelist_id,
+            )
+            await self.bot.sync_github_outputs(guild_id)
+        except Exception:
+            from bot.config import log
+            log.exception("Failed to claim orphan %s for user %s", orphan_id, real_id)
+            await interaction.response.send_message(
+                "Something went wrong claiming your record. Please try again.", ephemeral=True
+            )
+            return
+
+        # Refresh IDs after claim and show the normal manage view
+        ids = await self.bot.db.get_identifiers(guild_id, real_id, self.whitelist_id)
+        edit_view = _EditIDsView(self.bot, self.whitelist_type, self.whitelist_id, self.slots, ids)
+
+        if ids:
+            id_lines = [f"`{i}.` `{v}`" for i, (_, v, *_) in enumerate(ids, 1)]
+            for i in range(len(ids) + 1, self.slots + 1):
+                id_lines.append(f"`{i}.` *— empty —*")
+            ids_text = "\n".join(id_lines)
+        else:
+            ids_text = "\n".join(f"`{i}.` *— empty —*" for i in range(1, self.slots + 1))
+
+        embed = discord.Embed(
+            title="✅ Record Linked!",
+            description="Your existing record has been linked to your Discord account.",
+            color=0x22C55E,
+        )
+        embed.add_field(name="Slots", value=f"{len(ids)} / {self.slots} used", inline=True)
+        embed.add_field(name="Your IDs", value=ids_text, inline=False)
+        embed.set_footer(text="Use Edit to add or update your IDs")
+        await interaction.response.edit_message(embed=embed, view=edit_view)
+
+    @discord.ui.button(label="No, start fresh", style=discord.ButtonStyle.secondary, emoji="➡️")
+    async def claim_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """User says this isn't them — open the normal ID modal."""
+        await interaction.response.send_modal(
+            IdentifierModal(self.bot, self.whitelist_type, self.slots, [])
+        )
+
+
 class WhitelistPanelView(discord.ui.View):
     """Persistent panel view with interactive buttons for members and managers."""
 
@@ -89,7 +190,7 @@ class WhitelistPanelView(discord.ui.View):
         self.whitelist_type = whitelist_type
         self.whitelist_id = whitelist_id
 
-        # Row 1: Member buttons
+        # Row 0: Member button + Manager button side by side
         manage_wl_btn = discord.ui.Button(
             label="Manage Whitelist",
             style=discord.ButtonStyle.green,
@@ -99,6 +200,16 @@ class WhitelistPanelView(discord.ui.View):
         )
         manage_wl_btn.callback = self._manage_whitelist_callback
         self.add_item(manage_wl_btn)
+
+        manage_btn = discord.ui.Button(
+            label="Manager Tools",
+            style=discord.ButtonStyle.secondary,
+            emoji="⚙️",
+            custom_id=f"panel:manage:{whitelist_type}",
+            row=0,
+        )
+        manage_btn.callback = lambda i: _panel_manage_callback(self.bot, self.whitelist_type, i)
+        self.add_item(manage_btn)
 
         # Backward compat: handle old "View My Whitelist" buttons from panels posted before the redesign
         view_compat_btn = discord.ui.Button(
@@ -110,17 +221,6 @@ class WhitelistPanelView(discord.ui.View):
         )
         view_compat_btn.callback = self._manage_whitelist_callback  # Route to same handler
         self.add_item(view_compat_btn)
-
-        # Row 2: Manager button
-        manage_btn = discord.ui.Button(
-            label="Manager Tools",
-            style=discord.ButtonStyle.secondary,
-            emoji="⚙️",
-            custom_id=f"panel:manage:{whitelist_type}",
-            row=1,
-        )
-        manage_btn.callback = lambda i: _panel_manage_callback(self.bot, self.whitelist_type, i)
-        self.add_item(manage_btn)
 
     async def _manage_whitelist_callback(self, interaction: discord.Interaction):
         """Show user's whitelist info with an Edit button to modify their IDs."""
@@ -145,6 +245,31 @@ class WhitelistPanelView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
+
+            # First-time user with no IDs — check for an orphan record that matches their name
+            has_record = await self.bot.db.get_user_record(guild_id, interaction.user.id, wl_id)
+            if not has_record and not ids:
+                orphan = await _find_orphan_candidate(
+                    self.bot.db, guild_id, wl_id, member.display_name if member else interaction.user.display_name
+                )
+                if orphan:
+                    orphan_id, orphan_name = orphan[0], orphan[1]
+                    orphan_ids = await self.bot.db.get_identifiers(guild_id, orphan_id, wl_id)
+
+                    id_lines = [f"`{v}`" for _, v, *_ in orphan_ids] if orphan_ids else ["*No IDs on file*"]
+                    embed = discord.Embed(
+                        title="🔍 We found a record that may be yours",
+                        description=(
+                            f"A record exists under the name **{orphan_name}** that closely matches yours.\n\n"
+                            f"**Saved IDs:**\n" + "\n".join(id_lines) + "\n\n"
+                            f"Is this your record?"
+                        ),
+                        color=0xF97316,
+                    )
+                    embed.set_footer(text="Selecting 'No' will start a fresh registration")
+                    claim_view = _ClaimOrphanView(self.bot, self.whitelist_type, wl_id, orphan_id, slots, orphan_ids)
+                    await interaction.response.send_message(embed=embed, view=claim_view, ephemeral=True)
+                    return
 
             tier_name = plan.split(":")[0] if ":" in plan else plan
             embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
@@ -178,13 +303,11 @@ class WhitelistPanelView(discord.ui.View):
                     name = steam_names.get(v, "")
                     name_str = f" — **{name}**" if name else ""
                     id_lines.append(f"`{i}.` `{v}`{name_str}")
-                embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
 
                 # Show empty slots
                 for i in range(len(ids) + 1, slots + 1):
                     id_lines.append(f"`{i}.` *— empty —*")
-                embed.description = None  # Clear description, use fields only
-                embed.set_field_at(len(embed.fields) - 1, name="Your IDs", value="\n".join(id_lines), inline=False)
+                embed.add_field(name="Your IDs", value="\n".join(id_lines), inline=False)
             else:
                 empty_lines = [f"`{i}.` *— empty —*" for i in range(1, slots + 1)]
                 embed.add_field(name="Your Slots", value="\n".join(empty_lines), inline=False)

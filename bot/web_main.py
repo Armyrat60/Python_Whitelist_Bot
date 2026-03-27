@@ -142,6 +142,34 @@ class DiscordRESTClient:
                 return None
             return await resp.json()
 
+    async def fetch_members_with_role(self, guild_id: int, role_id: int) -> list[dict]:
+        """Fetch all guild members that have a specific role (REST pagination)."""
+        await self._ensure_session()
+        results = []
+        after = 0
+        while True:
+            params = {"limit": 1000}
+            if after:
+                params["after"] = str(after)
+            async with self._session.get(
+                f"{self.API_BASE}/guilds/{guild_id}/members",
+                headers=self._headers,
+                params=params,
+            ) as resp:
+                if resp.status != 200:
+                    break
+                batch = await resp.json()
+                if not batch:
+                    break
+                role_id_str = str(role_id)
+                for m in batch:
+                    if role_id_str in (m.get("roles") or []):
+                        results.append(m)
+                if len(batch) < 1000:
+                    break
+                after = int(batch[-1]["user"]["id"])
+        return results
+
 
 class _LightGuild:
     """Lightweight guild object mimicking discord.Guild for web routes."""
@@ -211,6 +239,18 @@ class WebOnlyApp:
         if not member:
             return []
         return [int(r) for r in member.get("roles", [])]
+
+    async def get_role_members(self, guild_id: int, role_id: int) -> list[dict]:
+        """Fetch all members with a specific role via REST. Returns list of {id, name} dicts."""
+        raw = await self._discord.fetch_members_with_role(guild_id, role_id)
+        members = []
+        for m in raw:
+            user = m.get("user") or {}
+            members.append({
+                "id": int(user.get("id", 0)),
+                "name": m.get("nick") or user.get("global_name") or user.get("username", ""),
+            })
+        return members
 
     def schedule_sync(self):
         """No-op in web-only mode — bot handles sync."""
