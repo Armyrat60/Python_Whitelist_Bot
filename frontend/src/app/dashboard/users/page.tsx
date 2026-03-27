@@ -448,7 +448,7 @@ function BulkActionBar({
     <div
       className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-fit items-center gap-2 rounded-2xl border px-5 py-3 shadow-2xl backdrop-blur-md"
       style={{
-        background: "color-mix(in srgb, oklch(0.185 0.013 285) 92%, transparent)",
+        background: "color-mix(in srgb, oklch(0.185 0 0) 92%, transparent)",
         borderColor: "rgba(255,255,255,0.10)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset",
       }}

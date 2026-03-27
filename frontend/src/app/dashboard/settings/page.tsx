@@ -94,7 +94,7 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
         {/* Live preview bar */}
         <div
           className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-3"
-          style={{ background: "oklch(0.14 0.018 240)" }}
+          style={{ background: "oklch(0.185 0 0)" }}
         >
           {/* Gradient pill */}
           <div
@@ -141,8 +141,8 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
                     style={{
                       borderColor: isActive ? colors.primary : "rgba(255,255,255,0.06)",
                       background: isActive
-                        ? `color-mix(in srgb, ${colors.primary} 8%, oklch(0.14 0.018 240))`
-                        : "oklch(0.14 0.015 240)",
+                        ? `color-mix(in srgb, ${colors.primary} 8%, oklch(0.185 0 0))`
+                        : "oklch(0.185 0 0)",
                       boxShadow: isActive
                         ? `0 0 16px ${colors.primary}30, inset 0 0 0 1px ${colors.primary}30`
                         : undefined,

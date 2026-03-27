@@ -53,7 +53,7 @@ export function Sidebar() {
   return (
     <aside
       className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-white/[0.06] md:flex"
-      style={{ background: "oklch(0.14 0.018 240 / 0.97)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", boxShadow: "1px 0 0 rgba(255,255,255,0.05)" }}
+      style={{ background: "oklch(0.185 0 0 / 0.97)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", boxShadow: "1px 0 0 rgba(255,255,255,0.05)" }}
     >
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
@@ -212,7 +212,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
       />
       {/* Slide-in panel */}
       <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/[0.06] md:hidden"
-        style={{ background: "oklch(0.14 0.018 240 / 0.98)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+        style={{ background: "oklch(0.185 0 0 / 0.98)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
           <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
           <div>

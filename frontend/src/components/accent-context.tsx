@@ -11,7 +11,8 @@ import {
 
 /* ─── Presets ─── */
 export const ACCENT_PRESETS = {
-  "Precision Intel": { primary: "#22D3EE", secondary: "#818CF8" }, // cyan + indigo — command-center default
+  Nocturne:          { primary: "#a78bfa", secondary: "#fbbf24" }, // violet + amber — default, high contrast on dark
+  "Precision Intel": { primary: "#22d3ee", secondary: "#818cf8" }, // cyan + indigo
   "Operator":        { primary: "#22C55E", secondary: "#38BDF8" }, // emerald + sky — military green
   "Command Gold":    { primary: "#EAB308", secondary: "#F97316" }, // amber + orange — authority / rank
   "Spectre":         { primary: "#A78BFA", secondary: "#38BDF8" }, // violet + sky — elite / premium
@@ -35,8 +36,8 @@ interface AccentContextType {
 }
 
 const AccentContext = createContext<AccentContextType>({
-  primary: "#22D3EE",
-  secondary: "#818CF8",
+  primary: "#a78bfa",
+  secondary: "#fbbf24",
   setPrimary: () => {},
   setSecondary: () => {},
   applyPreset: () => {},
@@ -57,8 +58,8 @@ function applyToDom(primary: string, secondary: string) {
 }
 
 export function AccentProvider({ children }: { children: ReactNode }) {
-  const [primary, setPrimaryState] = useState("#22D3EE");
-  const [secondary, setSecondaryState] = useState("#818CF8");
+  const [primary, setPrimaryState] = useState("#a78bfa");
+  const [secondary, setSecondaryState] = useState("#fbbf24");
 
   // Load from localStorage once on mount
   useEffect(() => {

@@ -59,7 +59,7 @@ export default function MyWhitelistLayout({
     <div className="flex min-h-screen flex-col bg-background">
       {/* Simple Topbar */}
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.06] px-6 backdrop-blur-md"
-        style={{ background: "oklch(0.17 0.018 240 / 0.88)" }}>
+        style={{ background: "oklch(0.195 0 0 / 0.88)" }}>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">My Whitelist</h1>
           {session.is_mod && (

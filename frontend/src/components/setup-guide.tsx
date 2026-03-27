@@ -48,7 +48,7 @@ export function SetupGuide({
     <Card
       style={{
         borderColor: "color-mix(in srgb, var(--accent-primary) 25%, transparent)",
-        background: "color-mix(in srgb, var(--accent-primary) 5%, oklch(0.26 0.016 240))",
+        background: "color-mix(in srgb, var(--accent-primary) 5%, oklch(0.265 0 0))",
       }}
     >
       <CardContent className="p-4">

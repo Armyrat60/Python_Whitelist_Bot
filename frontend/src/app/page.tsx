@@ -6,7 +6,7 @@ export default function HomePage() {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Nav */}
       <nav className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] px-6 py-4 backdrop-blur-md"
-        style={{ background: "oklch(0.17 0.018 240 / 0.88)" }}>
+        style={{ background: "oklch(0.195 0 0 / 0.88)" }}>
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="" className="h-8 w-8 rounded-lg" />
           <span className="font-semibold text-foreground">Squad Whitelister</span>
