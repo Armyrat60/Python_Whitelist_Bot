@@ -2345,6 +2345,7 @@ async def admin_import(request: web.Request) -> web.Response:
 
     return web.json_response({
         "ok": True,
+        "imported": added + updated,
         "added": added,
         "updated": updated,
         "skipped": skipped,

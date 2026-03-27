@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Upload, Download, FileUp, Link2, CheckCircle2, AlertCircle, Loader2, UserCheck } from "lucide-react";
 import { useWhitelists } from "@/hooks/use-settings";
@@ -107,6 +107,13 @@ function ImportTab() {
   const [targetWhitelist, setTargetWhitelist] = useState("");
   const [format, setFormat] = useState("auto");
   const [duplicateMode, setDuplicateMode] = useState("skip");
+
+  // Auto-select the default whitelist when whitelists load
+  useEffect(() => {
+    if (!whitelists?.length || targetWhitelist) return;
+    const def = whitelists.find((w: { slug: string }) => w.slug === "default") ?? whitelists[0];
+    if (def) setTargetWhitelist(def.slug);
+  }, [whitelists]);
   const [preview, setPreview] = useState<PreviewRow[]>([]);
   const [importing, setImporting] = useState(false);
 
@@ -177,7 +184,8 @@ function ImportTab() {
 
       if (!res.ok) throw new Error("Import failed");
       const data = await res.json();
-      toast.success(`Imported ${data.imported ?? 0} entries`);
+      const total = (data.added ?? 0) + (data.updated ?? 0);
+      toast.success(`Imported ${total} entries (${data.added ?? 0} new, ${data.updated ?? 0} updated, ${data.skipped ?? 0} skipped)`);
       setPreview([]);
       setFile(null);
       setPasteContent("");
