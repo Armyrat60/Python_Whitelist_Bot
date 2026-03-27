@@ -1935,6 +1935,18 @@ def _group_rows_by_user(rows: list[dict], default_slot_limit: int,
     return users
 
 
+def _detect_format(data: str) -> str:
+    """Sniff the data format: 'squad_cfg' or 'csv'."""
+    for line in data.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        if re.match(r"^(Admin|Group)\s*=", stripped, re.IGNORECASE):
+            return "squad_cfg"
+        break  # First non-blank, non-comment line isn't cfg → assume csv
+    return "csv"
+
+
 def _parse_squad_cfg_data(data: str, existing_steam_ids: set) -> tuple[list[dict], dict]:
     """Parse Squad RemoteAdminList / cfg format.
 
@@ -2091,7 +2103,9 @@ async def admin_import_preview(request: web.Request) -> web.Response:
     # Normalise format aliases sent from the frontend
     if fmt == "cfg":
         fmt = "squad_cfg"
-    elif fmt == "auto" or fmt not in ("csv", "squad_cfg"):
+    elif fmt == "auto":
+        fmt = _detect_format(data)
+    elif fmt not in ("csv", "squad_cfg"):
         fmt = "csv"
 
     if not data:
@@ -2202,7 +2216,9 @@ async def admin_import(request: web.Request) -> web.Response:
     # Normalise format aliases sent from the frontend
     if fmt == "cfg":
         fmt = "squad_cfg"
-    elif fmt == "auto" or fmt not in ("csv", "squad_cfg"):
+    elif fmt == "auto":
+        fmt = _detect_format(data)
+    elif fmt not in ("csv", "squad_cfg"):
         fmt = "csv"
 
     # Normalise dup_handling aliases
