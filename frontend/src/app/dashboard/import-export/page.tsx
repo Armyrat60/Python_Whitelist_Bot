@@ -107,6 +107,8 @@ interface PreviewUser {
   eos_ids?: string[];
   plan?: string;
   status?: string;
+  matched_name?: string;
+  match_score?: number;
 }
 
 interface PreviewSummary {
@@ -203,9 +205,9 @@ function ImportTab() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
-      // Count how many imported entries have no real Discord ID (orphans = steam-only imports)
+      // Count how many imported entries have no real Discord ID AND no name match (true orphans)
       const orphans = preview.filter(
-        (u) => u.status === "new" && (!u.discord_id || u.discord_id === "—")
+        (u) => u.status === "new" && (!u.discord_id || u.discord_id === "—") && !u.matched_name
       ).length;
       const result: ImportResult = {
         added: data.added ?? 0,
@@ -386,35 +388,45 @@ function ImportTab() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Discord ID</TableHead>
+                    <TableHead>Name (from file)</TableHead>
+                    <TableHead>Linked Discord</TableHead>
                     <TableHead>Steam ID(s)</TableHead>
-                    <TableHead>EOS ID(s)</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.slice(0, 200).map((user, i) => (
-                    <TableRow key={i} className={!user.discord_id || user.discord_id === "—" ? "opacity-60" : ""}>
-                      <TableCell className="text-xs">{user.discord_name || "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {user.discord_id || <span className="text-amber-400/70 text-[10px]">no Discord ID</span>}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{user.steam_ids?.length ? user.steam_ids.join(", ") : "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{user.eos_ids?.length ? user.eos_ids.join(", ") : "—"}</TableCell>
-                      <TableCell className="text-xs">
-                        <span className={cn(
-                          "rounded px-1.5 py-0.5 text-[10px] font-medium",
-                          user.status === "new"      && "bg-emerald-500/15 text-emerald-400",
-                          user.status === "existing" && "bg-amber-500/15 text-amber-400",
-                          user.status === "invalid"  && "bg-red-500/15 text-red-400",
-                          user.status === "duplicate" && "bg-white/5 text-muted-foreground",
-                        )}>
-                          {user.status ?? "new"}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {preview.slice(0, 200).map((user, i) => {
+                    const hasDiscord = !!(user.discord_id && user.discord_id !== "—");
+                    const isMatched = !!user.matched_name;
+                    return (
+                      <TableRow key={i} className={!hasDiscord && !isMatched ? "opacity-60" : ""}>
+                        <TableCell className="text-xs">{user.discord_name || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {isMatched ? (
+                            <span className="text-sky-400" title={`Auto-matched (${Math.round((user.match_score ?? 0) * 100)}% confidence)`}>
+                              ✓ {user.matched_name}
+                            </span>
+                          ) : hasDiscord ? (
+                            user.discord_id
+                          ) : (
+                            <span className="text-amber-400/70 text-[10px]">orphan</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{user.steam_ids?.length ? user.steam_ids.join(", ") : "—"}</TableCell>
+                        <TableCell className="text-xs">
+                          <span className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            user.status === "new"       && "bg-emerald-500/15 text-emerald-400",
+                            user.status === "existing"  && "bg-amber-500/15 text-amber-400",
+                            user.status === "invalid"   && "bg-red-500/15 text-red-400",
+                            user.status === "duplicate" && "bg-white/5 text-muted-foreground",
+                          )}>
+                            {isMatched && user.status !== "existing" ? "linked" : (user.status ?? "new")}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

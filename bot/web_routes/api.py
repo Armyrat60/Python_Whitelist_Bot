@@ -2251,15 +2251,42 @@ async def admin_import_preview(request: web.Request) -> web.Response:
     else:
         rows, raw_summary = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
 
-    # Get existing discord_ids for this whitelist to determine new vs existing
+    # Get existing users (id + name) for this whitelist
     existing_users_rows = await db.fetchall(
-        "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        "SELECT discord_id, discord_name FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
         (guild_id, wl_id),
     )
     existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
+    existing_name_map: list[tuple[str, int]] = [
+        (row[1], row[0]) for row in (existing_users_rows or []) if row[0] > 0 and row[1]
+    ]
 
     default_slot = wl["default_slot_limit"] or 1
     users = _group_rows_by_user(rows, default_slot, existing_discord_ids, plan_map=plan_map)
+
+    # For entries with no discord_id, attempt name-based matching against existing users
+    NAME_MATCH_THRESHOLD = 0.80
+    for u in users:
+        raw_did = u.get("discord_id", "")
+        try:
+            did = int(raw_did) if raw_did else 0
+        except (ValueError, TypeError):
+            did = 0
+        if did == 0 and u.get("discord_name") and u["discord_name"] != "(unknown)" and existing_name_map:
+            best_score = 0.0
+            best_did = 0
+            best_name = ""
+            for ex_name, ex_did in existing_name_map:
+                score = _reconcile_score(u["discord_name"], ex_name)
+                if score > best_score:
+                    best_score = score
+                    best_did = ex_did
+                    best_name = ex_name
+            if best_score >= NAME_MATCH_THRESHOLD:
+                u["discord_id"] = str(best_did)
+                u["matched_name"] = best_name
+                u["match_score"] = round(best_score, 2)
+                u["status"] = "existing" if best_did in existing_discord_ids else "new"
 
     # Build summary
     total_users = len(users)
@@ -2375,12 +2402,16 @@ async def admin_import(request: web.Request) -> web.Response:
 
     default_slot = wl["default_slot_limit"] or 1
 
-    # Get existing discord_ids
+    # Get existing users (id + name) for this whitelist
     existing_users_rows = await db.fetchall(
-        "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        "SELECT discord_id, discord_name FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
         (guild_id, wl_id),
     )
     existing_discord_ids: set[int] = {row[0] for row in (existing_users_rows or [])}
+    # Build name→discord_id map for name-based fuzzy matching (only real Discord IDs > 0)
+    existing_name_map: list[tuple[str, int]] = [
+        (row[1], row[0]) for row in (existing_users_rows or []) if row[0] > 0 and row[1]
+    ]
 
     # Group rows by user (use plan_map if provided for slot limits)
     users = _group_rows_by_user(rows, default_slot, existing_discord_ids, plan_map=plan_map)
@@ -2390,6 +2421,7 @@ async def admin_import(request: web.Request) -> web.Response:
     skipped = 0
     errors = 0
     id_counter = int(time.time() * 1000)
+    NAME_MATCH_THRESHOLD = 0.80  # confidence required to auto-link to existing Discord user
 
     for user in users:
         steam_ids = user.get("steam_ids", [])
@@ -2404,11 +2436,24 @@ async def admin_import(request: web.Request) -> web.Response:
             discord_id = int(raw_discord_id) if raw_discord_id else 0
         except (ValueError, TypeError):
             discord_id = 0
+
+        # If no discord_id provided, try to match by name against existing real Discord users
+        if discord_id == 0 and discord_name and discord_name != "(unknown)" and existing_name_map:
+            best_score = 0.0
+            best_did = 0
+            for ex_name, ex_did in existing_name_map:
+                score = _reconcile_score(discord_name, ex_name)
+                if score > best_score:
+                    best_score = score
+                    best_did = ex_did
+            if best_score >= NAME_MATCH_THRESHOLD:
+                discord_id = best_did
+
         if discord_id == 0:
             id_counter += 1
             discord_id = -abs(id_counter)
 
-        is_existing = user["status"] == "existing"
+        is_existing = discord_id in existing_discord_ids
 
         # Pack plan metadata
         plan_meta = _pack_plan_meta(plan=plan, notes=notes)
