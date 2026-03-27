@@ -363,7 +363,7 @@ function BulkActionBar({
           </DialogHeader>
           <div className="py-2">
             <Label className="mb-1.5 block text-sm">Destination Whitelist</Label>
-            <Select value={moveTargetSlug} onValueChange={setMoveTargetSlug}>
+            <Select value={moveTargetSlug} onValueChange={(v) => setMoveTargetSlug(v ?? "")}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a whitelist..." />
               </SelectTrigger>
