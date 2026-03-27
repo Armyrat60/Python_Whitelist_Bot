@@ -1584,6 +1584,7 @@ function UserDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const isOrphan = parseInt(user.discord_id) < 0;
 
   // Combine all IDs into unified slots
   const initialSlots = [
@@ -1600,6 +1601,63 @@ function UserDetailSheet({
   const [notes, setNotes] = useState(user.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+
+  // Link-to-Discord state (orphan records only)
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkResults, setLinkResults] = useState<{discord_id: string; discord_name: string}[]>([]);
+  const [linkSelected, setLinkSelected] = useState<{discord_id: string; discord_name: string} | null>(null);
+  const [manualDiscordId, setManualDiscordId] = useState("");
+  const [manualDiscordName, setManualDiscordName] = useState("");
+  const [linking, setLinking] = useState(false);
+  const [linkSearching, setLinkSearching] = useState(false);
+
+  // Debounced search for existing Discord users
+  useEffect(() => {
+    if (!isOrphan || !linkSearch.trim() || linkSearch.length < 2) {
+      setLinkResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setLinkSearching(true);
+      try {
+        const res = await api.get<{users: WhitelistUser[]}>(`/api/admin/users?search=${encodeURIComponent(linkSearch)}&per_page=20`);
+        // Only show real Discord users (positive IDs), filter out orphans
+        setLinkResults(
+          (res.users ?? [])
+            .filter((u) => parseInt(u.discord_id) > 0)
+            .map((u) => ({ discord_id: u.discord_id, discord_name: u.discord_name }))
+            .filter((u, i, arr) => arr.findIndex((x) => x.discord_id === u.discord_id) === i) // dedupe
+        );
+      } catch {
+        setLinkResults([]);
+      } finally {
+        setLinkSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [linkSearch, isOrphan]);
+
+  async function handleLink() {
+    const targetId = linkSelected?.discord_id || manualDiscordId.trim();
+    const targetName = linkSelected?.discord_name || manualDiscordName.trim() || user.discord_name;
+    if (!targetId || !/^\d{17,20}$/.test(targetId)) {
+      toast.error("Enter a valid Discord ID (17-20 digits)");
+      return;
+    }
+    setLinking(true);
+    try {
+      await api.post("/api/admin/reconcile/apply", {
+        matches: [{ orphan_discord_id: user.discord_id, real_discord_id: targetId, real_discord_name: targetName }],
+      });
+      toast.success(`Linked ${user.discord_name} → ${targetName}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      onClose();
+    } catch {
+      toast.error("Failed to link user");
+    } finally {
+      setLinking(false);
+    }
+  }
 
   const { data: tierCategories } = useTierCategories();
   // Flatten all tier entries across all categories for the dropdown
@@ -1707,6 +1765,72 @@ function UserDetailSheet({
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4">
+
+      {/* ── Link to Discord (orphan only) ── */}
+      {isOrphan && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+          <p className="text-xs font-medium text-amber-400">Link to Discord User</p>
+
+          {/* Search existing linked users */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Search by name</Label>
+            <div className="relative">
+              <Input
+                value={linkSearch}
+                onChange={(e) => { setLinkSearch(e.target.value); setLinkSelected(null); }}
+                placeholder="Type a Discord username…"
+                className="h-8 text-xs pr-7"
+              />
+              {linkSearching && <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin text-muted-foreground" />}
+            </div>
+            {linkResults.length > 0 && !linkSelected && (
+              <div className="rounded-md border border-border bg-card max-h-36 overflow-y-auto divide-y divide-border/50">
+                {linkResults.map((r) => (
+                  <button
+                    key={r.discord_id}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 flex items-center justify-between gap-2"
+                    onClick={() => { setLinkSelected(r); setLinkSearch(r.discord_name); setManualDiscordId(""); setManualDiscordName(""); }}
+                  >
+                    <span className="font-medium">{r.discord_name}</span>
+                    <span className="font-mono text-muted-foreground text-[10px]">{r.discord_id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {linkSelected && (
+              <div className="flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs">
+                <span className="text-sky-400">✓ {linkSelected.discord_name}</span>
+                <span className="font-mono text-muted-foreground text-[10px]">{linkSelected.discord_id}</span>
+                <button className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => { setLinkSelected(null); setLinkSearch(""); }}>
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Manual Discord ID fallback */}
+          {!linkSelected && (
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-muted-foreground">Or paste Discord ID manually</Label>
+              <div className="flex gap-2">
+                <Input value={manualDiscordId} onChange={(e) => setManualDiscordId(e.target.value)} placeholder="Discord ID (17-20 digits)" className="h-8 text-xs font-mono flex-1" />
+                <Input value={manualDiscordName} onChange={(e) => setManualDiscordName(e.target.value)} placeholder="Name (optional)" className="h-8 text-xs w-36" />
+              </div>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            className="w-full"
+            disabled={linking || (!linkSelected && (!manualDiscordId || !/^\d{17,20}$/.test(manualDiscordId.trim())))}
+            onClick={handleLink}
+          >
+            {linking ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Link to Discord User
+          </Button>
+        </div>
+      )}
+
       {/* Meta info */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
