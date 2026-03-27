@@ -869,7 +869,7 @@ async def admin_update_user(request: web.Request) -> web.Response:
             except (ValueError, TypeError):
                 return web.json_response({"error": "slot_limit_override must be an integer or null."}, status=400)
 
-    # -- Notes and expires_at --
+    # -- Notes, expires_at, and plan (tier) --
     new_notes = current_meta.get("notes")
     new_expires = current_meta.get("expires_at")
     new_plan = current_meta.get("plan")
@@ -880,6 +880,22 @@ async def admin_update_user(request: web.Request) -> web.Response:
     if "expires_at" in body:
         new_expires = body["expires_at"] if body["expires_at"] else None
         changes.append(f"expires_at: {new_expires}")
+    if "plan" in body:
+        old_plan = new_plan
+        new_plan = body["plan"] if body["plan"] else None
+        if new_plan != old_plan:
+            changes.append(f"tier: {old_plan} -> {new_plan}")
+
+    # -- If plan changed with an explicit slot override, honour it --
+    if "slot_limit_override" not in body and "plan" in body and body.get("plan_slot_limit"):
+        # Auto-apply slot from the chosen tier entry when no manual override given
+        try:
+            tier_slots = int(body["plan_slot_limit"])
+            new_slot_override = tier_slots
+            new_effective_slot = tier_slots
+            changes.append(f"slot_limit: set to {tier_slots} from tier")
+        except (ValueError, TypeError):
+            pass
 
     plan_meta = _pack_plan_meta(plan=new_plan, notes=new_notes, expires_at=new_expires)
 

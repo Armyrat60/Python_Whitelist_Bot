@@ -23,7 +23,7 @@ import {
   Download,
   ArrowRightLeft,
 } from "lucide-react";
-import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
+import { useUsers, useWhitelists, useSteamNames, useTierCategories } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -1374,10 +1374,23 @@ function UserDetailSheet({
 
   const [slots, setSlots] = useState<string[]>(initialSlots);
   const [status, setStatus] = useState(user.status);
+  const [plan, setPlan] = useState(user.last_plan_name ?? "");
+  const [planSlotLimit, setPlanSlotLimit] = useState<number | null>(null);
   const [expiresAt, setExpiresAt] = useState(user.expires_at ?? "");
   const [notes, setNotes] = useState(user.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+
+  const { data: tierCategories } = useTierCategories();
+  // Flatten all tier entries across all categories for the dropdown
+  const allTierEntries = (tierCategories ?? []).flatMap((cat) =>
+    (cat.entries ?? []).map((e) => ({
+      label: e.display_name ?? e.role_name,
+      value: e.display_name ?? e.role_name,
+      slots: e.slot_limit,
+      categoryName: cat.name,
+    }))
+  );
 
   function updateSlot(idx: number, value: string) {
     setSlots((prev) => {
@@ -1435,6 +1448,8 @@ function UserDetailSheet({
         `/api/admin/users/${user.discord_id}/${user.whitelist_slug}`,
         {
           status,
+          plan: plan || null,
+          plan_slot_limit: planSlotLimit,
           steam_ids: steamIds,
           eos_ids: eosIds,
           expires_at: expiresAt || null,
@@ -1479,8 +1494,37 @@ function UserDetailSheet({
           <Badge variant="outline">{user.whitelist_name}</Badge>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Tier</Label>
-          <p className="text-sm">{user.last_plan_name ?? "—"}</p>
+          <Label className="text-xs text-muted-foreground">Tier / Plan</Label>
+          <Select
+            value={plan}
+            onValueChange={(v) => {
+              const entry = allTierEntries.find((e) => e.value === v);
+              setPlan(v ?? "");
+              setPlanSlotLimit(entry?.slots ?? null);
+            }}
+          >
+            <SelectTrigger className="h-8 w-full">
+              <SelectValue placeholder="— no tier —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">— no tier —</SelectItem>
+              {allTierEntries.map((e) => (
+                <SelectItem key={`${e.categoryName}-${e.value}`} value={e.value}>
+                  <span className="flex items-center gap-2">
+                    {e.label}
+                    <span className="text-[10px] text-muted-foreground">
+                      ({e.slots} slot{e.slots !== 1 ? "s" : ""})
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {planSlotLimit !== null && planSlotLimit !== user.effective_slot_limit && (
+            <p className="text-[11px] text-amber-400">
+              Slot limit will update to {planSlotLimit}
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Slots</Label>
