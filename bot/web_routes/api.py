@@ -2463,6 +2463,27 @@ async def admin_import(request: web.Request) -> web.Response:
             id_counter += 1
             discord_id = -abs(id_counter)
 
+        # If we resolved to a real Discord user (positive ID), clean up any orphan
+        # records that currently hold the same Steam/EOS IDs so they don't linger.
+        if discord_id > 0 and steam_ids:
+            for sid in steam_ids:
+                orphan_row = await db.fetchone(
+                    "SELECT u.discord_id FROM whitelist_users u "
+                    "JOIN whitelist_identifiers i "
+                    "  ON i.discord_id=u.discord_id AND i.guild_id=u.guild_id AND i.whitelist_id=u.whitelist_id "
+                    "WHERE u.guild_id=%s AND u.whitelist_id=%s AND u.discord_id<0 "
+                    "AND i.id_type='steam64' AND i.id_value=%s",
+                    (guild_id, wl_id, str(sid)),
+                )
+                if orphan_row:
+                    orphan_did = orphan_row[0]
+                    await db.execute_transaction([
+                        ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                         (guild_id, orphan_did, wl_id)),
+                        ("DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                         (guild_id, orphan_did, wl_id)),
+                    ])
+
         is_existing = discord_id in existing_discord_ids
 
         # Pack plan metadata
