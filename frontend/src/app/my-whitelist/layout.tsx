@@ -7,6 +7,7 @@ import { useSession } from "@/hooks/use-session";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GuildSwitcher } from "@/components/layout/guild-switcher";
 
 function avatarUrl(userId: string, avatar: string) {
   return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=64`;
@@ -62,6 +63,7 @@ export default function MyWhitelistLayout({
         style={{ background: "oklch(0.195 0 0 / 0.88)" }}>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">My Whitelist</h1>
+          <GuildSwitcher />
           {session.is_mod && (
             <a href="/dashboard">
               <Button variant="outline" size="sm">
