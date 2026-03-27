@@ -99,8 +99,10 @@ def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
 
 
 def _normalize_discord_name(name: str) -> str:
-    """Lowercase, strip discriminator, remove all punctuation/spaces."""
+    """Lowercase, strip discriminator, remove punctuation/spaces/emoji/non-ASCII."""
     name = re.sub(r"#\d{1,4}$", "", name.lower().strip())
+    # Strip non-ASCII characters (emoji, ™, ®, clan symbols, etc.)
+    name = name.encode("ascii", errors="ignore").decode()
     return re.sub(r'[_.\-#!@$%^&*()+={}\[\]|;:,<>?/\\~` ]', '', name)
 
 
@@ -110,8 +112,9 @@ def _reconcile_score(orphan_name: str, member_name: str) -> float:
     Tiers:
       1.00 - exact case-insensitive match
       0.95 - exact after stripping discriminator / punctuation
-      0.80-0.94 - one is a prefix/suffix of the other (scaled by length ratio)
-      0.50-0.79 - SequenceMatcher ratio (edit distance) on normalised names
+      0.88 - shorter (5+ chars) is a suffix of longer (clan-tag prefix pattern)
+      0.80-0.87 - shorter is a prefix of longer (scaled by length ratio)
+      0.50-0.79 - containment or SequenceMatcher ratio on normalised names
       0.00 - below threshold
     """
     from difflib import SequenceMatcher
@@ -127,11 +130,14 @@ def _reconcile_score(orphan_name: str, member_name: str) -> float:
         return 0.0
     if o_n == m_n:
         return 0.95
-    # Prefix / containment
+    # Prefix / suffix containment — clan tags always prepended, so gamertag is a suffix
     shorter, longer = sorted([o_n, m_n], key=len)
+    if longer.endswith(shorter) and len(shorter) >= 5:
+        # Full gamertag appears at end of the longer name (clan tag prefix) — high confidence
+        return 0.88
     if longer.startswith(shorter) or longer.endswith(shorter):
-        return round(0.80 * len(shorter) / len(longer), 2)
-    if shorter in longer:
+        return round(0.80 * len(shorter) / len(longer) + 0.15, 2)
+    if shorter in longer and len(shorter) >= 4:
         return round(0.75 * len(shorter) / len(longer), 2)
     # Edit-distance ratio
     ratio = SequenceMatcher(None, o_n, m_n).ratio()
