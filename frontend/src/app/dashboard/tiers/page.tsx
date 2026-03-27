@@ -349,7 +349,7 @@ function CategoryCard({
           </DialogHeader>
           <div className="space-y-2">
             <Label className="text-xs">Target Whitelist</Label>
-            <Select value={syncWhitelistSlug} onValueChange={setSyncWhitelistSlug}>
+            <Select value={syncWhitelistSlug} onValueChange={(v) => setSyncWhitelistSlug(v ?? "")}>
               <SelectTrigger><SelectValue placeholder="Select whitelist" /></SelectTrigger>
               <SelectContent>
                 {whitelists?.map((wl) => (

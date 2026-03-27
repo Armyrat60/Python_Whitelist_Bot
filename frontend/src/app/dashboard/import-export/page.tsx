@@ -902,7 +902,7 @@ function RoleSyncTab() {
             </SelectTrigger>
             <SelectContent>
               {roles.map((r) => (
-                <SelectItem key={r.id} value={r.id} textValue={r.name}>
+                <SelectItem key={r.id} value={r.id}>
                   <span className="flex items-center gap-2">
                     <Users className="h-3 w-3 opacity-50" />
                     {r.name}
