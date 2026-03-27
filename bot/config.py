@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import logging
 
 from dotenv import load_dotenv
@@ -44,11 +45,30 @@ SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
 WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
 WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://wl.yourdomain.com
-WEB_FILE_SECRET = os.getenv("WEB_FILE_SECRET", "")  # Secret token for whitelist file URLs (auto-generated if empty)
+_raw_file_secret = os.getenv("WEB_FILE_SECRET", "")
+if not _raw_file_secret:
+    # Auto-generate a stable secret from DISCORD_TOKEN so it survives restarts
+    # without needing an explicit env var.  Falls back to a random value if the
+    # token is also absent (dev/test mode).
+    _seed = os.getenv("DISCORD_TOKEN", "") or secrets.token_hex(32)
+    import hmac as _hmac, hashlib as _hashlib
+    WEB_FILE_SECRET = _hmac.new(_seed.encode(), b"wl-file-secret", _hashlib.sha256).hexdigest()
+    log.warning("WEB_FILE_SECRET not set — derived from DISCORD_TOKEN. Set WEB_FILE_SECRET explicitly in production.")
+else:
+    WEB_FILE_SECRET = _raw_file_secret
 
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
-WEB_SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "change-me-to-a-random-secret-key")
+_raw_session_secret = os.getenv("WEB_SESSION_SECRET", "")
+if not _raw_session_secret or _raw_session_secret == "change-me-to-a-random-secret-key":
+    if os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}:
+        log.warning(
+            "WEB_SESSION_SECRET is not set or is the default placeholder. "
+            "Sessions will be insecure. Set a strong random value in production."
+        )
+    WEB_SESSION_SECRET = _raw_session_secret or secrets.token_hex(32)
+else:
+    WEB_SESSION_SECRET = _raw_session_secret
 
 STEAM64_RE = re.compile(r"^7656119\d{10}$")
 EOSID_RE = re.compile(r"^[0-9a-fA-F]{32}$")

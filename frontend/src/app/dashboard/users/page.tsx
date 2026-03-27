@@ -689,7 +689,7 @@ export default function UsersPage() {
   const queryClient = useQueryClient();
 
   const perPage = 24; // divisible by 1, 2, 3 for grid
-  const { data, isLoading } = useUsers(page, perPage, search, filters);
+  const { data, isLoading, isError } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
   const { data: tierCategories } = useTierCategories();
   const allTierOptions = (tierCategories ?? []).flatMap((cat) =>
@@ -792,6 +792,7 @@ export default function UsersPage() {
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               className="max-w-sm"
+              maxLength={100}
             />
             <Button variant="outline" size="icon" onClick={handleSearch}>
               <Search className="h-4 w-4" />
@@ -975,6 +976,11 @@ export default function UsersPage() {
             ))}
           </div>
         )
+      ) : isError ? (
+        <div className="flex h-48 flex-col items-center justify-center gap-2 text-destructive">
+          <AlertTriangle className="h-6 w-6" />
+          <p className="text-sm">Failed to load users. Check your connection and try refreshing.</p>
+        </div>
       ) : users.length === 0 ? (
         <div className="flex h-48 items-center justify-center text-muted-foreground">
           No users found.

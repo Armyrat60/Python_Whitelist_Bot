@@ -52,9 +52,10 @@ class _MySQLAdapter:
             password=DB_PASSWORD,
             db=DB_NAME,
             autocommit=True,
-            minsize=1,
-            maxsize=10,
+            minsize=2,
+            maxsize=25,
             charset="utf8mb4",
+            connect_timeout=10,
         )
 
     async def execute(self, query: str, params: tuple = ()) -> int:
@@ -113,10 +114,10 @@ class _PostgresAdapter:
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl_mod.CERT_NONE
             try:
-                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=10, ssl=ssl_ctx)
+                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=25, ssl=ssl_ctx, command_timeout=30)
             except Exception:
                 # Retry without SSL (local dev)
-                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=10)
+                self.pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=25, command_timeout=30)
         else:
             self.pool = await asyncpg.create_pool(
                 host=DB_HOST,
@@ -124,8 +125,9 @@ class _PostgresAdapter:
                 user=DB_USER,
                 password=DB_PASSWORD,
                 database=DB_NAME,
-                min_size=1,
-                max_size=10,
+                min_size=2,
+                max_size=25,
+                command_timeout=30,
             )
 
     async def execute(self, query: str, params: tuple = ()) -> int:
@@ -602,6 +604,15 @@ MYSQL_MIGRATIONS = [
         cached_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+
+    # --- Performance indexes (MySQL 8.0+) ---
+    # These mirror the PostgreSQL indexes already defined above.
+    # CREATE INDEX IF NOT EXISTS requires MySQL 8.0.1+.
+    "CREATE INDEX IF NOT EXISTS idx_wu_guild_wl ON whitelist_users (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wu_status ON whitelist_users (guild_id, whitelist_id, status)",
 ]
 
 POSTGRES_MIGRATIONS = [
@@ -690,6 +701,7 @@ POSTGRES_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
     "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wu_status ON whitelist_users (guild_id, whitelist_id, status)",
 
     # --- Tier categories migration ---
     "ALTER TABLE panels ADD COLUMN IF NOT EXISTS tier_category_id INT NULL",

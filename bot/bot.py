@@ -10,8 +10,17 @@ from discord.ext import commands, tasks
 from bot.config import (
     DISCORD_TOKEN, WHITELIST_FILENAME, WEB_ENABLED,
     GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
-    log,
+    SENTRY_DSN, log,
 )
+
+# Initialise Sentry as early as possible so all unhandled exceptions are captured
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0.1)
+        log.info("Sentry error tracking enabled")
+    except ImportError:
+        log.warning("SENTRY_DSN set but sentry-sdk is not installed. Run: pip install sentry-sdk")
 from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identifier
 from bot.database import Database
 from bot.github_publisher import GithubPublisher
@@ -32,6 +41,8 @@ class WhitelistBot(commands.Bot):
         self.write_lock = asyncio.Lock()
         self._sync_pending = False
         self._sync_task: Optional[asyncio.Task] = None
+        # Limit concurrent panel refreshes so startup doesn't hammer the Discord API
+        self._panel_refresh_sem = asyncio.Semaphore(3)
 
     async def setup_hook(self):
         await self.db.connect()
@@ -101,6 +112,18 @@ class WhitelistBot(commands.Bot):
                     log.debug("Could not prime web cache on startup for guild %s", guild.id)
         await self.log_startup_summary()
         # Refresh all active panels on startup (updates buttons + tier info)
+        # Use a semaphore to avoid flooding the Discord API when many panels exist
+        async def _refresh_one(guild, panel):
+            wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
+            if wl and wl["enabled"]:
+                async with self._panel_refresh_sem:
+                    try:
+                        await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
+                        log.info("Refreshed panel '%s' in guild %s", panel["name"], guild.name)
+                    except Exception:
+                        log.warning("Could not refresh panel '%s' for guild %s", panel["name"], guild.id)
+
+        refresh_tasks = []
         for guild in self.guilds:
             panels = await self.db.get_panels(guild.id)
             for panel in panels:
@@ -108,13 +131,9 @@ class WhitelistBot(commands.Bot):
                     continue
                 if not panel.get("enabled", True):
                     continue
-                wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
-                if wl and wl["enabled"]:
-                    try:
-                        await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
-                        log.info("Refreshed panel '%s' in guild %s", panel["name"], guild.name)
-                    except Exception:
-                        log.debug("Could not refresh panel '%s' for guild %s", panel["name"], guild.id)
+                refresh_tasks.append(_refresh_one(guild, panel))
+        if refresh_tasks:
+            await asyncio.gather(*refresh_tasks)
 
     async def on_guild_join(self, guild: discord.Guild):
         await self.db.seed_guild_defaults(guild.id)
@@ -128,6 +147,14 @@ class WhitelistBot(commands.Bot):
                 view = WhitelistPanelView(self, wl["slug"])
                 self.panel_views[key] = view
                 self.add_view(view)
+
+    async def on_error(self, event_method: str, *args, **kwargs):
+        """Catch unhandled exceptions in event listeners and log them."""
+        log.exception("Unhandled exception in event '%s'", event_method)
+
+    async def on_command_error(self, ctx, error):
+        """Catch unhandled slash-command errors."""
+        log.exception("Unhandled command error in '%s'", ctx.command, exc_info=error)
 
     async def close(self):
         if self.web:

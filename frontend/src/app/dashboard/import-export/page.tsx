@@ -149,16 +149,27 @@ function ImportTab() {
     if (def) setTargetWhitelist(def.slug);
   }, [whitelists]);
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+  function validateAndSetFile(f: File) {
+    if (f.size > MAX_FILE_SIZE) {
+      toast.error(`File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`);
+      return;
+    }
+    setFile(f);
+    setPasteContent("");
+  }
+
   function handleFileDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) { setFile(dropped); setPasteContent(""); }
+    if (dropped) validateAndSetFile(dropped);
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
-    if (selected) { setFile(selected); setPasteContent(""); }
+    if (selected) validateAndSetFile(selected);
   }
 
   function buildFormData() {
@@ -222,7 +233,14 @@ function ImportTab() {
       setPasteContent("");
       toast.success(`Imported ${result.added + result.updated} entries — ${result.added} new, ${result.updated} updated, ${result.skipped} skipped`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Import failed");
+      const msg = err instanceof Error ? err.message : "Import failed";
+      toast.error(msg, {
+        action: {
+          label: "Retry",
+          onClick: () => handleImport(),
+        },
+        duration: 8000,
+      });
     } finally {
       setImporting(false);
     }

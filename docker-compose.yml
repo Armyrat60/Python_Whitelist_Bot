@@ -6,36 +6,52 @@ services:
     environment:
       POSTGRES_DB: whitelist_bot
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: devpass
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d whitelist_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   bot:
     build: .
     command: python -m bot bot
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     env_file: .env
     environment:
       DB_ENGINE: postgres
-      DATABASE_URL: postgresql://postgres:devpass@postgres:5432/whitelist_bot
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/whitelist_bot
       WEB_ENABLED: "false"
+    restart: unless-stopped
 
   web:
     build: .
     command: python -m bot web
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
     env_file: .env
     environment:
       DB_ENGINE: postgres
-      DATABASE_URL: postgresql://postgres:devpass@postgres:5432/whitelist_bot
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/whitelist_bot
       WEB_HOST: "0.0.0.0"
       WEB_PORT: "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
 
   frontend:
     build:
@@ -43,8 +59,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    depends_on:
+      web:
+        condition: service_healthy
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_API_URL: ${WEB_BASE_URL:-http://localhost:8080}
+    restart: unless-stopped
 
 volumes:
   pgdata:
