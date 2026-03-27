@@ -158,42 +158,12 @@ function TierBadge({ tier, whitelist }: { tier: string | null | undefined; white
   );
 }
 
-/* ── Discord-palette avatar colors (deterministic per discord_id) ── */
-const DISCORD_COLORS = [
-  "#5865F2", // blurple
-  "#3BA55D", // green
-  "#FAA61A", // yellow
-  "#ED4245", // red
-  "#9C84EC", // purple
-  "#00CDD7", // teal
-  "#F47B67", // salmon
-  "#43B581", // muted green
-  "#EB459E", // fuchsia
-  "#1DA0F2", // sky blue
-];
-
-function getAvatarColor(discordId: string): string {
-  let hash = 0;
-  for (let i = 0; i < discordId.length; i++) {
-    hash = ((hash * 31) + discordId.charCodeAt(i)) >>> 0;
-  }
-  return DISCORD_COLORS[hash % DISCORD_COLORS.length];
-}
-
-/** Slot visualization — colored dot + count + slim progress bar */
-function SlotBar({
-  used,
-  total,
-  color,
-}: {
-  used: number;
-  total: number;
-  color?: string;
-}) {
+/** Slot visualization — dot + count + slim progress bar */
+function SlotBar({ used, total }: { used: number; total: number }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
   const isOver = used > total;
-  const barColor = isOver ? "#F87171" : (color ?? "var(--accent-primary)");
-  const glowColor = isOver ? "rgba(248,113,113,0.5)" : `${color ?? ""}80`;
+  const barColor = isOver ? "#F87171" : "var(--accent-primary)";
+  const glowColor = isOver ? "rgba(248,113,113,0.5)" : "color-mix(in srgb, var(--accent-primary) 50%, transparent)";
 
   return (
     <div className="flex items-center gap-2">
@@ -1103,31 +1073,24 @@ function UserListView({
                   onCheckedChange={() => onToggleSelect(key)}
                 />
               </span>
-              {(() => {
-                const avatarColor = getAvatarColor(user.discord_id);
-                return (
-                  <>
-                    <Avatar size="sm">
-                      <AvatarFallback style={{ background: avatarColor, color: "#fff", fontWeight: 600 }}>
-                        {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
-                      {user.discord_name}
-                    </span>
-                    {/* Slots — left of tier, colored per user */}
-                    <span className="flex w-44 items-center">
-                      <SlotBar used={usedSlots} total={user.effective_slot_limit} color={avatarColor} />
-                    </span>
-                    <span className="hidden w-28 text-center sm:block">
-                      <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
-                    </span>
-                    <span className="w-20 text-center">
-                      <StatusBadge status={user.status} />
-                    </span>
-                  </>
-                );
-              })()}
+              <Avatar size="sm">
+                <AvatarFallback>
+                  {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
+                </AvatarFallback>
+              </Avatar>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
+                {user.discord_name}
+              </span>
+              {/* Slots — left of tier */}
+              <span className="flex w-44 items-center">
+                <SlotBar used={usedSlots} total={user.effective_slot_limit} />
+              </span>
+              <span className="hidden w-28 text-center sm:block">
+                <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+              </span>
+              <span className="w-20 text-center">
+                <StatusBadge status={user.status} />
+              </span>
               <ChevronDown
                 className={cn(
                   "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
