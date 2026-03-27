@@ -23,6 +23,7 @@ import {
   Download,
   ArrowRightLeft,
   Crown,
+  RefreshCw,
 } from "lucide-react";
 import { useUsers, useWhitelists, useSteamNames, useTierCategories } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
@@ -905,6 +906,10 @@ export default function UsersPage() {
             Unlinked
           </Button>
         </div>
+
+        {filters.unlinked === "true" && (
+          <RematchOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
+        )}
 
         <AddUserDialog whitelists={whitelists ?? []} />
         <AddSteamEntryDialog whitelists={whitelists ?? []} />
@@ -2024,6 +2029,41 @@ function UserDetailSheet({
         </AlertDialog>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rematch Orphans Button                                             */
+/* ------------------------------------------------------------------ */
+
+function RematchOrphansButton({ onDone }: { onDone: () => void }) {
+  const [running, setRunning] = useState(false);
+
+  async function handleRematch() {
+    setRunning(true);
+    try {
+      const res = await api.post<{ matched: number; skipped: number; errors: number }>(
+        "/api/admin/reconcile/rematch-orphans",
+        {}
+      );
+      if (res.matched > 0) {
+        toast.success(`Linked ${res.matched} entr${res.matched === 1 ? "y" : "ies"} — ${res.skipped} couldn't be matched`);
+        onDone();
+      } else {
+        toast.info(`No new matches found (${res.skipped} checked)`);
+      }
+    } catch {
+      toast.error("Rematch failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Button variant="outline" size="sm" onClick={handleRematch} disabled={running} title="Re-run name matching against all unlinked entries">
+      {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+      Re-match All
+    </Button>
   );
 }
 

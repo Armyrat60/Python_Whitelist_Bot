@@ -2767,6 +2767,133 @@ async def admin_reconcile_apply(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_rematch_orphans(request: web.Request) -> web.Response:
+    """Re-run name-based matching against all orphan records for this guild.
+
+    For each orphan (discord_id < 0), tries _reconcile_score against all
+    real Discord users. If score >= threshold, applies reconcile_apply logic
+    (re-parent or delete the orphan).
+
+    Optional body: {whitelist_slug: "..."} to scope to one whitelist.
+    Returns: {matched, skipped, errors}
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+    db = request.app["bot"].db
+
+    wl_slug = ""
+    try:
+        body = await request.json()
+        wl_slug = body.get("whitelist_slug", "") or ""
+    except Exception:
+        pass
+
+    NAME_MATCH_THRESHOLD = 0.80
+
+    # Fetch all orphan records for this guild (optionally filtered by whitelist)
+    if wl_slug:
+        wl = await _resolve_whitelist(db, guild_id, wl_slug)
+        if not wl:
+            return web.json_response({"error": "Invalid whitelist_slug"}, status=400)
+        orphan_rows = await db.fetchall(
+            "SELECT u.discord_id, u.discord_name, u.whitelist_id "
+            "FROM whitelist_users u "
+            "WHERE u.guild_id=%s AND u.discord_id<0 AND u.whitelist_id=%s",
+            (guild_id, wl["id"]),
+        )
+    else:
+        orphan_rows = await db.fetchall(
+            "SELECT u.discord_id, u.discord_name, u.whitelist_id "
+            "FROM whitelist_users u "
+            "WHERE u.guild_id=%s AND u.discord_id<0",
+            (guild_id,),
+        )
+
+    if not orphan_rows:
+        return web.json_response({"ok": True, "matched": 0, "skipped": 0, "errors": 0})
+
+    # Fetch all real Discord users for this guild (positive discord_id)
+    real_rows = await db.fetchall(
+        "SELECT discord_id, discord_name FROM whitelist_users "
+        "WHERE guild_id=%s AND discord_id>0",
+        (guild_id,),
+    )
+    real_users: list[tuple[int, str]] = [(int(r[0]), r[1]) for r in (real_rows or []) if r[1]]
+
+    matched = 0
+    skipped = 0
+    errors = 0
+
+    for orphan_did, orphan_name, wl_id in orphan_rows:
+        if not orphan_name:
+            skipped += 1
+            continue
+
+        best_score = 0.0
+        best_real_id = 0
+        best_real_name = ""
+        for real_id, real_name in real_users:
+            score = _reconcile_score(orphan_name, real_name)
+            if score > best_score:
+                best_score = score
+                best_real_id = real_id
+                best_real_name = real_name
+
+        if best_score < NAME_MATCH_THRESHOLD or best_real_id == 0:
+            skipped += 1
+            continue
+
+        try:
+            # Check if real user already has a record in this whitelist
+            existing = await db.fetchone(
+                "SELECT discord_id FROM whitelist_users "
+                "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (guild_id, best_real_id, wl_id),
+            )
+            if existing:
+                # Real user exists — merge identifiers then delete orphan
+                orphan_ids = await db.get_identifiers(guild_id, orphan_did, wl_id)
+                if orphan_ids:
+                    current_ids = await db.get_identifiers(guild_id, best_real_id, wl_id)
+                    current_set = {(r[0], r[1]) for r in current_ids}
+                    merged = list(current_ids)
+                    for id_type, id_val, *_ in orphan_ids:
+                        if (id_type, id_val) not in current_set:
+                            merged.append((id_type, id_val, False, "rematch"))
+                    await db.replace_identifiers(guild_id, best_real_id, wl_id,
+                                                 [(r[0], r[1], False, "rematch") for r in merged])
+                await db.execute_transaction([
+                    ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                     (guild_id, orphan_did, wl_id)),
+                    ("DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                     (guild_id, orphan_did, wl_id)),
+                ])
+            else:
+                # Re-parent orphan to real Discord user
+                await db.execute_transaction([
+                    ("UPDATE whitelist_identifiers SET discord_id=%s "
+                     "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                     (best_real_id, guild_id, orphan_did, wl_id)),
+                    ("UPDATE whitelist_users SET discord_id=%s, discord_name=%s "
+                     "WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                     (best_real_id, best_real_name, guild_id, orphan_did, wl_id)),
+                ])
+            matched += 1
+        except Exception as e:
+            log.error("Rematch orphan error orphan=%s real=%s: %s", orphan_did, best_real_id, e)
+            errors += 1
+
+    await db.audit(
+        guild_id, "admin_rematch_orphans", actor_id, None,
+        f"Re-matched orphans: matched={matched}, skipped={skipped}, errors={errors}",
+    )
+    await _trigger_sync(request, guild_id)
+
+    return web.json_response({"ok": True, "matched": matched, "skipped": skipped, "errors": errors})
+
+
+@require_admin
 async def admin_role_sync_pull(request: web.Request) -> web.Response:
     """Pull all current members of a Discord role into a whitelist.
 
@@ -4213,6 +4340,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_post("/api/admin/reconcile/preview", admin_reconcile_preview)
     app.router.add_post("/api/admin/reconcile/apply", admin_reconcile_apply)
+    app.router.add_post("/api/admin/reconcile/rematch-orphans", admin_rematch_orphans)
     app.router.add_post("/api/admin/role-sync/pull", admin_role_sync_pull)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
