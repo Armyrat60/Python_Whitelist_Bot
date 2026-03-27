@@ -497,8 +497,9 @@ async def admin_users(request: web.Request) -> web.Response:
     db = bot.db
 
     search = request.query.get("search", "").strip()
-    wl_type = request.query.get("type", "").strip()
+    wl_type = (request.query.get("type") or request.query.get("whitelist") or "").strip()
     status = request.query.get("status", "").strip()
+    tier_filter = request.query.get("tier", "").strip()
     page = max(1, int(request.query.get("page", "1")))
     per_page = min(100, max(1, int(request.query.get("per_page", "25"))))
 
@@ -517,6 +518,11 @@ async def admin_users(request: web.Request) -> web.Response:
     if status:
         conditions.append("u.status=%s")
         params.append(status)
+    if tier_filter:
+        # Match both plain-text plan name and JSON-packed format {"plan": "Solo", ...}
+        json_pattern = f'%"plan": "{tier_filter}"%'
+        conditions.append("(u.last_plan_name = %s OR u.last_plan_name LIKE %s)")
+        params.extend([tier_filter, json_pattern])
 
     where = f"WHERE {' AND '.join(conditions)}"
 

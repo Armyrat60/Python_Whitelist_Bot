@@ -646,6 +646,13 @@ export default function UsersPage() {
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+  const { data: tierCategories } = useTierCategories();
+  const allTierOptions = (tierCategories ?? []).flatMap((cat) =>
+    (cat.entries ?? []).map((e) => ({
+      label: e.display_name ?? e.role_name,
+      value: e.display_name ?? e.role_name,
+    }))
+  );
   const [showGapReport, setShowGapReport] = useState(false);
   const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
@@ -788,6 +795,31 @@ export default function UsersPage() {
             <SelectItem value="expired">Expired</SelectItem>
           </SelectContent>
         </Select>
+
+        {allTierOptions.length > 0 && (
+          <Select
+            value={filters.tier ?? ""}
+            onValueChange={(v) => {
+              setFilters((prev) => ({
+                ...prev,
+                tier: v === "__all__" ? "" : (v ?? ""),
+              }));
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="All tiers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All tiers</SelectItem>
+              {allTierOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         {/* View toggle */}
         <div className="flex rounded-md border border-border">
