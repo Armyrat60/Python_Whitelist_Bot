@@ -99,14 +99,22 @@ def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
 
 
 def _normalize_discord_name(name: str) -> str:
-    """Normalize a Discord username for fuzzy matching (lowercase, strip punctuation)."""
-    import re as _re2
-    name = name.lower().strip()
-    name = _re2.sub(r'[_.\-#!@$%^&*()+={}\[\]|;:,<>?/\\~` ]', '', name)
-    return name
+    """Lowercase, strip discriminator, remove all punctuation/spaces."""
+    name = re.sub(r"#\d{1,4}$", "", name.lower().strip())
+    return re.sub(r'[_.\-#!@$%^&*()+={}\[\]|;:,<>?/\\~` ]', '', name)
+
 
 def _reconcile_score(orphan_name: str, member_name: str) -> float:
-    """Return 0.0-1.0 confidence that orphan_name matches member_name."""
+    """Return 0.0-1.0 confidence that orphan_name matches member_name.
+
+    Tiers:
+      1.00 - exact case-insensitive match
+      0.95 - exact after stripping discriminator / punctuation
+      0.80-0.94 - one is a prefix/suffix of the other (scaled by length ratio)
+      0.50-0.79 - SequenceMatcher ratio (edit distance) on normalised names
+      0.00 - below threshold
+    """
+    from difflib import SequenceMatcher
     if not orphan_name or not member_name:
         return 0.0
     o = orphan_name.lower().strip()
@@ -115,13 +123,20 @@ def _reconcile_score(orphan_name: str, member_name: str) -> float:
         return 1.0
     o_n = _normalize_discord_name(o)
     m_n = _normalize_discord_name(m)
-    if o_n and m_n and o_n == m_n:
+    if not o_n or not m_n:
+        return 0.0
+    if o_n == m_n:
         return 0.95
-    if o_n and m_n:
-        shorter = min(len(o_n), len(m_n))
-        longer = max(len(o_n), len(m_n))
-        if longer > 0 and (o_n in m_n or m_n in o_n):
-            return round(0.75 * shorter / longer, 2)
+    # Prefix / containment
+    shorter, longer = sorted([o_n, m_n], key=len)
+    if longer.startswith(shorter) or longer.endswith(shorter):
+        return round(0.80 * len(shorter) / len(longer), 2)
+    if shorter in longer:
+        return round(0.75 * len(shorter) / len(longer), 2)
+    # Edit-distance ratio
+    ratio = SequenceMatcher(None, o_n, m_n).ratio()
+    if ratio >= 0.6:
+        return round(0.50 + ratio * 0.29, 2)  # maps 0.6→0.67, 1.0→0.79
     return 0.0
 
 
@@ -1935,16 +1950,98 @@ def _group_rows_by_user(rows: list[dict], default_slot_limit: int,
     return users
 
 
+_STEAM64_RE = re.compile(r"^\d{17}$")
+_EOS_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
+_DISCORD_ID_RE = re.compile(r"^\d{17,20}$")
+
+
 def _detect_format(data: str) -> str:
-    """Sniff the data format: 'squad_cfg' or 'csv'."""
+    """Sniff the data format: squad_cfg, plain_ids, discord_members, or csv."""
+    non_blank = 0
+    plain_id_lines = 0
+    discord_member_lines = 0  # "Name,DiscordID" or "Name - DiscordID"
+
     for line in data.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("//"):
+        if not stripped or stripped.startswith("//") or stripped.startswith("#"):
             continue
+        # Squad CFG: first non-comment line has Admin= or Group=
         if re.match(r"^(Admin|Group)\s*=", stripped, re.IGNORECASE):
             return "squad_cfg"
-        break  # First non-blank, non-comment line isn't cfg → assume csv
+        non_blank += 1
+        # Plain ID: entire line is a Steam64 or EOS ID
+        if _STEAM64_RE.match(stripped) or _EOS_RE.match(stripped):
+            plain_id_lines += 1
+        # Discord member list: "Name,ID" or "Name - ID" where ID is a large int
+        elif re.match(r"^.+[,\-–]\s*\d{17,20}\s*$", stripped):
+            discord_member_lines += 1
+        if non_blank >= 6:
+            break
+
+    if non_blank > 0:
+        if plain_id_lines == non_blank:
+            return "plain_ids"
+        if discord_member_lines >= max(1, non_blank - 1):  # allow 1 header row
+            return "discord_members"
     return "csv"
+
+
+def _parse_plain_ids(data: str, existing_steam_ids: set) -> tuple[list[dict], dict]:
+    """Parse a bare list of Steam64 or EOS IDs, one per line."""
+    rows: list[dict] = []
+    summary = {"total": 0, "new": 0, "duplicate": 0, "invalid": 0}
+
+    for raw_line in data.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        summary["total"] += 1
+        if _STEAM64_RE.match(line):
+            status = "duplicate" if line in existing_steam_ids else "new"
+            summary[status] += 1
+            rows.append({
+                "discord_name": "", "discord_id": "",
+                "steam_ids": [line], "eos_ids": [],
+                "plan": "", "notes": "", "status": status,
+            })
+        elif _EOS_RE.match(line):
+            summary["new"] += 1
+            rows.append({
+                "discord_name": "", "discord_id": "",
+                "steam_ids": [], "eos_ids": [line.lower()],
+                "plan": "", "notes": "", "status": "new",
+            })
+        else:
+            summary["invalid"] += 1
+
+    return rows, summary
+
+
+def _parse_discord_member_list(data: str) -> list[dict]:
+    """Parse a Discord member list into {discord_name, discord_id} dicts.
+
+    Accepts lines like:
+      username,123456789012345678
+      username - 123456789012345678
+      username#1234,123456789012345678
+    Returns list of {discord_name, discord_id} — no Steam/EOS IDs.
+    """
+    members = []
+    for raw_line in data.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+        # Split on comma or dash/en-dash
+        parts = re.split(r"[,\-–]", line, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        name_part = parts[0].strip()
+        id_part = parts[1].strip()
+        if _DISCORD_ID_RE.match(id_part):
+            # Strip discriminator (#1234) from name
+            name = re.sub(r"#\d{1,4}$", "", name_part).strip()
+            members.append({"discord_name": name, "discord_id": id_part})
+    return members
 
 
 def _parse_squad_cfg_data(data: str, existing_steam_ids: set) -> tuple[list[dict], dict]:
@@ -2101,11 +2198,12 @@ async def admin_import_preview(request: web.Request) -> web.Response:
             plan_map = {k: int(v) for k, v in body["plan_map"].items()}
 
     # Normalise format aliases sent from the frontend
+    _VALID_FMTS = ("csv", "squad_cfg", "plain_ids", "discord_members")
     if fmt == "cfg":
         fmt = "squad_cfg"
     elif fmt == "auto":
         fmt = _detect_format(data)
-    elif fmt not in ("csv", "squad_cfg"):
+    elif fmt not in _VALID_FMTS:
         fmt = "csv"
 
     if not data:
@@ -2126,10 +2224,15 @@ async def admin_import_preview(request: web.Request) -> web.Response:
 
     existing_steam = await _get_existing_steam_ids(db, guild_id, wl_id)
 
-    if fmt == "csv":
-        rows, raw_summary = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
-    else:
+    if fmt == "squad_cfg":
         rows, raw_summary = _parse_squad_cfg_data(data, existing_steam)
+    elif fmt == "plain_ids":
+        rows, raw_summary = _parse_plain_ids(data, existing_steam)
+    elif fmt == "discord_members":
+        # Discord member list has no Steam/EOS IDs — not useful for import preview
+        return web.json_response({"error": "Use the Reconcile tab to match a Discord member list."}, status=400)
+    else:
+        rows, raw_summary = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
 
     # Get existing discord_ids for this whitelist to determine new vs existing
     existing_users_rows = await db.fetchall(
@@ -2214,11 +2317,12 @@ async def admin_import(request: web.Request) -> web.Response:
             plan_map = {k: int(v) for k, v in body["plan_map"].items()}
 
     # Normalise format aliases sent from the frontend
+    _VALID_FMTS = ("csv", "squad_cfg", "plain_ids", "discord_members")
     if fmt == "cfg":
         fmt = "squad_cfg"
     elif fmt == "auto":
         fmt = _detect_format(data)
-    elif fmt not in ("csv", "squad_cfg"):
+    elif fmt not in _VALID_FMTS:
         fmt = "csv"
 
     # Normalise dup_handling aliases
@@ -2243,10 +2347,14 @@ async def admin_import(request: web.Request) -> web.Response:
 
     existing_steam = await _get_existing_steam_ids(db, guild_id, wl_id)
 
-    if fmt == "csv":
-        rows, _ = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
-    else:
+    if fmt == "squad_cfg":
         rows, _ = _parse_squad_cfg_data(data, existing_steam)
+    elif fmt == "plain_ids":
+        rows, _ = _parse_plain_ids(data, existing_steam)
+    elif fmt == "discord_members":
+        return web.json_response({"error": "Use the Reconcile tab to match a Discord member list."}, status=400)
+    else:
+        rows, _ = _parse_csv_data(data, guild_id, wl_type, existing_steam, column_map=column_map)
 
     default_slot = wl["default_slot_limit"] or 1
 
@@ -2384,26 +2492,39 @@ async def admin_reconcile_preview(request: web.Request) -> web.Response:
             return web.json_response({"error": "Invalid request body"}, status=400)
         member_csv = body.get("content", "") or body.get("members", "")
 
-    # Parse User,ID CSV
-    members: dict[str, int] = {}  # username -> discord_id
-    for line in member_csv.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.rsplit(",", 1)
-        if len(parts) != 2:
-            continue
-        name = parts[0].strip()
+    # Parse member list — supports comma, dash, en-dash separators; discriminators stripped
+    parsed_members = _parse_discord_member_list(member_csv)
+    # Also fall back to simple comma split in case _parse_discord_member_list is too strict
+    if not parsed_members:
+        for line in member_csv.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.rsplit(",", 1)
+            if len(parts) == 2:
+                name = re.sub(r"#\d{1,4}$", "", parts[0].strip()).strip()
+                try:
+                    did = int(parts[1].strip())
+                    if name and name.lower() not in ("user", "username", "name", "member"):
+                        parsed_members.append({"discord_name": name, "discord_id": str(did)})
+                except ValueError:
+                    continue
+
+    members: dict[str, int] = {}  # normalised_name -> discord_id (last wins)
+    members_display: dict[int, str] = {}  # discord_id -> display name
+    for m in parsed_members:
+        name = m["discord_name"]
         try:
-            did = int(parts[1].strip())
-        except ValueError:
+            did = int(m["discord_id"])
+        except (ValueError, TypeError):
             continue
-        if name.lower() in ("user", "username", "name"):
-            continue  # skip header
+        if name.lower() in ("user", "username", "name", "member"):
+            continue  # skip headers
         members[name] = did
+        members_display[did] = name
 
     if not members:
-        return web.json_response({"error": "No valid members found in CSV. Expected 'User,ID' format."}, status=400)
+        return web.json_response({"error": "No valid members found. Expected 'Username,DiscordID' or 'Username - DiscordID' format."}, status=400)
 
     # Fetch orphan records (discord_id < 0) for this guild
     orphan_rows = await db.fetchall(
@@ -2561,10 +2682,14 @@ async def admin_export(request: web.Request) -> web.Response:
     db = bot.db
 
     wl_type = request.query.get("type", "").strip()
+    slugs_param = request.query.get("slugs", "").strip()
     fmt = request.query.get("format", "csv").strip()
     filt = request.query.get("filter", "active").strip()
     columns_param = request.query.get("columns", "").strip()
 
+    # Normalise format alias
+    if fmt == "cfg":
+        fmt = "squad_cfg"
     if fmt not in ("csv", "squad_cfg", "json"):
         return web.json_response({"error": "format must be 'csv', 'squad_cfg', or 'json'."}, status=400)
     if filt not in ("active", "all", "expired"):
@@ -2576,6 +2701,15 @@ async def admin_export(request: web.Request) -> web.Response:
 
     if wl_type == "combined":
         wls_to_query = whitelists
+    elif slugs_param:
+        # Frontend sends ?slugs=slug1,slug2 for multi-select export
+        requested = {s.strip() for s in slugs_param.split(",") if s.strip()}
+        wls_to_query = [wl for wl in whitelists if wl["slug"] in requested]
+        if not wls_to_query:
+            valid_slugs = list(wl_by_slug.keys())
+            return web.json_response({
+                "error": f"No matching whitelists. Valid: {', '.join(valid_slugs)}",
+            }, status=400)
     elif wl_type in wl_by_slug:
         wls_to_query = [wl_by_slug[wl_type]]
     else:

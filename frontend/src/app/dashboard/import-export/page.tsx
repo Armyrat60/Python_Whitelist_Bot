@@ -37,15 +37,17 @@ import {
 import { cn } from "@/lib/utils";
 
 const IMPORT_FORMATS = [
-  { value: "auto", label: "Auto-detect" },
-  { value: "csv", label: "CSV" },
-  { value: "cfg", label: "Squad CFG" },
+  { value: "auto",           label: "Auto-detect" },
+  { value: "squad_cfg",      label: "Squad Admin CFG  (Admin=steamid:role //name)" },
+  { value: "csv",            label: "CSV with headers" },
+  { value: "plain_ids",      label: "Plain ID list  (one Steam64 / EOS ID per line)" },
+  { value: "discord_members",label: "Discord member list  → use Reconcile tab" },
 ];
 
 const DUPLICATE_MODES = [
-  { value: "skip", label: "Skip duplicates" },
+  { value: "skip",      label: "Skip duplicates" },
+  { value: "merge",     label: "Merge IDs" },
   { value: "overwrite", label: "Overwrite existing" },
-  { value: "merge", label: "Merge IDs" },
 ];
 
 const EXPORT_FORMATS = [
@@ -91,274 +93,265 @@ export default function ImportExportPage() {
 // IMPORT TAB
 // ═══════════════════════════════════════════════════════════════════════════
 
-interface PreviewRow {
+interface PreviewUser {
+  discord_name?: string;
   discord_id?: string;
-  steam_id?: string;
-  eos_id?: string;
+  steam_ids?: string[];
+  eos_ids?: string[];
+  plan?: string;
   status?: string;
+}
+
+interface PreviewSummary {
+  total_users: number;
+  total_ids: number;
+  new: number;
+  existing: number;
+  invalid: number;
 }
 
 function ImportTab() {
   const { data: whitelists } = useWhitelists();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [isDragOver, setIsDragOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [pasteContent, setPasteContent] = useState("");
   const [targetWhitelist, setTargetWhitelist] = useState("");
   const [format, setFormat] = useState("auto");
-  const [duplicateMode, setDuplicateMode] = useState("skip");
+  const [duplicateMode, setDuplicateMode] = useState("merge");
+  const [preview, setPreview] = useState<PreviewUser[]>([]);
+  const [summary, setSummary] = useState<PreviewSummary | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
-  // Auto-select the default whitelist when whitelists load
   useEffect(() => {
     if (!whitelists?.length || targetWhitelist) return;
     const def = whitelists.find((w: { slug: string }) => w.slug === "default") ?? whitelists[0];
     if (def) setTargetWhitelist(def.slug);
   }, [whitelists]);
-  const [preview, setPreview] = useState<PreviewRow[]>([]);
-  const [importing, setImporting] = useState(false);
 
   function handleFileDrop(e: React.DragEvent) {
     e.preventDefault();
+    setIsDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
+    if (dropped) { setFile(dropped); setPasteContent(""); }
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
-    if (selected) setFile(selected);
+    if (selected) { setFile(selected); setPasteContent(""); }
+  }
+
+  function buildFormData() {
+    const fd = new FormData();
+    if (file) fd.append("file", file);
+    else fd.append("content", pasteContent);
+    fd.append("format", format);
+    fd.append("whitelist_slug", targetWhitelist);
+    return fd;
   }
 
   async function handlePreview() {
-    if (!targetWhitelist) {
-      toast.error("Please select a target whitelist");
-      return;
-    }
-
+    if (!file && !pasteContent.trim()) { toast.error("Upload a file or paste content first"); return; }
+    if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
+    if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
+    setPreviewing(true);
     try {
-      const formData = new FormData();
-      if (file) {
-        formData.append("file", file);
-      } else if (pasteContent) {
-        formData.append("content", pasteContent);
-      } else {
-        toast.error("Please upload a file or paste content");
-        return;
-      }
-      formData.append("format", format);
-      formData.append("whitelist_slug", targetWhitelist);
-
       const res = await fetch("/api/admin/import/preview", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
+        method: "POST", credentials: "include", body: buildFormData(),
       });
-
-      if (!res.ok) throw new Error("Preview failed");
       const data = await res.json();
-      setPreview(data.rows ?? []);
-      toast.success(`Preview: ${data.rows?.length ?? 0} entries`);
-    } catch {
-      toast.error("Failed to generate preview");
+      if (!res.ok) throw new Error(data.error || "Preview failed");
+      setPreview(data.users ?? []);
+      setSummary(data.summary ?? null);
+      const s = data.summary;
+      toast.success(`Preview: ${s?.total_users ?? data.users?.length ?? 0} entries — ${s?.new ?? 0} new, ${s?.existing ?? 0} existing, ${s?.invalid ?? 0} invalid`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Preview failed");
+    } finally {
+      setPreviewing(false);
     }
   }
 
   async function handleImport() {
-    if (!targetWhitelist) return;
+    if (!file && !pasteContent.trim()) { toast.error("Upload a file or paste content first"); return; }
+    if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
+    if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setImporting(true);
     try {
-      const formData = new FormData();
-      if (file) {
-        formData.append("file", file);
-      } else if (pasteContent) {
-        formData.append("content", pasteContent);
-      }
-      formData.append("format", format);
-      formData.append("whitelist_slug", targetWhitelist);
-      formData.append("duplicate_mode", duplicateMode);
-
+      const fd = buildFormData();
+      fd.append("duplicate_mode", duplicateMode);
       const res = await fetch("/api/admin/import", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
+        method: "POST", credentials: "include", body: fd,
       });
-
-      if (!res.ok) throw new Error("Import failed");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
       const total = (data.added ?? 0) + (data.updated ?? 0);
-      toast.success(`Imported ${total} entries (${data.added ?? 0} new, ${data.updated ?? 0} updated, ${data.skipped ?? 0} skipped)`);
-      setPreview([]);
-      setFile(null);
-      setPasteContent("");
-    } catch {
-      toast.error("Import failed");
+      toast.success(`Imported ${total} entries — ${data.added ?? 0} new, ${data.updated ?? 0} updated, ${data.skipped ?? 0} skipped`);
+      setPreview([]); setSummary(null); setFile(null); setPasteContent("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
     } finally {
       setImporting(false);
     }
   }
 
+  const hasData = !!(file || pasteContent.trim());
+
   return (
-    <div className="space-y-6 pt-4">
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* File Upload Zone */}
+    <div className="space-y-4 pt-4">
+      {/* ── Controls row at top ── */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label>Target Whitelist</Label>
+          <Select value={targetWhitelist} onValueChange={(v) => setTargetWhitelist(v ?? "")}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Select whitelist" /></SelectTrigger>
+            <SelectContent>
+              {whitelists?.map((wl) => (
+                <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Format</Label>
+          <Select value={format} onValueChange={(v) => setFormat(v ?? "auto")}>
+            <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {IMPORT_FORMATS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Duplicate Handling</Label>
+          <Select value={duplicateMode} onValueChange={(v) => setDuplicateMode(v ?? "merge")}>
+            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {DUPLICATE_MODES.map((m) => (
+                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex gap-2 pb-0.5">
+          <Button variant="outline" onClick={handlePreview} disabled={!hasData || previewing}>
+            {previewing ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Previewing…</> : "Preview"}
+          </Button>
+          <Button onClick={handleImport} disabled={importing || !hasData}>
+            {importing
+              ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Importing…</>
+              : <><Upload className="mr-1.5 h-3.5 w-3.5" />Import</>}
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Upload + Paste ── */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Upload File</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Upload File</CardTitle></CardHeader>
           <CardContent>
             <div
               className={cn(
-                "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-white/[0.10] p-8 text-center transition-colors",
-                "hover:border-white/[0.20]"
+                "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors select-none",
+                isDragOver
+                  ? "border-[color:var(--accent-primary)] bg-[color:var(--accent-primary)]/5"
+                  : file
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : "border-white/[0.10] hover:border-white/[0.22]"
               )}
-              onDragOver={(e) => e.preventDefault()}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={() => setIsDragOver(false)}
               onDrop={handleFileDrop}
               onClick={() => fileInputRef.current?.click()}
             >
-              <FileUp className="h-8 w-8 text-muted-foreground" />
-              {file ? (
-                <p className="text-sm font-medium">{file.name}</p>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Drag & drop a file here, or click to browse
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    CSV, CFG, or TXT
-                  </p>
-                </>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept=".csv,.cfg,.txt"
-                onChange={handleFileSelect}
-              />
+              <FileUp className={cn("h-8 w-8", file ? "text-emerald-400" : "text-muted-foreground")} />
+              {file
+                ? <p className="text-sm font-medium text-emerald-400">{file.name}</p>
+                : <>
+                    <p className="text-sm text-muted-foreground">Drag & drop a file here, or click to browse</p>
+                    <p className="text-xs text-muted-foreground">CSV · CFG · TXT</p>
+                  </>
+              }
+              <input ref={fileInputRef} type="file" className="hidden" accept=".csv,.cfg,.txt" onChange={handleFileSelect} />
             </div>
+            {file && (
+              <button className="mt-2 text-xs text-muted-foreground hover:text-white" onClick={(e) => { e.stopPropagation(); setFile(null); }}>
+                Clear file
+              </button>
+            )}
           </CardContent>
         </Card>
 
-        {/* Paste Area */}
         <Card>
-          <CardHeader>
-            <CardTitle>Or Paste Content</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Or Paste Content</CardTitle></CardHeader>
           <CardContent>
             <Textarea
               value={pasteContent}
-              onChange={(e) => setPasteContent(e.target.value)}
-              placeholder="Paste whitelist content here..."
-              className="min-h-[140px]"
+              onChange={(e) => { setPasteContent(e.target.value); if (e.target.value) setFile(null); }}
+              placeholder={"Paste any format:\n\nAdmin=76561198212353664:reserve //Name\n76561198212353664\ndiscord_name,steam_id\nname,discord_id  ← use Reconcile tab"}
+              className="min-h-[148px] font-mono text-xs"
             />
           </CardContent>
         </Card>
       </div>
 
-      {/* Options */}
-      <div className="flex flex-wrap gap-4">
-        <div className="space-y-2">
-          <Label>Target Whitelist</Label>
-          <Select value={targetWhitelist} onValueChange={(v) => setTargetWhitelist(v ?? "")}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Select whitelist" />
-            </SelectTrigger>
-            <SelectContent>
-              {whitelists?.map((wl) => (
-                <SelectItem key={wl.slug} value={wl.slug}>
-                  {wl.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* ── Preview summary chips ── */}
+      {summary && (
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-md bg-white/5 px-3 py-1 text-xs">{summary.total_users} total</span>
+          <span className="rounded-md bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">{summary.new} new</span>
+          {summary.existing > 0 && <span className="rounded-md bg-amber-500/10 px-3 py-1 text-xs text-amber-400">{summary.existing} existing</span>}
+          {summary.invalid > 0 && <span className="rounded-md bg-red-500/10 px-3 py-1 text-xs text-red-400">{summary.invalid} invalid</span>}
+          <span className="rounded-md bg-white/5 px-3 py-1 text-xs">{summary.total_ids} IDs</span>
         </div>
+      )}
 
-        <div className="space-y-2">
-          <Label>Format</Label>
-          <Select value={format} onValueChange={(v) => setFormat(v ?? "auto")}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {IMPORT_FORMATS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  {f.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label>Duplicate Handling</Label>
-          <Select value={duplicateMode} onValueChange={(v) => setDuplicateMode(v ?? "skip")}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DUPLICATE_MODES.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={handlePreview}>
-          Preview Import
-        </Button>
-        <Button
-          onClick={handleImport}
-          disabled={importing || (!file && !pasteContent)}
-        >
-          <Upload className="mr-1.5 h-3.5 w-3.5" />
-          Import
-        </Button>
-      </div>
-
-      {/* Preview Table */}
+      {/* ── Preview table ── */}
       {preview.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Preview ({preview.length} entries)</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm">Preview — {preview.length} entries</CardTitle></CardHeader>
           <CardContent>
             <div className="rounded-lg border border-white/[0.06]">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Name</TableHead>
                     <TableHead>Discord ID</TableHead>
-                    <TableHead>Steam ID</TableHead>
-                    <TableHead>EOS ID</TableHead>
+                    <TableHead>Steam ID(s)</TableHead>
+                    <TableHead>EOS ID(s)</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.slice(0, 50).map((row, i) => (
+                  {preview.slice(0, 100).map((user, i) => (
                     <TableRow key={i}>
-                      <TableCell className="font-mono text-xs">
-                        {row.discord_id ?? "—"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.steam_id ?? "—"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.eos_id ?? "—"}
-                      </TableCell>
+                      <TableCell className="text-xs">{user.discord_name || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{user.discord_id || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{user.steam_ids?.length ? user.steam_ids.join(", ") : "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{user.eos_ids?.length ? user.eos_ids.join(", ") : "—"}</TableCell>
                       <TableCell className="text-xs">
-                        {row.status ?? "new"}
+                        <span className={cn(
+                          "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          user.status === "new"      && "bg-emerald-500/15 text-emerald-400",
+                          user.status === "existing" && "bg-amber-500/15 text-amber-400",
+                          user.status === "invalid"  && "bg-red-500/15 text-red-400",
+                        )}>
+                          {user.status ?? "new"}
+                        </span>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-            {preview.length > 50 && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Showing first 50 of {preview.length} entries
-              </p>
+            {preview.length > 100 && (
+              <p className="mt-2 text-xs text-muted-foreground">Showing 100 of {preview.length}</p>
             )}
           </CardContent>
         </Card>
