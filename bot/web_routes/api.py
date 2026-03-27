@@ -2064,29 +2064,35 @@ async def admin_import_preview(request: web.Request) -> web.Response:
             part = await reader.next()
             if part is None:
                 break
-            if part.name in ("data", "file", "paste_data"):
+            if part.name in ("data", "file", "paste_data", "content"):
                 data = (await part.read(decode=True)).decode("utf-8", errors="replace")
             elif part.name == "format":
                 fmt = (await part.read(decode=True)).decode().strip()
-            elif part.name in ("whitelist_type", "type"):
+            elif part.name in ("whitelist_type", "type", "whitelist_slug"):
                 wl_type = (await part.read(decode=True)).decode().strip()
             elif part.name == "column_map":
                 column_map_raw = (await part.read(decode=True)).decode().strip()
-            elif part.name == "duplicate_handling":
+            elif part.name in ("duplicate_handling", "duplicate_mode"):
                 pass  # Used in import, not preview
     else:
         try:
             body = await request.json()
         except Exception:
             return web.json_response({"error": "Invalid request body."}, status=400)
-        data = body.get("data", "") or body.get("paste_data", "")
+        data = body.get("data", "") or body.get("paste_data", "") or body.get("content", "")
         fmt = body.get("format", "csv")
-        wl_type = body.get("whitelist_type", "") or body.get("type", "")
+        wl_type = body.get("whitelist_type", "") or body.get("type", "") or body.get("whitelist_slug", "")
         column_map_raw = ""
         if "column_map" in body:
             column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
         if isinstance(body.get("plan_map"), dict):
             plan_map = {k: int(v) for k, v in body["plan_map"].items()}
+
+    # Normalise format aliases sent from the frontend
+    if fmt == "cfg":
+        fmt = "squad_cfg"
+    elif fmt == "auto" or fmt not in ("csv", "squad_cfg"):
+        fmt = "csv"
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -2095,8 +2101,6 @@ async def admin_import_preview(request: web.Request) -> web.Response:
         valid_slugs = await _get_whitelist_slugs(bot.db, guild_id)
         return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(valid_slugs)}"}, status=400)
     wl_id = wl["id"]
-    if fmt not in ("csv", "squad_cfg"):
-        return web.json_response({"error": "format must be 'csv' or 'squad_cfg'."}, status=400)
 
     # Parse column_map if provided
     column_map: dict[str, str] | None = None
@@ -2169,13 +2173,13 @@ async def admin_import(request: web.Request) -> web.Response:
             part = await reader.next()
             if part is None:
                 break
-            if part.name in ("data", "file", "paste_data"):
+            if part.name in ("data", "file", "paste_data", "content"):
                 data = (await part.read(decode=True)).decode("utf-8", errors="replace")
             elif part.name == "format":
                 fmt = (await part.read(decode=True)).decode().strip()
-            elif part.name in ("whitelist_type", "type"):
+            elif part.name in ("whitelist_type", "type", "whitelist_slug"):
                 wl_type = (await part.read(decode=True)).decode().strip()
-            elif part.name == "duplicate_handling":
+            elif part.name in ("duplicate_handling", "duplicate_mode"):
                 dup_handling = (await part.read(decode=True)).decode().strip()
             elif part.name == "column_map":
                 column_map_raw = (await part.read(decode=True)).decode().strip()
@@ -2184,16 +2188,26 @@ async def admin_import(request: web.Request) -> web.Response:
             body = await request.json()
         except Exception:
             return web.json_response({"error": "Invalid request body."}, status=400)
-        data = body.get("data", "") or body.get("paste_data", "")
+        data = body.get("data", "") or body.get("paste_data", "") or body.get("content", "")
         fmt = body.get("format", "csv")
-        wl_type = body.get("whitelist_type", "") or body.get("type", "")
-        dup_handling = body.get("duplicate_handling", "skip")
+        wl_type = body.get("whitelist_type", "") or body.get("type", "") or body.get("whitelist_slug", "")
+        dup_handling = body.get("duplicate_handling", "") or body.get("duplicate_mode", "skip")
         column_map_raw = ""
         if "column_map" in body:
             column_map_raw = json.dumps(body["column_map"]) if isinstance(body["column_map"], dict) else body["column_map"]
         plan_map = None
         if isinstance(body.get("plan_map"), dict):
             plan_map = {k: int(v) for k, v in body["plan_map"].items()}
+
+    # Normalise format aliases sent from the frontend
+    if fmt == "cfg":
+        fmt = "squad_cfg"
+    elif fmt == "auto" or fmt not in ("csv", "squad_cfg"):
+        fmt = "csv"
+
+    # Normalise dup_handling aliases
+    if dup_handling not in ("skip", "overwrite", "merge"):
+        dup_handling = "skip"
 
     if not data:
         return web.json_response({"error": "No data provided."}, status=400)
@@ -2202,10 +2216,6 @@ async def admin_import(request: web.Request) -> web.Response:
         valid_slugs = await _get_whitelist_slugs(bot.db, guild_id)
         return web.json_response({"error": f"Invalid whitelist_type. Must be one of: {', '.join(valid_slugs)}"}, status=400)
     wl_id = wl["id"]
-    if fmt not in ("csv", "squad_cfg"):
-        return web.json_response({"error": "format must be 'csv' or 'squad_cfg'."}, status=400)
-    if dup_handling not in ("skip", "overwrite", "merge"):
-        return web.json_response({"error": "duplicate_handling must be 'skip', 'overwrite', or 'merge'."}, status=400)
 
     # Parse column_map if provided
     column_map: dict[str, str] | None = None
