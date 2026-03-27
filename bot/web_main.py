@@ -131,6 +131,15 @@ class DiscordRESTClient:
             log.warning("Failed to edit message %s in channel %s: %s", message_id, channel_id, resp.status)
             return None
 
+    async def delete_message(self, channel_id: int, message_id: int) -> bool:
+        """Delete a message via REST API."""
+        await self._ensure_session()
+        async with self._session.delete(
+            f"{self.API_BASE}/channels/{channel_id}/messages/{message_id}",
+            headers=self._headers,
+        ) as resp:
+            return resp.status == 204
+
     async def fetch_guild_member(self, guild_id: int, user_id: int) -> dict | None:
         """Fetch a specific guild member."""
         await self._ensure_session()

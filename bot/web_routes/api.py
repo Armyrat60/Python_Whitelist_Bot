@@ -3816,51 +3816,52 @@ async def admin_push_panel(request: web.Request) -> web.Response:
 
     # Build the panel embed
     wl = await db.get_whitelist(panel["whitelist_id"])
-    wl_name = wl["name"] if wl else "Whitelist"
+    wl_slug = wl["slug"] if wl else "default"
+
+    # Use just the panel name as title (user-controlled), strip any leading "Default "
+    panel_display = re.sub(r'^\s*Default\s+', '', panel['name']).strip() or panel['name']
 
     # Get tiers: prefer tier_category_id on panel, fall back to role_mappings
-    # Use plain text names (not role mentions) to avoid pinging members on embed update
+    # Use role mentions so Discord renders colored role pills; pings suppressed via allowed_mentions
     tier_lines = []
     if panel.get("tier_category_id"):
         tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
+        tier_entries = sorted([te for te in tier_entries if bool(te[6])], key=lambda te: te[3])
         for te in tier_entries:
-            if not bool(te[6]):
-                continue
-            display = te[4] or te[2]  # display_name or role_name
+            role_id = te[1]
             slots = te[3]
-            tier_lines.append(f"**{display}** — {slots} {'slot' if slots == 1 else 'slots'}")
+            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
     else:
         role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
         for rm in role_mappings:
-            if isinstance(rm, tuple):
-                name = rm[1] if len(rm) > 1 else "Unknown"
-                slots = rm[2] if len(rm) > 2 else 1
-            else:
-                name = rm.get("role_name", "Unknown")
-                slots = rm.get("slot_limit", 1)
-            tier_lines.append(f"**{name}** — {slots} {'slot' if slots == 1 else 'slots'}")
+            role_id = rm[0] if isinstance(rm, tuple) else rm.get("role_id", 0)
+            slots = rm[2] if isinstance(rm, tuple) else rm.get("slot_limit", 1)
+            is_active = rm[3] if isinstance(rm, tuple) else rm.get("is_active", True)
+            if not is_active:
+                continue
+            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
 
-    _domain = WEB_BASE_URL.replace("https://", "").replace("http://", "") if WEB_BASE_URL else "squadwhitelister.com"
-    wl_slug = wl["slug"] if wl else "default"
+    _base_url = WEB_BASE_URL or "https://squadwhitelister.com"
+    _domain = _base_url.replace("https://", "").replace("http://", "").rstrip("/")
 
     description = "Use the buttons below to manage your whitelist entry.\n\n"
     if tier_lines:
         description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
     description += (
-        "🛡️ **Manage Whitelist** — View your entry, edit or clear your IDs\n"
-        "⚙️ **Manager Tools** — Admin lookup and management (mods only)\n\n"
-        f"🌐 Web Dashboard: **{_domain}**"
+        "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
+        "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
+        f"🌐 [**{_domain}**]({_base_url})"
     )
 
     embed = {
-        "title": f"🛡️ {panel['name']} — {wl_name}",
+        "title": f"🛡️ {panel_display}",
         "description": description,
         "color": 0xF97316,  # Orange
         "footer": {"text": f"Squad Whitelister • {_domain}"},
     }
 
-    # Build interactive button components
-    # These custom_ids match the bot-worker's persistent views, so the bot handles clicks
+    # Both buttons in a single ACTION_ROW so they appear side-by-side
+    # custom_ids match the bot-worker's persistent views so the bot handles clicks
     components = [
         {
             "type": 1,  # ACTION_ROW
@@ -3872,11 +3873,6 @@ async def admin_push_panel(request: web.Request) -> web.Response:
                     "emoji": {"name": "🛡️"},
                     "custom_id": f"panel:submit:{wl_slug}",
                 },
-            ],
-        },
-        {
-            "type": 1,  # ACTION_ROW
-            "components": [
                 {
                     "type": 2,  # BUTTON
                     "style": 2,  # SECONDARY (gray)
