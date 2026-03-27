@@ -542,11 +542,15 @@ async def admin_users(request: web.Request) -> web.Response:
     wl_type = (request.query.get("type") or request.query.get("whitelist") or "").strip()
     status = request.query.get("status", "").strip()
     tier_filter = request.query.get("tier", "").strip()
+    unlinked_only = request.query.get("unlinked", "").lower() in ("1", "true", "yes")
     page = max(1, int(request.query.get("page", "1")))
     per_page = min(100, max(1, int(request.query.get("per_page", "25"))))
 
     conditions = ["u.guild_id=%s"]
     params: list = [guild_id]
+
+    if unlinked_only:
+        conditions.append("u.discord_id < 0")
 
     if search:
         cast_expr = "CAST(u.discord_id AS TEXT)" if db.engine == "postgres" else "CAST(u.discord_id AS CHAR)"

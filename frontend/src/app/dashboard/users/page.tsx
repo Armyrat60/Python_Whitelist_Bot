@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardHeader,
@@ -446,7 +447,7 @@ function BulkActionBar({
     <div
       className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-fit items-center gap-2 rounded-2xl border px-5 py-3 shadow-2xl backdrop-blur-md"
       style={{
-        background: "color-mix(in srgb, oklch(0.13 0.015 240) 92%, transparent)",
+        background: "color-mix(in srgb, oklch(0.185 0.013 285) 92%, transparent)",
         borderColor: "rgba(255,255,255,0.10)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset",
       }}
@@ -884,7 +885,29 @@ export default function UsersPage() {
           </Button>
         </div>
 
+        {/* Linked / Unlinked toggle */}
+        <div className="flex rounded-md border border-border text-xs">
+          <Button
+            variant={!filters.unlinked ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-r-none px-3 h-8"
+            onClick={() => { setFilters((p) => ({ ...p, unlinked: "" })); setPage(1); }}
+          >
+            All
+          </Button>
+          <Button
+            variant={filters.unlinked === "true" ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-l-none px-3 h-8"
+            onClick={() => { setFilters((p) => ({ ...p, unlinked: "true" })); setPage(1); }}
+            title="Show only entries with no Discord account linked"
+          >
+            Unlinked
+          </Button>
+        </div>
+
         <AddUserDialog whitelists={whitelists ?? []} />
+        <AddSteamEntryDialog whitelists={whitelists ?? []} />
         <Button variant="outline" size="sm" onClick={loadGapReport} disabled={gapLoading}>
           {gapLoading ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -1017,7 +1040,11 @@ export default function UsersPage() {
         <SheetContent>
           <SheetHeader>
             <SheetTitle>{selectedUser?.discord_name ?? "User"}</SheetTitle>
-            <SheetDescription>{selectedUser?.discord_id}</SheetDescription>
+            <SheetDescription>
+              {selectedUser && parseInt(selectedUser.discord_id) < 0
+                ? "No Discord account linked"
+                : selectedUser?.discord_id}
+            </SheetDescription>
           </SheetHeader>
           {selectedUser && (
             <UserDetailSheet
@@ -1873,6 +1900,117 @@ function UserDetailSheet({
         </AlertDialog>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Add Steam Entry Dialog — no Discord required                       */
+/* ------------------------------------------------------------------ */
+
+function AddSteamEntryDialog({
+  whitelists,
+}: {
+  whitelists: { slug: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [whitelistSlug, setWhitelistSlug] = useState(whitelists[0]?.slug ?? "");
+  const [ids, setIds] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const queryClient = useQueryClient();
+
+  function reset() {
+    setName(""); setIds(""); setSubmitting(false);
+  }
+
+  async function handleAdd() {
+    if (!name.trim()) { toast.error("Name is required"); return; }
+    if (!ids.trim()) { toast.error("At least one Steam64 or EOS ID is required"); return; }
+    if (!whitelistSlug) { toast.error("Select a whitelist"); return; }
+
+    const parsed = ids.split(/[\s,\n]+/).map((s) => s.trim()).filter(Boolean);
+    const steamIds = parsed.filter((s) => /^7656119\d{10}$/.test(s));
+    const eosIds = parsed.filter((s) => /^[0-9a-f]{32}$/i.test(s));
+    const invalid = parsed.filter((s) => !steamIds.includes(s) && !eosIds.includes(s));
+
+    if (invalid.length > 0) {
+      toast.error(`Invalid IDs: ${invalid.join(", ")}`);
+      return;
+    }
+    if (steamIds.length === 0 && eosIds.length === 0) {
+      toast.error("No valid IDs found");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post("/api/admin/users", {
+        discord_name: name.trim(),
+        whitelist_slug: whitelistSlug,
+        steam_ids: steamIds,
+        eos_ids: eosIds,
+      });
+      toast.success(`Added ${name.trim()} — ${steamIds.length + eosIds.length} ID(s)`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      reset();
+      setOpen(false);
+    } catch {
+      toast.error("Failed to add entry");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Steam Entry
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Steam / EOS Entry</DialogTitle>
+          <DialogDescription>
+            Add a player by Steam64 or EOS ID without requiring a Discord account.
+            They can claim this record later via the bot panel.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Player Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Armyrat60" />
+          </div>
+          <div className="space-y-2">
+            <Label>Whitelist</Label>
+            <Select value={whitelistSlug} onValueChange={(v) => setWhitelistSlug(v ?? "")}>
+              <SelectTrigger><SelectValue placeholder="Select whitelist" /></SelectTrigger>
+              <SelectContent>
+                {whitelists.map((wl) => (
+                  <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Steam64 / EOS IDs</Label>
+            <Textarea
+              value={ids}
+              onChange={(e) => setIds(e.target.value)}
+              placeholder={"76561198012345678\n76561198012345679"}
+              rows={3}
+              className="font-mono text-xs"
+            />
+            <p className="text-[11px] text-muted-foreground">One per line, or comma-separated. Steam64 = 17 digits starting with 7656119. EOS = 32 hex chars.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={handleAdd} disabled={submitting}>
+            {submitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Add Entry
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
