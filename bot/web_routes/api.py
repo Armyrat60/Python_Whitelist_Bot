@@ -226,18 +226,26 @@ async def get_my_whitelists_all(request: web.Request) -> web.Response:
     discord_id = int(session["discord_id"])
     db = bot.db
 
-    # Fetch user's Discord roles via REST API
+    # Fetch user's Discord roles — try guild cache first (bot-worker), fall back to REST API
     member_role_ids = set()
     try:
-        if hasattr(bot, "get_member_roles"):
-            roles = await bot.get_member_roles(guild_id, discord_id)
-            member_role_ids = {int(r) for r in roles}
-        elif hasattr(bot, "get_guild"):
-            guild = bot.get_guild(guild_id)
-            if guild:
-                member = guild.get_member(discord_id)
-                if member:
-                    member_role_ids = {r.id for r in member.roles}
+        guild_cache = bot.get_guild(guild_id) if hasattr(bot, "get_guild") else None
+        member = guild_cache.get_member(discord_id) if guild_cache else None
+        if member:
+            member_role_ids = {r.id for r in member.roles}
+        else:
+            # Web service has no gateway cache — use Discord REST API
+            from bot.config import DISCORD_TOKEN as _BOT_TOKEN
+            if _BOT_TOKEN:
+                async with _aiohttp.ClientSession() as _http:
+                    async with _http.get(
+                        f"https://discord.com/api/v10/guilds/{guild_id}/members/{discord_id}",
+                        headers={"Authorization": f"Bot {_BOT_TOKEN}"},
+                        timeout=_aiohttp.ClientTimeout(total=5),
+                    ) as _resp:
+                        if _resp.status == 200:
+                            _data = await _resp.json()
+                            member_role_ids = {int(r) for r in _data.get("roles", [])}
     except Exception:
         pass
 
@@ -274,7 +282,20 @@ async def get_my_whitelists_all(request: web.Request) -> web.Response:
                     slots = winner[1]
                     tier_name = winner[0]
 
-        # Fall back to default if no tier match
+        # Fall back to role_mappings if no tier category match
+        if slots <= 0 and member_role_ids:
+            rm_rows = await db.fetchall(
+                "SELECT role_id, role_name, slot_limit FROM role_mappings "
+                "WHERE guild_id=%s AND whitelist_id=%s AND is_active=%s",
+                (guild_id, wl_id, True if db.engine == "postgres" else 1),
+            )
+            for rm in (rm_rows or []):
+                if int(rm[0]) in member_role_ids:
+                    tier_name = rm[1]
+                    slots = int(rm[2])
+                    break
+
+        # Fall back to default slot limit
         if slots <= 0:
             slots = int(wl.get("default_slot_limit", 1))
 
@@ -283,7 +304,7 @@ async def get_my_whitelists_all(request: web.Request) -> web.Response:
         steam_ids = [row[1] for row in identifiers if row[0] == "steam64"]
         eos_ids = [row[1] for row in identifiers if row[0] == "eosid"]
 
-        # Only include if user has a tier match OR has existing entries
+        # Show if user has a tier/role match OR has existing entries
         if tier_name or identifiers:
             results.append({
                 "whitelist_slug": wl["slug"],
@@ -383,15 +404,9 @@ async def update_my_whitelist(request: web.Request) -> web.Response:
         slot_limit = user_record[3]
 
     total_ids = len(steam_ids) + len(eos_ids)
-    # Each "slot" allows one steam + one eos pair, so check max of each
-    if len(steam_ids) > slot_limit:
+    if total_ids > slot_limit:
         return web.json_response(
-            {"error": f"Too many Steam IDs. Your limit is {slot_limit}."},
-            status=400,
-        )
-    if len(eos_ids) > slot_limit:
-        return web.json_response(
-            {"error": f"Too many EOS IDs. Your limit is {slot_limit}."},
+            {"error": f"Too many IDs. Your slot limit is {slot_limit} total."},
             status=400,
         )
 
@@ -3530,6 +3545,7 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/my-whitelist", get_my_whitelists_all)
     app.router.add_get("/api/my-whitelist/{type}", get_my_whitelist)
     app.router.add_post("/api/my-whitelist/{type}", update_my_whitelist)
+    app.router.add_put("/api/my-whitelist/{type}", update_my_whitelist)
     # Admin API
     app.router.add_get("/api/admin/stats", admin_stats)
     app.router.add_get("/api/admin/users", admin_users)
