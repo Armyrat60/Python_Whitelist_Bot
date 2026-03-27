@@ -158,6 +158,54 @@ function TierBadge({ tier, whitelist }: { tier: string | null | undefined; white
   );
 }
 
+/** Registration source chip — how the user was first added */
+function RegSourceChip({ source }: { source?: string }) {
+  if (!source || source === "admin") return null;
+  const cfgs: Record<string, { label: string; bg: string; border: string; color: string }> = {
+    self_register: { label: "Self Reg",  bg: "rgba(34,197,94,0.12)",  border: "rgba(34,197,94,0.30)",  color: "#4ADE80" },
+    role_sync:     { label: "Role Sync", bg: "rgba(168,85,247,0.12)", border: "rgba(168,85,247,0.30)", color: "#C084FC" },
+    import:        { label: "Import",    bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.28)", color: "#94A3B8" },
+    web_dashboard: { label: "Dashboard", bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.28)", color: "#7DD3FC" },
+    admin_web:     { label: "Admin",     bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.28)", color: "#94A3B8" },
+    orphan:        { label: "Unmatched", bg: "rgba(251,146,60,0.12)", border: "rgba(251,146,60,0.30)", color: "#FB923C" },
+  };
+  const c = cfgs[source];
+  if (!c) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
+      style={{ background: c.bg, borderColor: c.border, color: c.color }}
+    >
+      {c.label}
+    </span>
+  );
+}
+
+/** Temp whitelist chip — shown when user has an expiry date */
+function TempChip({ expiresAt, createdAt }: { expiresAt?: string | null; createdAt?: string }) {
+  if (!expiresAt) return null;
+  const exp = new Date(expiresAt);
+  const now = new Date();
+  const isExpired = exp < now;
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+  const label = isExpired
+    ? `Temp · exp ${fmt(exp)}`
+    : `Temp · ${createdAt ? fmt(new Date(createdAt)) + " → " : ""}${fmt(exp)}`;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
+      style={{
+        background: isExpired ? "rgba(239,68,68,0.10)" : "rgba(251,146,60,0.10)",
+        borderColor: isExpired ? "rgba(239,68,68,0.30)" : "rgba(251,146,60,0.30)",
+        color: isExpired ? "#F87171" : "#FB923C",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** Slot visualization — dot + count + slim progress bar */
 function SlotBar({ used, total }: { used: number; total: number }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
@@ -1087,6 +1135,10 @@ function UserListView({
               </span>
               <span className="hidden w-28 text-center sm:block">
                 <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+              </span>
+              <span className="hidden gap-1.5 lg:flex">
+                <RegSourceChip source={user.registration_source} />
+                <TempChip expiresAt={user.expires_at} createdAt={user.created_at} />
               </span>
               <span className="w-20 text-center">
                 <StatusBadge status={user.status} />

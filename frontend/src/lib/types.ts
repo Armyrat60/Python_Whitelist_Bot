@@ -112,6 +112,8 @@ export interface WhitelistUser {
   eos_ids: string[];
   updated_at: string;
   created_at: string;
+  /** How this user was first added: self_register | role_sync | import | web_dashboard | admin_web | admin | orphan */
+  registration_source?: string;
 }
 
 export interface AuditEntry {

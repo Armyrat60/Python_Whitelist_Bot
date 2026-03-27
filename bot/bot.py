@@ -684,13 +684,39 @@ class WhitelistBot(commands.Bot):
         guild_id = member.guild.id
         whitelists = await self.db.get_whitelists(guild_id)
         panels = await self.db.get_panels(guild_id)
+        member_role_ids = {r.id for r in member.roles}
         for wl in whitelists:
             if not wl["enabled"]:
                 continue
             whitelist_id = wl["id"]
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
-                continue
+                # Auto-enroll: if member gained a role mapped to this whitelist, add them
+                role_mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
+                if role_mappings:
+                    active_mapped = {rm[0] for rm in role_mappings if rm[3]}  # role_id where is_active
+                    if active_mapped & member_role_ids:
+                        name = member.display_name or str(member)
+                        default_slot = wl.get("default_slot_limit") or 1
+                        await self.db.upsert_user_record(
+                            guild_id, member.id, whitelist_id, name, "active", default_slot, "", None
+                        )
+                        await self.db.audit(
+                            guild_id, "auto_enroll_role_gain", None, member.id,
+                            f"type={wl['slug']}", whitelist_id,
+                        )
+                        await self.send_log_embed(
+                            guild_id, whitelist_id, "Auto-Enrolled",
+                            f"<@{member.id}> gained a mapped role — added to **{wl['slug']}** whitelist.",
+                            discord.Color.green(),
+                        )
+                        user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
+                        if not user_record:
+                            continue
+                    else:
+                        continue
+                else:
+                    continue
             # Find panel with tier_category for this whitelist
             panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
             slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl, panel=panel)
@@ -744,6 +770,74 @@ class WhitelistBot(commands.Bot):
             purged = await self.db.purge_inactive_older_than(guild_id, retention)
             if purged:
                 log.info("Purged %s inactive records older than %s days for guild %s", purged, retention, guild_id)
+            # Role-based membership sync — catch any changes missed by on_member_update
+            try:
+                await self._daily_role_sync(guild)
+            except Exception as e:
+                log.error("Guild %s: daily role sync failed: %s", guild_id, e)
+
+    async def _daily_role_sync(self, guild: "discord.Guild") -> None:
+        """Ensure whitelist membership matches Discord role membership for all mapped roles."""
+        guild_id = guild.id
+        all_mappings = await self.db.get_role_mappings(guild_id)  # all whitelists
+        if not all_mappings:
+            return
+
+        # Group active role_ids by whitelist_id
+        by_whitelist: dict[int, list[int]] = {}
+        for row in all_mappings:
+            wl_id, role_id, _name, _slots, is_active = row[0], row[1], row[2], row[3], row[4]
+            if is_active and wl_id:
+                by_whitelist.setdefault(wl_id, []).append(role_id)
+
+        whitelists = {wl["id"]: wl for wl in await self.db.get_whitelists(guild_id)}
+
+        for wl_id, role_ids in by_whitelist.items():
+            wl = whitelists.get(wl_id)
+            if not wl or not wl["enabled"]:
+                continue
+
+            existing_rows = await self.db.fetchall(
+                "SELECT discord_id, status FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+                (guild_id, wl_id),
+            )
+            existing: dict[int, str] = {row[0]: row[1] for row in (existing_rows or [])}
+
+            # Collect all members currently holding any mapped role
+            role_member_ids: set[int] = set()
+            for role_id in role_ids:
+                role = guild.get_role(role_id)
+                if role:
+                    role_member_ids.update(m.id for m in role.members)
+
+            default_slot = wl.get("default_slot_limit") or 1
+            added = removed = 0
+
+            # Add anyone with the role who isn't in the whitelist yet
+            for member_id in role_member_ids:
+                if member_id not in existing:
+                    member = guild.get_member(member_id)
+                    if not member:
+                        continue
+                    name = member.display_name or str(member)
+                    await self.db.upsert_user_record(
+                        guild_id, member_id, wl_id, name, "active", default_slot, "", None
+                    )
+                    await self.db.audit(guild_id, "daily_role_sync_add", None, member_id,
+                                        f"type={wl['slug']}", wl_id)
+                    added += 1
+
+            # Disable active members who no longer hold any mapped role
+            for member_id, status in existing.items():
+                if member_id > 0 and member_id not in role_member_ids and status == "active":
+                    await self.db.set_user_status(guild_id, member_id, wl_id, "disabled_role_lost")
+                    await self.db.audit(guild_id, "daily_role_sync_remove", None, member_id,
+                                        f"type={wl['slug']}", wl_id)
+                    removed += 1
+
+            if added or removed:
+                log.info("Guild %s daily role sync %s: +%d -%d", guild_id, wl["slug"], added, removed)
+                self.schedule_github_sync(guild_id)
 
     @daily_housekeeping.before_loop
     async def _before_housekeeping(self):

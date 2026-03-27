@@ -600,12 +600,12 @@ async def admin_users(request: web.Request) -> web.Response:
         placeholders = ",".join(["%s"] * len(discord_id_list))
         id_rows = await db.fetchall(
             f"""
-            SELECT i.discord_id, i.id_type, i.id_value, w.slug
+            SELECT i.discord_id, i.id_type, i.id_value, w.slug, i.verification_source
             FROM whitelist_identifiers i
             LEFT JOIN whitelists w ON w.id = i.whitelist_id
             WHERE i.guild_id=%s AND CAST(i.discord_id AS TEXT) IN ({placeholders})
             """ if db.engine == "postgres" else f"""
-            SELECT i.discord_id, i.id_type, i.id_value, w.slug
+            SELECT i.discord_id, i.id_type, i.id_value, w.slug, i.verification_source
             FROM whitelist_identifiers i
             LEFT JOIN whitelists w ON w.id = i.whitelist_id
             WHERE i.guild_id=%s AND CAST(i.discord_id AS CHAR) IN ({placeholders})
@@ -615,17 +615,28 @@ async def admin_users(request: web.Request) -> web.Response:
         for irow in (id_rows or []):
             key = f"{irow[0]}:{irow[3] or ''}"
             if key not in id_map:
-                id_map[key] = {"steam_ids": [], "eos_ids": []}
+                id_map[key] = {"steam_ids": [], "eos_ids": [], "sources": set()}
             if irow[1] == "steam64":
                 id_map[key]["steam_ids"].append(str(irow[2]))
             elif irow[1] == "eosid":
                 id_map[key]["eos_ids"].append(str(irow[2]))
+            if irow[4]:
+                id_map[key]["sources"].add(irow[4])
+
+    # Priority order for registration_source derivation
+    _REG_PRIORITY = ["self_register", "role_sync", "web_dashboard", "admin_web", "import"]
 
     users = []
     for row in rows:
         meta = _unpack_plan_meta(row[5])
         key = f"{row[0]}:{row[2] or ''}"
-        ids = id_map.get(key, {"steam_ids": [], "eos_ids": []})
+        ids = id_map.get(key, {"steam_ids": [], "eos_ids": [], "sources": set()})
+        did = int(row[0])
+        sources: set = ids.get("sources", set())
+        if did < 0:
+            reg_source = "orphan"
+        else:
+            reg_source = next((s for s in _REG_PRIORITY if s in sources), "admin" if not sources else sources.pop())
         users.append({
             "discord_id": str(row[0]),
             "discord_name": row[1],
@@ -641,6 +652,7 @@ async def admin_users(request: web.Request) -> web.Response:
             "created_at": str(row[6]) if row[6] else "",
             "steam_ids": ids["steam_ids"],
             "eos_ids": ids["eos_ids"],
+            "registration_source": reg_source,
         })
 
     return web.json_response({
@@ -2674,6 +2686,97 @@ async def admin_reconcile_apply(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_role_sync_pull(request: web.Request) -> web.Response:
+    """Pull all current members of a Discord role into a whitelist.
+
+    POST body: {role_id, whitelist_slug, dry_run=true}
+    Returns:   {ok, role_name, whitelist_slug, total_role_members, added:[{discord_id,discord_name}],
+                already_exist, dry_run}
+
+    Requires the bot to be running in gateway mode (not standalone web service).
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    role_id_raw = body.get("role_id")
+    whitelist_slug = body.get("whitelist_slug", "").strip()
+    dry_run = bool(body.get("dry_run", True))
+
+    if not role_id_raw:
+        return web.json_response({"error": "role_id is required."}, status=400)
+    try:
+        role_id = int(role_id_raw)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "role_id must be an integer."}, status=400)
+
+    wl = await _resolve_whitelist(db, guild_id, whitelist_slug)
+    if not wl:
+        valid = await _get_whitelist_slugs(db, guild_id)
+        return web.json_response({"error": f"Invalid whitelist. Must be one of: {', '.join(valid)}"}, status=400)
+
+    # Requires gateway bot access to fetch role.members
+    guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
+    if not guild:
+        return web.json_response(
+            {"error": "Bot gateway required to fetch role members. Ensure the bot is running."},
+            status=503,
+        )
+
+    role = guild.get_role(role_id)
+    if not role:
+        return web.json_response({"error": f"Role {role_id} not found in guild."}, status=404)
+
+    # Existing whitelist members (any status — avoid re-adding removed users without merge)
+    existing_rows = await db.fetchall(
+        "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s",
+        (guild_id, wl["id"]),
+    )
+    existing_ids: set[int] = {row[0] for row in (existing_rows or [])}
+
+    default_slot = wl.get("default_slot_limit") or 1
+    added: list[dict] = []
+    already_exist_count = 0
+
+    for member in role.members:
+        if member.id in existing_ids:
+            already_exist_count += 1
+            continue
+        name = member.display_name or str(member)
+        if not dry_run:
+            await db.upsert_user_record(
+                guild_id, member.id, wl["id"], name, "active", default_slot, "", None,
+            )
+            await db.audit(
+                guild_id, "role_sync_pull", actor_id, member.id,
+                f"role={role.name}, whitelist={whitelist_slug}", wl["id"],
+            )
+        added.append({"discord_id": str(member.id), "discord_name": name})
+
+    if not dry_run and added:
+        await _trigger_sync(request, guild_id)
+        log.info("Guild %s: role sync pull added %d to %s from role %s",
+                 guild_id, len(added), whitelist_slug, role.name)
+
+    return web.json_response({
+        "ok": True,
+        "role_name": role.name,
+        "whitelist_slug": whitelist_slug,
+        "total_role_members": len(role.members),
+        "added": added,
+        "already_exist": already_exist_count,
+        "dry_run": dry_run,
+    })
+
+
+@require_admin
 async def admin_export(request: web.Request) -> web.Response:
     """Export whitelist data in various formats."""
     session = await aiohttp_session.get_session(request)
@@ -4000,6 +4103,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import", admin_import)
     app.router.add_post("/api/admin/reconcile/preview", admin_reconcile_preview)
     app.router.add_post("/api/admin/reconcile/apply", admin_reconcile_apply)
+    app.router.add_post("/api/admin/role-sync/pull", admin_role_sync_pull)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
     # Admin Tier Categories CRUD
