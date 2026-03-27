@@ -111,6 +111,9 @@ DEFAULT_SETTINGS = {
     "welcome_dm_text": "",
     "timezone": "UTC",
     "bot_status_message": "",
+    # Org-level dashboard theme (hex colors). Empty = no org theme set.
+    "accent_primary": "",
+    "accent_secondary": "",
 }
 
 # Legacy: hardcoded type definitions (used by Discord slash command cogs as fallback).

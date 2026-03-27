@@ -222,7 +222,17 @@ export function useSaveSettings() {
       api.post("/api/admin/settings", data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["orgTheme"] });
     },
+  });
+}
+
+export function useOrgTheme() {
+  return useQuery<{ accent_primary: string; accent_secondary: string }>({
+    queryKey: ["orgTheme"],
+    queryFn: () =>
+      api.get<{ accent_primary: string; accent_secondary: string }>("/api/guild/theme"),
+    staleTime: 60_000,
   });
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Save } from "lucide-react";
+import { Save, Building2, Trash2 } from "lucide-react";
 import {
   useSettings,
   useRoles,
@@ -79,7 +79,7 @@ const PRESET_TAGS: Record<string, string> = {
 };
 
 function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
-  const { primary, secondary, setPrimary, setSecondary, applyPreset } = accent;
+  const { primary, secondary, setPrimary, setSecondary, applyPreset, orgThemeActive } = accent;
 
   return (
     <Card>
@@ -89,6 +89,11 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
       <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
           Choose a color theme for the dashboard. Changes are saved to your browser.
+          {orgThemeActive && (
+            <span className="ml-1 font-medium" style={{ color: "var(--accent-primary)" }}>
+              Org theme is active — your personal preference will show on servers without one.
+            </span>
+          )}
         </p>
 
         {/* Live preview bar */}
@@ -235,6 +240,190 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
   );
 }
 
+/* ─── Org Theme Card ─── */
+
+function OrgThemeCard({
+  orgPrimary,
+  orgSecondary,
+  onSave,
+  onClear,
+  isSaving,
+}: {
+  orgPrimary: string;
+  orgSecondary: string;
+  onSave: (p: string, s: string) => void;
+  onClear: () => void;
+  isSaving: boolean;
+}) {
+  const [localPrimary, setLocalPrimary] = useState(orgPrimary || "#a78bfa");
+  const [localSecondary, setLocalSecondary] = useState(orgSecondary || "#fbbf24");
+  const hasOrgTheme = Boolean(orgPrimary && orgSecondary);
+
+  // Sync local state when org theme changes externally (e.g. on load)
+  useEffect(() => {
+    if (orgPrimary) setLocalPrimary(orgPrimary);
+    if (orgSecondary) setLocalSecondary(orgSecondary);
+  }, [orgPrimary, orgSecondary]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+          <CardTitle>Organization Theme</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p className="text-sm text-muted-foreground">
+          Set a color theme for your whole organization. When active, it overrides
+          individual users' personal preferences for this server.
+          {hasOrgTheme ? (
+            <span className="ml-1 font-medium" style={{ color: "var(--accent-primary)" }}>
+              Org theme is currently active.
+            </span>
+          ) : (
+            <span className="ml-1 text-white/40">No org theme set — users see their personal colors.</span>
+          )}
+        </p>
+
+        {/* Live preview */}
+        <div
+          className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-3"
+          style={{ background: "oklch(0.185 0 0)" }}
+        >
+          <div
+            className="h-4 w-24 shrink-0 rounded-full"
+            style={{ background: `linear-gradient(90deg, ${localPrimary} 0%, ${localSecondary} 100%)` }}
+          />
+          <div className="h-4 w-px bg-white/10" />
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{ color: localPrimary, borderColor: `${localPrimary}40`, background: `${localPrimary}18` }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: localPrimary }} />
+            Active
+          </span>
+          <span
+            className="hidden sm:inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+            style={{ color: localSecondary, borderColor: `${localSecondary}40`, background: `${localSecondary}15` }}
+          >
+            Roster
+          </span>
+          <div className="ml-auto font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
+            {localPrimary} · {localSecondary}
+          </div>
+        </div>
+
+        {/* Preset grid */}
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Themes</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(Object.entries(ACCENT_PRESETS) as [PresetName, { primary: string; secondary: string }][]).map(
+              ([name, colors]) => {
+                const isActive = localPrimary === colors.primary && localSecondary === colors.secondary;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => { setLocalPrimary(colors.primary); setLocalSecondary(colors.secondary); }}
+                    className="group flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-150 hover:scale-[1.03] hover:shadow-lg"
+                    style={{
+                      borderColor: isActive ? colors.primary : "rgba(255,255,255,0.06)",
+                      background: isActive
+                        ? `color-mix(in srgb, ${colors.primary} 8%, oklch(0.185 0 0))`
+                        : "oklch(0.185 0 0)",
+                      boxShadow: isActive ? `0 0 16px ${colors.primary}30, inset 0 0 0 1px ${colors.primary}30` : undefined,
+                    }}
+                  >
+                    <div
+                      className="h-9 w-full"
+                      style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)` }}
+                    />
+                    <div className="px-2.5 py-2">
+                      <p
+                        className="text-[11px] font-semibold leading-tight"
+                        style={{ color: isActive ? colors.primary : "rgba(255,255,255,0.85)" }}
+                      >
+                        {name}
+                      </p>
+                    </div>
+                  </button>
+                );
+              }
+            )}
+          </div>
+        </div>
+
+        {/* Custom pickers */}
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Custom Colors</p>
+          <div className="flex gap-3">
+            <div className="flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+              <input
+                type="color"
+                value={localPrimary}
+                onChange={(e) => setLocalPrimary(e.target.value)}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
+                title="Primary color"
+              />
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Primary</Label>
+              <input
+                type="text"
+                value={localPrimary}
+                onChange={(e) => { if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) setLocalPrimary(e.target.value); }}
+                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                maxLength={7}
+              />
+            </div>
+            <div className="flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+              <input
+                type="color"
+                value={localSecondary}
+                onChange={(e) => setLocalSecondary(e.target.value)}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
+                title="Secondary color"
+              />
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Secondary</Label>
+              <input
+                type="text"
+                value={localSecondary}
+                onChange={(e) => { if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) setLocalSecondary(e.target.value); }}
+                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                maxLength={7}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            disabled={isSaving}
+            onClick={() => onSave(localPrimary, localSecondary)}
+            style={{ background: "var(--accent-primary)", color: "#fff" }}
+          >
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            Apply to Organization
+          </Button>
+          {hasOrgTheme && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isSaving}
+              onClick={onClear}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Clear Org Theme
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const { data, isLoading } = useSettings();
   const { data: roles } = useRoles();
@@ -293,10 +482,39 @@ export default function SettingsPage() {
     );
   }
 
+  function handleSaveOrgTheme(p: string, s: string) {
+    saveSettings.mutate(
+      { accent_primary: p, accent_secondary: s } as Partial<Settings>,
+      {
+        onSuccess: () => toast.success("Organization theme saved"),
+        onError: () => toast.error("Failed to save org theme"),
+      }
+    );
+  }
+
+  function handleClearOrgTheme() {
+    saveSettings.mutate(
+      { accent_primary: "", accent_secondary: "" } as Partial<Settings>,
+      {
+        onSuccess: () => toast.success("Organization theme cleared"),
+        onError: () => toast.error("Failed to clear org theme"),
+      }
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       {/* Appearance */}
       <AppearanceCard accent={accent} />
+
+      {/* Org Theme */}
+      <OrgThemeCard
+        orgPrimary={(form as Record<string, string>).accent_primary ?? ""}
+        orgSecondary={(form as Record<string, string>).accent_secondary ?? ""}
+        onSave={handleSaveOrgTheme}
+        onClear={handleClearOrgTheme}
+        isSaving={saveSettings.isPending}
+      />
 
       {/* Mod Roles */}
       <Card>

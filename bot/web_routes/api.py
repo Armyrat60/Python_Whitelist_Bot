@@ -349,6 +349,28 @@ async def switch_guild(request: web.Request) -> web.Response:
     })
 
 
+async def guild_theme(request: web.Request) -> web.Response:
+    """Return the active guild's org accent colors. Requires login only (not admin).
+
+    Used by the frontend accent context to apply org-level theming on top of
+    users' personal color preferences.
+    """
+    session = await aiohttp_session.get_session(request)
+    if not session.get("logged_in"):
+        return web.json_response({"error": "Authentication required."}, status=401)
+    active_guild_id = session.get("active_guild_id")
+    if not active_guild_id:
+        return web.json_response({"accent_primary": "", "accent_secondary": ""})
+    guild_id = int(active_guild_id)
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"accent_primary": "", "accent_secondary": ""})
+    db = bot.db
+    primary = await db.get_setting(guild_id, "accent_primary", "")
+    secondary = await db.get_setting(guild_id, "accent_secondary", "")
+    return web.json_response({"accent_primary": primary, "accent_secondary": secondary})
+
+
 # ── User API routes ──────────────────────────────────────────────────────────
 
 @require_login
@@ -4437,6 +4459,7 @@ def setup_routes(app: web.Application):
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
     app.router.add_post("/api/guilds/switch", switch_guild)
+    app.router.add_get("/api/guild/theme", guild_theme)
     # User API
     app.router.add_get("/api/my-whitelist", get_my_whitelists_all)
     app.router.add_get("/api/my-whitelist/{type}", get_my_whitelist)

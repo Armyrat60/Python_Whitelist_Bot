@@ -27,11 +27,18 @@ export type PresetName = keyof typeof ACCENT_PRESETS;
 const STORAGE_KEY = "squad-wl-accent";
 
 interface AccentContextType {
+  /** User's personal colors (persisted in localStorage) */
   primary: string;
   secondary: string;
   setPrimary: (color: string) => void;
   setSecondary: (color: string) => void;
   applyPreset: (name: PresetName) => void;
+  /** Org-level colors (from DB, overrides personal when set) */
+  orgPrimary: string;
+  orgSecondary: string;
+  orgThemeActive: boolean;
+  setOrgColors: (primary: string, secondary: string) => void;
+  clearOrgColors: () => void;
   presets: typeof ACCENT_PRESETS;
 }
 
@@ -41,16 +48,18 @@ const AccentContext = createContext<AccentContextType>({
   setPrimary: () => {},
   setSecondary: () => {},
   applyPreset: () => {},
+  orgPrimary: "",
+  orgSecondary: "",
+  orgThemeActive: false,
+  setOrgColors: () => {},
+  clearOrgColors: () => {},
   presets: ACCENT_PRESETS,
 });
 
 function applyToDom(primary: string, secondary: string) {
   const root = document.documentElement;
-  // User-facing accent vars (used in inline styles throughout the app)
   root.style.setProperty("--accent-primary", primary);
   root.style.setProperty("--accent-secondary", secondary);
-  // Keep shadcn --primary in sync so Tailwind classes like bg-primary/10 and
-  // text-primary also reflect the chosen accent color
   root.style.setProperty("--primary", primary);
   root.style.setProperty("--ring", primary);
   root.style.setProperty("--sidebar-primary", primary);
@@ -60,8 +69,12 @@ function applyToDom(primary: string, secondary: string) {
 export function AccentProvider({ children }: { children: ReactNode }) {
   const [primary, setPrimaryState] = useState("#a78bfa");
   const [secondary, setSecondaryState] = useState("#fbbf24");
+  const [orgPrimary, setOrgPrimaryState] = useState("");
+  const [orgSecondary, setOrgSecondaryState] = useState("");
 
-  // Load from localStorage once on mount
+  const orgThemeActive = Boolean(orgPrimary && orgSecondary);
+
+  // Load user's personal theme from localStorage once on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -73,6 +86,7 @@ export function AccentProvider({ children }: { children: ReactNode }) {
         if (p && s) {
           setPrimaryState(p);
           setSecondaryState(s);
+          // Only apply user colors immediately; org colors applied by OrgThemeSync
           applyToDom(p, s);
         }
       }
@@ -81,10 +95,18 @@ export function AccentProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Whenever org or personal colors change, apply the right set to DOM
+  useEffect(() => {
+    if (orgThemeActive) {
+      applyToDom(orgPrimary, orgSecondary);
+    } else {
+      applyToDom(primary, secondary);
+    }
+  }, [orgPrimary, orgSecondary, orgThemeActive, primary, secondary]);
+
   const setPrimary = useCallback((color: string) => {
     setPrimaryState(color);
     setSecondaryState((prev) => {
-      applyToDom(color, prev);
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ primary: color, secondary: prev }));
       return prev;
     });
@@ -93,7 +115,6 @@ export function AccentProvider({ children }: { children: ReactNode }) {
   const setSecondary = useCallback((color: string) => {
     setSecondaryState(color);
     setPrimaryState((prev) => {
-      applyToDom(prev, color);
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ primary: prev, secondary: color }));
       return prev;
     });
@@ -103,13 +124,26 @@ export function AccentProvider({ children }: { children: ReactNode }) {
     const { primary: p, secondary: s } = ACCENT_PRESETS[name];
     setPrimaryState(p);
     setSecondaryState(s);
-    applyToDom(p, s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ primary: p, secondary: s }));
+  }, []);
+
+  const setOrgColors = useCallback((p: string, s: string) => {
+    setOrgPrimaryState(p);
+    setOrgSecondaryState(s);
+  }, []);
+
+  const clearOrgColors = useCallback(() => {
+    setOrgPrimaryState("");
+    setOrgSecondaryState("");
   }, []);
 
   return (
     <AccentContext.Provider
-      value={{ primary, secondary, setPrimary, setSecondary, applyPreset, presets: ACCENT_PRESETS }}
+      value={{
+        primary, secondary, setPrimary, setSecondary, applyPreset,
+        orgPrimary, orgSecondary, orgThemeActive, setOrgColors, clearOrgColors,
+        presets: ACCENT_PRESETS,
+      }}
     >
       {children}
     </AccentContext.Provider>
