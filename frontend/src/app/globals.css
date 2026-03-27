@@ -90,50 +90,57 @@
 }
 
 /* ─── Tactical Dark Theme ─── */
+/*
+ * 5-level depth system (darkest → lightest):
+ *   L1 Sidebar    oklch(0.14)  — nav chrome, always darkest
+ *   L2 Topbar     oklch(0.17)  — app chrome with blur
+ *   L3 Background oklch(0.24)  — main page canvas
+ *   L4 Card       oklch(0.28)  — elevated surface with glass
+ *   L5 Popover    oklch(0.30)  — highest elevation, fully opaque
+ */
 .dark {
-  /* Background layers — lifted to feel less cave-black */
-  --background: oklch(0.13 0.018 240);       /* #141b26 — main bg */
-  --foreground: oklch(0.92 0.005 240);       /* #E5E7EB — primary text */
-  --card: oklch(0.17 0.020 240 / 0.65);     /* glass card — semi-transparent */
-  --card-foreground: oklch(0.92 0.005 240);
-  --popover: oklch(0.17 0.020 240);          /* popover stays opaque */
-  --popover-foreground: oklch(0.92 0.005 240);
+  --background: oklch(0.24 0.014 240);       /* main canvas — noticeably lighter */
+  --foreground: oklch(0.93 0.005 240);       /* near-white primary text */
+  --card: oklch(0.28 0.016 240 / 0.80);     /* glass card — elevated above bg */
+  --card-foreground: oklch(0.93 0.005 240);
+  --popover: oklch(0.30 0.016 240);          /* popover — highest surface, fully opaque */
+  --popover-foreground: oklch(0.93 0.005 240);
 
   /* Green primary accent */
   --primary: oklch(0.73 0.20 142);           /* #22C55E */
   --primary-foreground: oklch(0.09 0 0);
 
   /* Surfaces */
-  --secondary: oklch(0.19 0.015 240);
-  --secondary-foreground: oklch(0.92 0.005 240);
-  --muted: oklch(0.19 0.015 240);
-  --muted-foreground: oklch(0.60 0.006 240); /* #9CA3AF */
-  --accent: oklch(0.17 0.025 142);
-  --accent-foreground: oklch(0.92 0.005 240);
+  --secondary: oklch(0.29 0.013 240);
+  --secondary-foreground: oklch(0.93 0.005 240);
+  --muted: oklch(0.29 0.013 240);
+  --muted-foreground: oklch(0.62 0.006 240);
+  --accent: oklch(0.26 0.020 142);
+  --accent-foreground: oklch(0.93 0.005 240);
 
   /* Danger */
   --destructive: oklch(0.62 0.22 25);
 
   /* Structure */
-  --border: oklch(1 0 0 / 7%);
-  --input: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.73 0.20 142);
 
   /* Charts: green → blue gradient */
-  --chart-1: oklch(0.73 0.20 142);           /* green */
-  --chart-2: oklch(0.75 0.15 212);           /* sky blue */
-  --chart-3: oklch(0.63 0.16 142);           /* darker green */
-  --chart-4: oklch(0.65 0.12 212);           /* darker blue */
+  --chart-1: oklch(0.73 0.20 142);
+  --chart-2: oklch(0.75 0.15 212);
+  --chart-3: oklch(0.63 0.16 142);
+  --chart-4: oklch(0.65 0.12 212);
   --chart-5: oklch(0.50 0.10 200);
 
-  /* Sidebar: slightly darker than bg */
-  --sidebar: oklch(0.11 0.016 240);
-  --sidebar-foreground: oklch(0.92 0.005 240);
+  /* Sidebar: L1 — always the darkest layer */
+  --sidebar: oklch(0.14 0.018 240);
+  --sidebar-foreground: oklch(0.93 0.005 240);
   --sidebar-primary: oklch(0.73 0.20 142);
   --sidebar-primary-foreground: oklch(0.09 0 0);
-  --sidebar-accent: oklch(0.16 0.022 142);
-  --sidebar-accent-foreground: oklch(0.92 0.005 240);
-  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-accent: oklch(0.20 0.022 142);
+  --sidebar-accent-foreground: oklch(0.93 0.005 240);
+  --sidebar-border: oklch(1 0 0 / 7%);
   --sidebar-ring: oklch(0.73 0.20 142);
 }
 
@@ -143,10 +150,10 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Radial gradient — lighter blue-teal bloom at top-left, dark everywhere else */
+    /* Subtle radial depth — blue-teal bloom that reads on the lighter bg */
     background-image:
-      radial-gradient(ellipse 80% 50% at 10% -10%, oklch(0.22 0.06 220 / 0.5) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 90% 100%, oklch(0.18 0.04 200 / 0.3) 0%, transparent 55%);
+      radial-gradient(ellipse 80% 50% at 10% -10%, oklch(0.32 0.05 220 / 0.40) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 90% 100%, oklch(0.28 0.04 200 / 0.25) 0%, transparent 55%);
     background-attachment: fixed;
   }
   html {

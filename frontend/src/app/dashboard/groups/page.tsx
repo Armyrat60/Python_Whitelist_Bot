@@ -95,7 +95,7 @@ export default function GroupsPage() {
           return (
             <Card
               key={group.group_name}
-              className="cursor-pointer transition-colors hover:bg-zinc-800/50"
+              className="cursor-pointer transition-colors hover:bg-white/5"
               onClick={() => setEditGroup(group)}
             >
               <CardHeader>
@@ -254,7 +254,7 @@ function EditGroupDialog({
           {SQUAD_PERMISSIONS.map((perm) => (
             <label
               key={perm}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-zinc-800 px-2 py-1.5 text-xs transition-colors hover:bg-zinc-800/50"
+              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-white/[0.06] px-2 py-1.5 text-xs transition-colors hover:bg-white/5"
             >
               <Checkbox
                 checked={selected.includes(perm)}

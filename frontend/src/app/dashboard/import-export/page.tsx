@@ -192,8 +192,8 @@ function ImportTab() {
           <CardContent>
             <div
               className={cn(
-                "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-700 p-8 text-center transition-colors",
-                "hover:border-zinc-500"
+                "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-white/[0.10] p-8 text-center transition-colors",
+                "hover:border-white/[0.20]"
               )}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleFileDrop}
@@ -310,7 +310,7 @@ function ImportTab() {
             <CardTitle>Preview ({preview.length} entries)</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border border-zinc-800">
+            <div className="rounded-lg border border-white/[0.06]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -418,7 +418,7 @@ function ExportTab() {
             {whitelists?.map((wl) => (
               <label
                 key={wl.slug}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 transition-colors hover:bg-zinc-800/50"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2 transition-colors hover:bg-white/5"
               >
                 <Checkbox
                   checked={selectedSlugs.includes(wl.slug)}

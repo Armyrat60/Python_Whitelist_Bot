@@ -55,7 +55,7 @@ export default function DashboardLayout({
         </p>
         <div className="flex gap-3">
           <a href="/logout">
-            <button className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-muted-foreground hover:bg-zinc-800">
+            <button className="rounded-lg border border-white/[0.10] px-4 py-2 text-sm text-muted-foreground hover:bg-white/5">
               Sign Out
             </button>
           </a>

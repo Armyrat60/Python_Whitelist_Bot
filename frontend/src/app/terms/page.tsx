@@ -52,7 +52,7 @@ export default function TermsPage() {
       </div>
 
       <div className="mt-8">
-        <a href="/" className="text-sm text-orange-400 hover:underline">
+        <a href="/" className="text-sm hover:underline" style={{ color: "var(--accent-primary)" }}>
           Back to home
         </a>
       </div>

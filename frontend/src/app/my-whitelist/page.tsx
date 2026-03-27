@@ -186,7 +186,14 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
         <CardTitle className="flex items-center gap-2">
           {data.whitelist_name}
           {data.tier_name && (
-            <Badge variant="secondary" className="bg-orange-500/15 text-orange-400 border-orange-500/30">
+            <Badge
+              variant="secondary"
+              style={{
+                background: "color-mix(in srgb, var(--accent-primary) 15%, transparent)",
+                color: "var(--accent-primary)",
+                border: "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+              }}
+            >
               {data.tier_name}
             </Badge>
           )}
@@ -231,7 +238,12 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
         })}
       </CardContent>
       <CardFooter>
-        <Button onClick={handleSave} disabled={saving} className="bg-orange-600 hover:bg-orange-700">
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="text-black font-semibold"
+          style={{ background: "var(--accent-primary)" }}
+        >
           <Save className="mr-1.5 h-3.5 w-3.5" />
           Save
         </Button>

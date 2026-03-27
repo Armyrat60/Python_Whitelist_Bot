@@ -28,7 +28,7 @@ export default function MyWhitelistLayout({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-900">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <Skeleton className="h-8 w-48" />
       </div>
     );
@@ -39,7 +39,7 @@ export default function MyWhitelistLayout({
   // No mutual guilds
   if (!session.guilds || session.guilds.length === 0) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900 px-4 text-center">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
         <img src="/logo.png" alt="Squad Whitelister" className="mb-6 h-16 w-16 rounded-xl" />
         <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
         <p className="mb-4 max-w-md text-muted-foreground">
@@ -47,7 +47,7 @@ export default function MyWhitelistLayout({
           Ask your server administrator to add the bot first.
         </p>
         <a href="/logout">
-          <button className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-muted-foreground hover:bg-zinc-800">
+          <button className="rounded-lg border border-white/[0.10] px-4 py-2 text-sm text-muted-foreground hover:bg-white/5">
             Sign Out
           </button>
         </a>
@@ -56,9 +56,10 @@ export default function MyWhitelistLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-900">
+    <div className="flex min-h-screen flex-col bg-background">
       {/* Simple Topbar */}
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-6 backdrop-blur-sm">
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/[0.06] px-6 backdrop-blur-md"
+        style={{ background: "oklch(0.17 0.018 240 / 0.88)" }}>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">My Whitelist</h1>
           {session.is_mod && (

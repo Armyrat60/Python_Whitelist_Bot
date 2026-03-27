@@ -303,7 +303,13 @@ function PanelCard({
             <Badge variant="outline">{wlName}</Badge>
           )}
           {selectedCategory && (
-            <Badge variant="outline" className="border-orange-500/30 text-orange-400">
+            <Badge
+              variant="outline"
+              style={{
+                borderColor: "color-mix(in srgb, var(--accent-secondary) 30%, transparent)",
+                color: "var(--accent-secondary)",
+              }}
+            >
               {selectedCategory.name}
             </Badge>
           )}
@@ -314,8 +320,17 @@ function PanelCard({
 
         {/* Tier summary from tier category entries -- always visible */}
         {tierEntries.length > 0 && (
-          <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-2">
-            <p className="text-[10px] font-semibold uppercase text-orange-400/70 mb-1">Tiers</p>
+          <div
+            className="rounded-lg p-2"
+            style={{
+              border: "1px solid color-mix(in srgb, var(--accent-secondary) 20%, transparent)",
+              background: "color-mix(in srgb, var(--accent-secondary) 5%, transparent)",
+            }}
+          >
+            <p
+              className="text-[10px] font-semibold uppercase mb-1"
+              style={{ color: "color-mix(in srgb, var(--accent-secondary) 70%, transparent)" }}
+            >Tiers</p>
             <div className="flex flex-wrap gap-1">
               {tierEntries.map((entry) => (
                 <Badge

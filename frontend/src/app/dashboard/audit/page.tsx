@@ -135,7 +135,7 @@ export default function AuditPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg border border-zinc-800">
+          <div className="rounded-lg border border-white/[0.06]">
             <Table>
               <TableHeader>
                 <TableRow>

@@ -5,7 +5,8 @@ export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-4">
+      <nav className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] px-6 py-4 backdrop-blur-md"
+        style={{ background: "oklch(0.17 0.018 240 / 0.88)" }}>
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="" className="h-8 w-8 rounded-lg" />
           <span className="font-semibold text-foreground">Squad Whitelister</span>
@@ -17,14 +18,21 @@ export default function HomePage() {
 
       {/* Hero */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-20 text-center">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400">
+        <div
+          className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium"
+          style={{
+            border: "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+            background: "color-mix(in srgb, var(--accent-primary) 10%, transparent)",
+            color: "var(--accent-primary)",
+          }}
+        >
           <Gamepad2 className="h-3.5 w-3.5" />
           Built for Squad server communities
         </div>
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-foreground sm:text-6xl">
           Whitelist management
           <br />
-          <span className="text-orange-400">made simple.</span>
+          <span style={{ color: "var(--accent-primary)" }}>made simple.</span>
         </h1>
         <p className="mb-10 max-w-lg text-lg text-muted-foreground">
           Discord-powered whitelist bot with role-based tiers, real-time sync,
@@ -51,7 +59,7 @@ export default function HomePage() {
       </div>
 
       {/* Features */}
-      <div className="border-t border-zinc-800 bg-zinc-950/50 px-4 py-20">
+      <div className="border-t border-white/[0.06] bg-background/50 px-4 py-20">
         <h2 className="mb-12 text-center text-2xl font-bold text-foreground">
           Everything you need to manage server access
         </h2>
@@ -108,14 +116,18 @@ export default function HomePage() {
           Add the bot to your Discord server and configure in minutes.
         </p>
         <a href="/login">
-          <Button size="lg" className="bg-orange-600 hover:bg-orange-700 px-8 py-6 text-base">
+          <Button
+            size="lg"
+            className="px-8 py-6 text-base font-semibold text-black"
+            style={{ background: "var(--accent-primary)" }}
+          >
             Get Started Free
           </Button>
         </a>
       </div>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800 px-4 py-6 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-white/[0.06] px-4 py-6 text-center text-xs text-muted-foreground">
         <div className="flex items-center justify-center gap-4">
           <span>Squad Whitelister</span>
           <span>·</span>
@@ -139,8 +151,11 @@ function Feature({
 }) {
   return (
     <div className="text-center">
-      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10">
-        <Icon className="h-6 w-6 text-orange-400" />
+      <div
+        className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl"
+        style={{ background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)" }}
+      >
+        <Icon className="h-6 w-6" style={{ color: "var(--accent-primary)" }} />
       </div>
       <h3 className="mb-1 text-sm font-semibold text-foreground">{title}</h3>
       <p className="text-xs text-muted-foreground">{description}</p>

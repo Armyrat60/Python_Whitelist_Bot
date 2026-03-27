@@ -11,12 +11,14 @@ import {
 
 /* ─── Presets ─── */
 export const ACCENT_PRESETS = {
-  "Green / Blue (Default)": { primary: "#22C55E", secondary: "#38BDF8" },
-  "Blue / Green": { primary: "#38BDF8", secondary: "#22C55E" },
-  "Purple / Pink": { primary: "#A855F7", secondary: "#EC4899" },
-  "Amber / Orange": { primary: "#F59E0B", secondary: "#F97316" },
-  "Red / Amber": { primary: "#EF4444", secondary: "#F59E0B" },
-  "Cyan / Violet": { primary: "#06B6D4", secondary: "#8B5CF6" },
+  "Operator":     { primary: "#22C55E", secondary: "#38BDF8" }, // emerald + sky — default military
+  "Command Gold": { primary: "#EAB308", secondary: "#F97316" }, // amber + orange — authority / rank
+  "Spectre":      { primary: "#A78BFA", secondary: "#38BDF8" }, // violet + sky — elite / premium
+  "Crimson":      { primary: "#F43F5E", secondary: "#FB923C" }, // rose + amber — danger / alert
+  "Arctic":       { primary: "#22D3EE", secondary: "#818CF8" }, // cyan + indigo — cold precision
+  "Cobalt":       { primary: "#60A5FA", secondary: "#34D399" }, // blue + teal — clean / enterprise
+  "Night Vision": { primary: "#84CC16", secondary: "#22D3EE" }, // lime + cyan — NVG readout
+  "Phantom":      { primary: "#C084FC", secondary: "#F472B6" }, // purple + pink — esports / flair
 } as const;
 
 export type PresetName = keyof typeof ACCENT_PRESETS;

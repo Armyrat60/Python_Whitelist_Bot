@@ -67,31 +67,16 @@ const REPORT_FREQUENCIES = [
 
 /* ─── Appearance Card ─── */
 
-function ColorSwatch({
-  color,
-  active,
-  onClick,
-}: {
-  color: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="h-7 w-7 rounded-full border-2 transition-all duration-150 hover:scale-110"
-      style={{
-        background: color,
-        borderColor: active ? "white" : "transparent",
-        boxShadow: active
-          ? `0 0 0 1px ${color}, 0 0 8px ${color}60`
-          : "none",
-      }}
-      title={color}
-    />
-  );
-}
+const PRESET_TAGS: Record<string, string> = {
+  "Operator":     "Military · Default",
+  "Command Gold": "Authority · Premium",
+  "Spectre":      "Elite · Mysterious",
+  "Crimson":      "Alert · Danger",
+  "Arctic":       "Precision · Intel",
+  "Cobalt":       "Clean · Enterprise",
+  "Night Vision": "NVG · High-Tech",
+  "Phantom":      "Esports · Flair",
+};
 
 function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
   const { primary, secondary, setPrimary, setSecondary, applyPreset } = accent;
@@ -101,89 +86,87 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
       <CardHeader>
         <CardTitle>Appearance</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          Customize the accent colors used throughout the dashboard. Changes are saved locally.
+          Choose a color theme for the dashboard. Changes are saved to your browser.
         </p>
 
-        {/* Live preview strip */}
+        {/* Live preview bar */}
         <div
-          className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-4 py-3"
-          style={{ background: "oklch(0.13 0.015 240)" }}
+          className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-3"
+          style={{ background: "oklch(0.14 0.018 240)" }}
         >
+          {/* Gradient pill */}
           <div
-            className="h-3 w-3 rounded-full"
-            style={{ background: primary, boxShadow: `0 0 8px ${primary}80` }}
+            className="h-4 w-24 shrink-0 rounded-full"
+            style={{ background: `linear-gradient(90deg, ${primary} 0%, ${secondary} 100%)` }}
           />
-          <span className="text-xs font-medium" style={{ color: primary }}>
-            Primary Accent
+          <div className="h-4 w-px bg-white/10" />
+          {/* Badge previews */}
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{ color: primary, borderColor: `${primary}40`, background: `${primary}18` }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: primary }} />
+            Active
           </span>
-          <div className="mx-2 h-4 w-px bg-white/10" />
-          <div
-            className="h-3 w-3 rounded-full"
-            style={{ background: secondary, boxShadow: `0 0 8px ${secondary}80` }}
-          />
-          <span className="text-xs font-medium" style={{ color: secondary }}>
-            Secondary Accent
+          <span
+            className="hidden sm:inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+            style={{ color: secondary, borderColor: `${secondary}40`, background: `${secondary}15` }}
+          >
+            Roster
           </span>
           <div className="ml-auto flex items-center gap-1.5">
-            <span
-              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
-              style={{
-                color: primary,
-                borderColor: `${primary}40`,
-                background: `${primary}15`,
-              }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: primary }} />
-              Active
-            </span>
-            <span
-              className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
-              style={{
-                color: secondary,
-                borderColor: `${secondary}40`,
-                background: `${secondary}15`,
-              }}
-            >
-              Roster
+            <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
+              {primary} · {secondary}
             </span>
           </div>
         </div>
 
-        {/* Presets */}
+        {/* Palette grid */}
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Presets
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Themes
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(Object.entries(ACCENT_PRESETS) as [PresetName, { primary: string; secondary: string }][]).map(
               ([name, colors]) => {
-                const isActive =
-                  primary === colors.primary && secondary === colors.secondary;
+                const isActive = primary === colors.primary && secondary === colors.secondary;
                 return (
                   <button
                     key={name}
                     type="button"
                     onClick={() => applyPreset(name)}
-                    className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 hover:scale-[1.02]"
+                    className="group flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-150 hover:scale-[1.03] hover:shadow-lg"
                     style={{
-                      borderColor: isActive ? colors.primary : "rgba(255,255,255,0.08)",
+                      borderColor: isActive ? colors.primary : "rgba(255,255,255,0.06)",
                       background: isActive
-                        ? `color-mix(in srgb, ${colors.primary} 10%, transparent)`
-                        : "rgba(255,255,255,0.03)",
-                      color: isActive ? colors.primary : "#9CA3AF",
+                        ? `color-mix(in srgb, ${colors.primary} 8%, oklch(0.14 0.018 240))`
+                        : "oklch(0.14 0.015 240)",
+                      boxShadow: isActive
+                        ? `0 0 16px ${colors.primary}30, inset 0 0 0 1px ${colors.primary}30`
+                        : undefined,
                     }}
                   >
-                    <span
-                      className="h-3 w-3 rounded-full border border-white/20"
-                      style={{ background: colors.primary }}
+                    {/* Gradient swatch */}
+                    <div
+                      className="h-9 w-full"
+                      style={{
+                        background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`,
+                      }}
                     />
-                    <span
-                      className="h-3 w-3 rounded-full border border-white/20"
-                      style={{ background: colors.secondary }}
-                    />
-                    {name}
+                    {/* Label area */}
+                    <div className="px-2.5 py-2">
+                      <p
+                        className="text-[11px] font-semibold leading-tight"
+                        style={{ color: isActive ? colors.primary : "rgba(255,255,255,0.85)" }}
+                      >
+                        {name}
+                      </p>
+                      <p className="mt-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+                        {PRESET_TAGS[name]}
+                      </p>
+                    </div>
                   </button>
                 );
               }
@@ -192,64 +175,61 @@ function AppearanceCard({ accent }: { accent: ReturnType<typeof useAccent> }) {
         </div>
 
         {/* Custom pickers */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Primary Color</Label>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Custom
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Primary</Label>
+              <div className="flex items-center gap-2">
                 <input
                   type="color"
                   value={primary}
                   onChange={(e) => setPrimary(e.target.value)}
-                  className="h-8 w-8 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                  className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                />
+                <input
+                  type="text"
+                  value={primary}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      setPrimary(e.target.value);
+                    }
+                  }}
+                  className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                  style={{ "--tw-ring-color": primary } as React.CSSProperties}
+                  maxLength={7}
+                  placeholder="#22C55E"
                 />
               </div>
-              <input
-                type="text"
-                value={primary}
-                onChange={(e) => {
-                  if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
-                    setPrimary(e.target.value);
-                  }
-                }}
-                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
-                style={{ "--tw-ring-color": primary } as React.CSSProperties}
-                maxLength={7}
-                placeholder="#22C55E"
-              />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Secondary Color</Label>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Secondary</Label>
+              <div className="flex items-center gap-2">
                 <input
                   type="color"
                   value={secondary}
                   onChange={(e) => setSecondary(e.target.value)}
-                  className="h-8 w-8 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                  className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-white/10 bg-transparent p-0.5"
+                />
+                <input
+                  type="text"
+                  value={secondary}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      setSecondary(e.target.value);
+                    }
+                  }}
+                  className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
+                  style={{ "--tw-ring-color": secondary } as React.CSSProperties}
+                  maxLength={7}
+                  placeholder="#38BDF8"
                 />
               </div>
-              <input
-                type="text"
-                value={secondary}
-                onChange={(e) => {
-                  if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
-                    setSecondary(e.target.value);
-                  }
-                }}
-                className="h-8 flex-1 rounded-md border border-white/10 bg-white/5 px-2 font-mono text-xs uppercase text-foreground focus:outline-none focus:ring-1"
-                style={{ "--tw-ring-color": secondary } as React.CSSProperties}
-                maxLength={7}
-                placeholder="#38BDF8"
-              />
             </div>
           </div>
         </div>
-
-        <p className="text-[11px] text-muted-foreground">
-          Primary controls active nav, badges, and progress bars. Secondary controls row highlights and selection rings.
-        </p>
       </CardContent>
     </Card>
   );
@@ -260,6 +240,7 @@ export default function SettingsPage() {
   const { data: roles } = useRoles();
   const { data: channels } = useChannels();
   const saveSettings = useSaveSettings();
+  const accent = useAccent();
 
   const [form, setForm] = useState<Partial<Settings>>({});
   const [modRoleIds, setModRoleIds] = useState<string[]>([]);
@@ -311,8 +292,6 @@ export default function SettingsPage() {
       </div>
     );
   }
-
-  const accent = useAccent();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

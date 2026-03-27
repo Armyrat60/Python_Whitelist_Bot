@@ -163,7 +163,7 @@ export default function WhitelistsPage() {
             </div>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-zinc-700" />
+                <span className="w-full border-t border-white/[0.08]" />
               </div>
               <div className="relative flex justify-center text-xs">
                 <span className="bg-card px-2 text-muted-foreground">or custom</span>

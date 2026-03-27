@@ -377,12 +377,12 @@ function CategoryCard({
               return (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2"
+                  className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
                   title={`Role ID: ${entry.role_id}`}
                 >
                   {/* Role color dot */}
                   <span
-                    className="h-3.5 w-3.5 shrink-0 rounded-full border border-zinc-600"
+                    className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/[0.20]"
                     style={{
                       backgroundColor: role?.color || "#99AAB5",
                     }}
@@ -451,7 +451,7 @@ function CategoryCard({
         )}
 
         {/* Add tier entry section */}
-        <div className="space-y-2 border-t border-zinc-800 pt-3">
+        <div className="space-y-2 border-t border-white/[0.06] pt-3">
           <Label className="text-xs text-muted-foreground">Add Tier</Label>
           <div className="space-y-2">
             <Combobox
@@ -476,7 +476,8 @@ function CategoryCard({
               <Button
                 onClick={handleAddEntry}
                 disabled={!newRoleId || addEntry.isPending}
-                className="bg-orange-600 hover:bg-orange-700"
+                className="text-black font-semibold"
+                style={{ background: "var(--accent-primary)" }}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Add
