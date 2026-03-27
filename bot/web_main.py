@@ -241,14 +241,16 @@ class WebOnlyApp:
         return [int(r) for r in member.get("roles", [])]
 
     async def get_role_members(self, guild_id: int, role_id: int) -> list[dict]:
-        """Fetch all members with a specific role via REST. Returns list of {id, name} dicts."""
+        """Fetch all members with a specific role via REST. Returns list of {id, name, username} dicts."""
         raw = await self._discord.fetch_members_with_role(guild_id, role_id)
         members = []
         for m in raw:
             user = m.get("user") or {}
+            raw_username = user.get("username", "")
             members.append({
                 "id": int(user.get("id", 0)),
-                "name": m.get("nick") or user.get("global_name") or user.get("username", ""),
+                "name": m.get("nick") or user.get("global_name") or raw_username,
+                "username": raw_username,
             })
         return members
 

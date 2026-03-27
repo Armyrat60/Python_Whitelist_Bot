@@ -1608,6 +1608,8 @@ function UserDetailSheet({
   const [removing, setRemoving] = useState(false);
 
   // Link-to-Discord state (orphan records only)
+  const [suggestions, setSuggestions] = useState<{discord_id: string; discord_name: string; score: number; match_via: string; username?: string}[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
   const [linkResults, setLinkResults] = useState<{discord_id: string; discord_name: string}[]>([]);
   const [linkSelected, setLinkSelected] = useState<{discord_id: string; discord_name: string} | null>(null);
@@ -1615,6 +1617,16 @@ function UserDetailSheet({
   const [manualDiscordName, setManualDiscordName] = useState("");
   const [linking, setLinking] = useState(false);
   const [linkSearching, setLinkSearching] = useState(false);
+
+  // Auto-fetch top suggestions when sheet opens for an orphan
+  useEffect(() => {
+    if (!isOrphan) return;
+    setSuggestionsLoading(true);
+    api.get<{suggestions: typeof suggestions}>(`/api/admin/reconcile/suggest?orphan_id=${user.discord_id}&limit=5`)
+      .then((res) => setSuggestions(res.suggestions ?? []))
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
+  }, [isOrphan, user.discord_id]);
 
   // Debounced search for existing Discord users
   useEffect(() => {
@@ -1626,12 +1638,11 @@ function UserDetailSheet({
       setLinkSearching(true);
       try {
         const res = await api.get<{users: WhitelistUser[]}>(`/api/admin/users?search=${encodeURIComponent(linkSearch)}&per_page=20`);
-        // Only show real Discord users (positive IDs), filter out orphans
         setLinkResults(
           (res.users ?? [])
             .filter((u) => parseInt(u.discord_id) > 0)
             .map((u) => ({ discord_id: u.discord_id, discord_name: u.discord_name }))
-            .filter((u, i, arr) => arr.findIndex((x) => x.discord_id === u.discord_id) === i) // dedupe
+            .filter((u, i, arr) => arr.findIndex((x) => x.discord_id === u.discord_id) === i)
         );
       } catch {
         setLinkResults([]);
@@ -1775,6 +1786,43 @@ function UserDetailSheet({
       {isOrphan && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
           <p className="text-xs font-medium text-amber-400">Link to Discord User</p>
+
+          {/* Auto-computed suggestions */}
+          {suggestionsLoading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Finding possible matches…
+            </div>
+          )}
+          {!suggestionsLoading && suggestions.length > 0 && !linkSelected && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-muted-foreground">Possible matches</p>
+              {suggestions.map((s) => (
+                <button
+                  key={s.discord_id}
+                  className="w-full text-left rounded-md border border-border/60 bg-card px-3 py-2 text-xs hover:bg-white/5 flex items-center justify-between gap-2"
+                  onClick={() => { setLinkSelected({discord_id: s.discord_id, discord_name: s.discord_name}); setLinkSearch(""); }}
+                >
+                  <span className="font-medium truncate">{s.discord_name}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    {s.username && s.username !== s.discord_name && (
+                      <span className="text-muted-foreground text-[10px]">@{s.username}</span>
+                    )}
+                    <span className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                      s.score >= 0.90 ? "bg-emerald-500/15 text-emerald-400" :
+                      s.score >= 0.75 ? "bg-amber-500/15 text-amber-400" :
+                      "bg-white/5 text-muted-foreground"
+                    )}>
+                      {Math.round(s.score * 100)}%
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {!suggestionsLoading && suggestions.length === 0 && !linkSelected && (
+            <p className="text-[11px] text-muted-foreground">No automatic matches found — search or enter Discord ID below.</p>
+          )}
 
           {/* Search existing linked users */}
           <div className="space-y-1.5">

@@ -86,8 +86,9 @@ def _find_guild_in_session(guilds: list[dict], guild_id: str) -> dict | None:
 
 
 def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
-                    expires_at: str | None = None) -> str:
-    """Encode plan/notes/expires_at into a JSON string for last_plan_name."""
+                    expires_at: str | None = None,
+                    username: str | None = None) -> str:
+    """Encode plan/notes/expires_at/username into a JSON string for last_plan_name."""
     payload: dict = {}
     if plan:
         payload["plan"] = plan
@@ -95,6 +96,8 @@ def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
         payload["notes"] = notes
     if expires_at:
         payload["expires_at"] = expires_at
+    if username:
+        payload["username"] = username
     return json.dumps(payload) if payload else ""
 
 
@@ -152,7 +155,7 @@ def _unpack_plan_meta(raw: str | None) -> dict:
     If the stored value is plain text (not JSON), treat it as the plan name.
     """
     if not raw:
-        return {"plan": None, "notes": None, "expires_at": None}
+        return {"plan": None, "notes": None, "expires_at": None, "username": None}
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
@@ -160,11 +163,12 @@ def _unpack_plan_meta(raw: str | None) -> dict:
                 "plan": data.get("plan"),
                 "notes": data.get("notes"),
                 "expires_at": data.get("expires_at"),
+                "username": data.get("username"),
             }
     except (json.JSONDecodeError, TypeError):
         pass
     # Fallback: treat raw string as legacy plan name
-    return {"plan": raw, "notes": None, "expires_at": None}
+    return {"plan": raw, "notes": None, "expires_at": None, "username": None}
 
 
 # ── Auth decorators ──────────────────────────────────────────────────────────
@@ -2813,13 +2817,15 @@ async def admin_rematch_orphans(request: web.Request) -> web.Response:
     if not orphan_rows:
         return web.json_response({"ok": True, "matched": 0, "skipped": 0, "errors": 0})
 
-    # Fetch all real Discord users for this guild (positive discord_id)
+    # Fetch all real Discord users for this guild (positive discord_id) with metadata
     real_rows = await db.fetchall(
-        "SELECT discord_id, discord_name FROM whitelist_users "
+        "SELECT discord_id, discord_name, last_plan_name FROM whitelist_users "
         "WHERE guild_id=%s AND discord_id>0",
         (guild_id,),
     )
-    real_users: list[tuple[int, str]] = [(int(r[0]), r[1]) for r in (real_rows or []) if r[1]]
+    real_users: list[tuple[int, str, str]] = [
+        (int(r[0]), r[1] or "", r[2] or "") for r in (real_rows or []) if r[1]
+    ]
 
     matched = 0
     skipped = 0
@@ -2833,8 +2839,13 @@ async def admin_rematch_orphans(request: web.Request) -> web.Response:
         best_score = 0.0
         best_real_id = 0
         best_real_name = ""
-        for real_id, real_name in real_users:
+        for real_id, real_name, plan_raw in real_users:
             score = _reconcile_score(orphan_name, real_name)
+            # Also try matching against stored username (discord login name)
+            meta = _unpack_plan_meta(plan_raw)
+            stored_username = meta.get("username") or ""
+            if stored_username and stored_username != real_name:
+                score = max(score, _reconcile_score(orphan_name, stored_username))
             if score > best_score:
                 best_score = score
                 best_real_id = real_id
@@ -2891,6 +2902,84 @@ async def admin_rematch_orphans(request: web.Request) -> web.Response:
     await _trigger_sync(request, guild_id)
 
     return web.json_response({"ok": True, "matched": matched, "skipped": skipped, "errors": errors})
+
+
+@require_admin
+async def admin_reconcile_suggest(request: web.Request) -> web.Response:
+    """Return top scored match candidates for a single orphan record.
+
+    GET /api/admin/reconcile/suggest?orphan_id={discord_id}&limit=5
+    Returns [{discord_id, discord_name, score, match_via}] sorted by score desc.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    db = request.app["bot"].db
+
+    orphan_id_raw = request.query.get("orphan_id", "").strip()
+    limit = min(10, max(1, int(request.query.get("limit", "5"))))
+
+    if not orphan_id_raw:
+        return web.json_response({"error": "orphan_id is required"}, status=400)
+    try:
+        orphan_id = int(orphan_id_raw)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "orphan_id must be an integer"}, status=400)
+    if orphan_id >= 0:
+        return web.json_response({"error": "orphan_id must be a negative number (orphan record)"}, status=400)
+
+    orphan_row = await db.fetchone(
+        "SELECT discord_name FROM whitelist_users WHERE guild_id=%s AND discord_id=%s",
+        (guild_id, orphan_id),
+    )
+    if not orphan_row or not orphan_row[0]:
+        return web.json_response({"suggestions": []})
+
+    orphan_name = orphan_row[0]
+
+    # Fetch all real Discord users with their stored metadata (for username lookup)
+    real_rows = await db.fetchall(
+        "SELECT discord_id, discord_name, last_plan_name FROM whitelist_users "
+        "WHERE guild_id=%s AND discord_id>0",
+        (guild_id,),
+    )
+
+    scored: list[dict] = []
+    seen_ids: set[int] = set()
+    for real_id, real_name, plan_raw in (real_rows or []):
+        if not real_name:
+            continue
+        real_id = int(real_id)
+        if real_id in seen_ids:
+            continue
+        seen_ids.add(real_id)
+
+        # Score against stored display name (guild nickname)
+        score_name = _reconcile_score(orphan_name, real_name)
+
+        # Also score against raw username if stored
+        score_username = 0.0
+        match_via = "display_name"
+        meta = _unpack_plan_meta(plan_raw)
+        stored_username = meta.get("username") or ""
+        if stored_username and stored_username != real_name:
+            score_username = _reconcile_score(orphan_name, stored_username)
+
+        best = max(score_name, score_username)
+        if best <= 0.0:
+            continue
+        if score_username > score_name:
+            match_via = "username"
+
+        scored.append({
+            "discord_id": str(real_id),
+            "discord_name": real_name,
+            "username": stored_username or None,
+            "score": best,
+            "match_via": match_via,
+        })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return web.json_response({"orphan_name": orphan_name, "suggestions": scored[:limit]})
 
 
 @require_admin
@@ -2987,9 +3076,12 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
             already_exist_count += 1
             continue
         name = member["name"]
+        username = member.get("username") or ""
+        # Store username in plan_meta so matching can try both nick and username
+        plan_meta = _pack_plan_meta(username=username) if username and username != name else ""
         if not dry_run:
             await db.upsert_user_record(
-                guild_id, mid, wl["id"], name, "active", default_slot, "", None,
+                guild_id, mid, wl["id"], name, "active", default_slot, plan_meta, None,
             )
             await db.audit(
                 guild_id, "role_sync_pull", actor_id, mid,
@@ -4341,6 +4433,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/reconcile/preview", admin_reconcile_preview)
     app.router.add_post("/api/admin/reconcile/apply", admin_reconcile_apply)
     app.router.add_post("/api/admin/reconcile/rematch-orphans", admin_rematch_orphans)
+    app.router.add_get("/api/admin/reconcile/suggest", admin_reconcile_suggest)
     app.router.add_post("/api/admin/role-sync/pull", admin_role_sync_pull)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
