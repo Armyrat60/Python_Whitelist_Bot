@@ -117,6 +117,14 @@ interface PreviewSummary {
   invalid: number;
 }
 
+interface ImportResult {
+  added: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  orphans: number; // entries added without a real discord_id
+}
+
 function ImportTab() {
   const { data: whitelists } = useWhitelists();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +137,7 @@ function ImportTab() {
   const [duplicateMode, setDuplicateMode] = useState("merge");
   const [preview, setPreview] = useState<PreviewUser[]>([]);
   const [summary, setSummary] = useState<PreviewSummary | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [previewing, setPreviewing] = useState(false);
 
@@ -194,14 +203,31 @@ function ImportTab() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
-      const total = (data.added ?? 0) + (data.updated ?? 0);
-      toast.success(`Imported ${total} entries — ${data.added ?? 0} new, ${data.updated ?? 0} updated, ${data.skipped ?? 0} skipped`);
-      setPreview([]); setSummary(null); setFile(null); setPasteContent("");
+      // Count how many imported entries have no real Discord ID (orphans = steam-only imports)
+      const orphans = preview.filter(
+        (u) => u.status === "new" && (!u.discord_id || u.discord_id === "—")
+      ).length;
+      const result: ImportResult = {
+        added: data.added ?? 0,
+        updated: data.updated ?? 0,
+        skipped: data.skipped ?? 0,
+        errors: data.errors ?? 0,
+        orphans,
+      };
+      setImportResult(result);
+      // Keep preview visible as "results" — just clear the source file/paste
+      setFile(null);
+      setPasteContent("");
+      toast.success(`Imported ${result.added + result.updated} entries — ${result.added} new, ${result.updated} updated, ${result.skipped} skipped`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed");
     } finally {
       setImporting(false);
     }
+  }
+
+  function handleReset() {
+    setPreview([]); setSummary(null); setImportResult(null); setFile(null); setPasteContent("");
   }
 
   const hasData = !!(file || pasteContent.trim());
@@ -308,8 +334,36 @@ function ImportTab() {
         </Card>
       </div>
 
-      {/* ── Preview summary chips ── */}
-      {summary && (
+      {/* ── Import result banner ── */}
+      {importResult && (
+        <Card className="border-l-4 border-l-emerald-500">
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-semibold text-emerald-400">✓ Import Complete</span>
+              <span className="rounded-md bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">{importResult.added} added</span>
+              {importResult.updated > 0 && <span className="rounded-md bg-amber-500/10 px-3 py-1 text-xs text-amber-400">{importResult.updated} updated</span>}
+              {importResult.skipped > 0 && <span className="rounded-md bg-white/5 px-3 py-1 text-xs text-muted-foreground">{importResult.skipped} skipped</span>}
+              {importResult.errors > 0 && <span className="rounded-md bg-red-500/10 px-3 py-1 text-xs text-red-400">{importResult.errors} errors</span>}
+              {importResult.orphans > 0 && (
+                <span className="rounded-md bg-amber-500/10 px-3 py-1 text-xs text-amber-400" title="Entries added without a Discord ID — use Reconcile tab to link them">
+                  ⚠ {importResult.orphans} unlinked (no Discord ID)
+                </span>
+              )}
+              <Button size="sm" variant="outline" className="ml-auto" onClick={handleReset}>
+                New Import
+              </Button>
+            </div>
+            {importResult.orphans > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                These entries have Steam IDs but no Discord account linked yet. Members can claim their record when they click the panel, or use the <strong>Reconcile</strong> tab to match them manually.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Preview / Result summary chips ── */}
+      {summary && !importResult && (
         <div className="flex flex-wrap gap-2">
           <span className="rounded-md bg-white/5 px-3 py-1 text-xs">{summary.total_users} total</span>
           <span className="rounded-md bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">{summary.new} new</span>
@@ -319,10 +373,14 @@ function ImportTab() {
         </div>
       )}
 
-      {/* ── Preview table ── */}
+      {/* ── Preview / Results table ── */}
       {preview.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-sm">Preview — {preview.length} entries</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm">
+              {importResult ? `Import Results — ${preview.length} entries` : `Preview — ${preview.length} entries`}
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="rounded-lg border border-white/[0.06]">
               <Table>
@@ -336,10 +394,12 @@ function ImportTab() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.slice(0, 100).map((user, i) => (
-                    <TableRow key={i}>
+                  {preview.slice(0, 200).map((user, i) => (
+                    <TableRow key={i} className={!user.discord_id || user.discord_id === "—" ? "opacity-60" : ""}>
                       <TableCell className="text-xs">{user.discord_name || "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{user.discord_id || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {user.discord_id || <span className="text-amber-400/70 text-[10px]">no Discord ID</span>}
+                      </TableCell>
                       <TableCell className="font-mono text-xs">{user.steam_ids?.length ? user.steam_ids.join(", ") : "—"}</TableCell>
                       <TableCell className="font-mono text-xs">{user.eos_ids?.length ? user.eos_ids.join(", ") : "—"}</TableCell>
                       <TableCell className="text-xs">
@@ -348,6 +408,7 @@ function ImportTab() {
                           user.status === "new"      && "bg-emerald-500/15 text-emerald-400",
                           user.status === "existing" && "bg-amber-500/15 text-amber-400",
                           user.status === "invalid"  && "bg-red-500/15 text-red-400",
+                          user.status === "duplicate" && "bg-white/5 text-muted-foreground",
                         )}>
                           {user.status ?? "new"}
                         </span>
@@ -357,8 +418,8 @@ function ImportTab() {
                 </TableBody>
               </Table>
             </div>
-            {preview.length > 100 && (
-              <p className="mt-2 text-xs text-muted-foreground">Showing 100 of {preview.length}</p>
+            {preview.length > 200 && (
+              <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {preview.length}</p>
             )}
           </CardContent>
         </Card>

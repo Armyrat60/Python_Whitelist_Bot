@@ -2070,7 +2070,7 @@ def _parse_squad_cfg_data(data: str, existing_steam_ids: set) -> tuple[list[dict
     summary = {"total": 0, "new": 0, "duplicate": 0, "invalid": 0}
 
     admin_re = re.compile(
-        r"^Admin\s*=\s*(\d{17})\s*:\s*\S+(?:\s*//\s*(.*))?$", re.IGNORECASE,
+        r"^Admin\s*=\s*(\d{17,19})\s*:\s*[^\s/]+(?:\s*//+\s*(.*))?$", re.IGNORECASE,
     )
 
     for raw_line in data.splitlines():
