@@ -312,14 +312,27 @@ async def start_web():
             log.exception("Failed to prime cache for guild %s", guild.id)
 
     # Keep running
+    tick = 0
     try:
         while True:
-            # Refresh guild cache every 5 minutes
-            await asyncio.sleep(300)
-            try:
-                await discord_client.fetch_guilds()
-            except Exception:
-                log.debug("Guild cache refresh failed")
+            await asyncio.sleep(60)
+            tick += 1
+
+            # Refresh whitelist file cache every 60 seconds so Squad servers
+            # always get up-to-date content even in two-process deployments
+            # where the bot-worker updates DB but this service holds the cache.
+            for guild in discord_client.guilds:
+                try:
+                    await sync_outputs(db, guild.id, web_server=web_server)
+                except Exception:
+                    log.debug("Whitelist cache refresh failed for guild %s", guild.id)
+
+            # Refresh Discord guild list every 5 minutes (every 5 ticks)
+            if tick % 5 == 0:
+                try:
+                    await discord_client.fetch_guilds()
+                except Exception:
+                    log.debug("Guild cache refresh failed")
     finally:
         await discord_client.close()
         await runner.cleanup()

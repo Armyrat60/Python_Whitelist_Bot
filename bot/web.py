@@ -305,6 +305,17 @@ class WebServer:
 
         guild_cache = self._cache.get(guild_id)
         if guild_cache is None:
+            # Cache miss — try a live DB load (covers cold-start / missed refresh)
+            try:
+                from bot.output import generate_output_files
+                db = getattr(self.bot, "db", None)
+                if db:
+                    outputs = await generate_output_files(db, guild_id)
+                    self.update_cache(guild_id, outputs)
+                    guild_cache = self._cache.get(guild_id)
+            except Exception:
+                pass
+        if guild_cache is None:
             raise web.HTTPNotFound(text="Not found")
 
         content = guild_cache.get(filename)
