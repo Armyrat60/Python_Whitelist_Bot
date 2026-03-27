@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   Download,
   ArrowRightLeft,
+  Crown,
 } from "lucide-react";
 import { useUsers, useWhitelists, useSteamNames, useTierCategories } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
@@ -266,10 +267,23 @@ function BulkActionBar({
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
   const [bulkMoving, setBulkMoving] = useState(false);
+  const [bulkTierChanging, setBulkTierChanging] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [showTierDialog, setShowTierDialog] = useState(false);
   const [moveTargetSlug, setMoveTargetSlug] = useState("");
+  const [tierTarget, setTierTarget] = useState<{ value: string; slots: number } | null>(null);
+
+  const { data: tierCategories } = useTierCategories();
+  const allTierEntries = (tierCategories ?? []).flatMap((cat) =>
+    (cat.entries ?? []).map((e) => ({
+      label: e.display_name ?? e.role_name,
+      value: e.display_name ?? e.role_name,
+      slots: e.slot_limit,
+      categoryName: cat.name,
+    }))
+  );
 
   async function handleBulkDelete() {
     setBulkDeleting(true);
@@ -355,6 +369,31 @@ function BulkActionBar({
       toast.error("Failed to move users");
     } finally {
       setBulkMoving(false);
+    }
+  }
+
+  async function handleBulkTierChange() {
+    if (!tierTarget) return;
+    setBulkTierChanging(true);
+    try {
+      const promises = selectedUsers.map((u) =>
+        api.patch(`/api/admin/users/${u.discord_id}/${u.whitelist_slug}`, {
+          plan: tierTarget.value,
+          plan_slot_limit: tierTarget.slots,
+          steam_ids: u.steam_ids,
+          eos_ids: u.eos_ids,
+        })
+      );
+      await Promise.all(promises);
+      toast.success(`Set ${selectedCount} user(s) to tier "${tierTarget.value}"`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setShowTierDialog(false);
+      setTierTarget(null);
+      onClear();
+    } catch {
+      toast.error("Failed to change tiers");
+    } finally {
+      setBulkTierChanging(false);
     }
   }
 
@@ -452,6 +491,71 @@ function BulkActionBar({
           </div>
         )}
       </div>
+
+      {/* Change Tier */}
+      <Dialog open={showTierDialog} onOpenChange={(o) => { setShowTierDialog(o); if (!o) setTierTarget(null); }}>
+        <DialogTrigger
+          render={<Button variant="outline" size="sm" disabled={bulkTierChanging} />}
+        >
+          {bulkTierChanging ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Crown className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Change Tier
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Tier for {selectedCount} User(s)</DialogTitle>
+            <DialogDescription>
+              Select a tier to assign. The slot limit will automatically update to match the tier.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Select
+              value={tierTarget?.value ?? ""}
+              onValueChange={(v) => {
+                const entry = allTierEntries.find((e) => e.value === v);
+                setTierTarget(entry ? { value: entry.value, slots: entry.slots } : null);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a tier..." />
+              </SelectTrigger>
+              <SelectContent>
+                {allTierEntries.length === 0 ? (
+                  <SelectItem value="__none__" disabled>No tier entries configured</SelectItem>
+                ) : (
+                  allTierEntries.map((e) => (
+                    <SelectItem key={`${e.categoryName}-${e.value}`} value={e.value}>
+                      <span className="flex items-center gap-2">
+                        {e.label}
+                        <span className="text-[10px] text-muted-foreground">
+                          ({e.slots} slot{e.slots !== 1 ? "s" : ""}) · {e.categoryName}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            {tierTarget && (
+              <p className="text-[12px] text-muted-foreground">
+                All {selectedCount} selected user(s) will be assigned tier{" "}
+                <span className="font-semibold text-foreground">"{tierTarget.value}"</span>{" "}
+                with <span className="font-semibold text-foreground">{tierTarget.slots} slot{tierTarget.slots !== 1 ? "s" : ""}</span>.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTierDialog(false)}>Cancel</Button>
+            <Button disabled={!tierTarget || bulkTierChanging} onClick={handleBulkTierChange}>
+              {bulkTierChanging && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Apply to {selectedCount} User{selectedCount !== 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Move to Whitelist */}
       <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
