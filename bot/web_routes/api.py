@@ -3321,21 +3321,57 @@ async def admin_members_gap(request: web.Request) -> web.Response:
     if not whitelisted_role_ids:
         return web.json_response({"gap": [], "total_role_holders": 0, "total_registered": 0})
 
-    # Get Discord guild members who have any of those roles
-    guild = bot.get_guild(guild_id) if hasattr(bot, "get_guild") else None
-    if not guild:
-        return web.json_response({"error": "Bot not connected to this guild."}, status=503)
+    # Build role_id -> role_name map from DB (tier_entries + role_mappings)
+    role_name_map: dict[int, str] = {}
+    te_name_rows = await db.fetchall(
+        "SELECT DISTINCT role_id, role_name FROM tier_entries WHERE guild_id=%s",
+        (guild_id,),
+    )
+    for r in (te_name_rows or []):
+        try:
+            role_name_map[int(r[0])] = r[1] or str(r[0])
+        except (ValueError, TypeError):
+            pass
 
-    role_holders: dict[int, dict] = {}  # discord_id -> {name, roles}
-    for member in guild.members:
-        member_role_ids = {r.id for r in member.roles}
-        matched_roles = member_role_ids & whitelisted_role_ids
-        if matched_roles:
-            role_holders[member.id] = {
-                "discord_id": str(member.id),
-                "name": member.display_name,
-                "matched_roles": [r.name for r in member.roles if r.id in matched_roles],
-            }
+    # Fetch members for each whitelisted role via gateway or REST
+    role_holders: dict[int, dict] = {}  # discord_id -> {name, matched_roles}
+
+    guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
+    if guild and hasattr(guild, "get_role"):
+        # Full gateway bot
+        for rid in whitelisted_role_ids:
+            role = guild.get_role(rid)
+            if not role:
+                continue
+            role_name_map[rid] = role.name
+            for member in role.members:
+                if member.id not in role_holders:
+                    role_holders[member.id] = {
+                        "discord_id": str(member.id),
+                        "name": member.display_name,
+                        "matched_roles": [],
+                    }
+                role_holders[member.id]["matched_roles"].append(role.name)
+    elif hasattr(bot, "get_role_members"):
+        # REST fallback — paginate each role
+        for rid in whitelisted_role_ids:
+            role_name = role_name_map.get(rid, str(rid))
+            try:
+                members = await bot.get_role_members(guild_id, rid)
+            except Exception as exc:
+                log.warning("Gap report: failed to fetch role %s: %s", rid, exc)
+                continue
+            for m in members:
+                mid = m["id"]
+                if mid not in role_holders:
+                    role_holders[mid] = {
+                        "discord_id": str(mid),
+                        "name": m["name"],
+                        "matched_roles": [],
+                    }
+                role_holders[mid]["matched_roles"].append(role_name)
+    else:
+        return web.json_response({"error": "Bot not connected — cannot fetch Discord members."}, status=503)
 
     if not role_holders:
         return web.json_response({"gap": [], "total_role_holders": 0, "total_registered": 0})
