@@ -440,10 +440,44 @@ class WhitelistBot(commands.Bot):
                 FROM whitelist_identifiers
                 WHERE (id_type, id_value) IN ({placeholders})
                   AND NOT (discord_id=%s AND whitelist_id=%s)
+                  AND discord_id > 0
                 """,
                 tuple(flat_params),
             )
             duplicate_warnings = [f"{r[0]}:{r[1]}" for r in rows]
+
+        # Auto-claim: if any submitted IDs are owned by orphan records (discord_id < 0,
+        # created during bulk import with no Discord ID), silently delete those orphans
+        # so this real user cleanly takes ownership of their IDs.
+        if submitted:
+            pairs_claim = [(id_type, id_value) for id_type, id_value, *_ in submitted]
+            ph_claim = ",".join(["(%s,%s)"] * len(pairs_claim))
+            flat_claim = [v for pair in pairs_claim for v in pair]
+            flat_claim.extend([guild_id, whitelist_id])
+            orphan_rows = await self.db.fetchall(
+                f"""
+                SELECT DISTINCT discord_id FROM whitelist_identifiers
+                WHERE (id_type, id_value) IN ({ph_claim})
+                  AND guild_id=%s AND whitelist_id=%s AND discord_id < 0
+                """,
+                tuple(flat_claim),
+            )
+            for orphan_row in orphan_rows:
+                orphan_id = orphan_row[0]
+                await self.db.execute_transaction([
+                    (
+                        "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s AND discord_id=%s",
+                        (guild_id, whitelist_id, orphan_id),
+                    ),
+                    (
+                        "DELETE FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND discord_id=%s",
+                        (guild_id, whitelist_id, orphan_id),
+                    ),
+                ])
+                log.info(
+                    "Auto-claimed orphan discord_id=%s → real user=%s in guild=%s wl=%s",
+                    orphan_id, interaction.user.id, guild_id, whitelist_id,
+                )
 
         existing_before_save = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
         async with self.write_lock:

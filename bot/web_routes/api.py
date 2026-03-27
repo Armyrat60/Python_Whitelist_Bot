@@ -98,6 +98,33 @@ def _pack_plan_meta(plan: str | None = None, notes: str | None = None,
     return json.dumps(payload) if payload else ""
 
 
+def _normalize_discord_name(name: str) -> str:
+    """Normalize a Discord username for fuzzy matching (lowercase, strip punctuation)."""
+    import re as _re2
+    name = name.lower().strip()
+    name = _re2.sub(r'[_.\-#!@$%^&*()+={}\[\]|;:,<>?/\\~` ]', '', name)
+    return name
+
+def _reconcile_score(orphan_name: str, member_name: str) -> float:
+    """Return 0.0-1.0 confidence that orphan_name matches member_name."""
+    if not orphan_name or not member_name:
+        return 0.0
+    o = orphan_name.lower().strip()
+    m = member_name.lower().strip()
+    if o == m:
+        return 1.0
+    o_n = _normalize_discord_name(o)
+    m_n = _normalize_discord_name(m)
+    if o_n and m_n and o_n == m_n:
+        return 0.95
+    if o_n and m_n:
+        shorter = min(len(o_n), len(m_n))
+        longer = max(len(o_n), len(m_n))
+        if longer > 0 and (o_n in m_n or m_n in o_n):
+            return round(0.75 * shorter / longer, 2)
+    return 0.0
+
+
 def _unpack_plan_meta(raw: str | None) -> dict:
     """Decode last_plan_name into {"plan", "notes", "expires_at"} dict.
 
@@ -2300,6 +2327,205 @@ async def admin_import(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_reconcile_preview(request: web.Request) -> web.Response:
+    """Preview matches between orphan whitelist entries (discord_id < 0) and a Discord member list.
+
+    Accepts multipart or JSON with a 'content' field containing the Discord member CSV
+    (format: User,ID — username and Discord ID per line).
+    Returns proposed matches sorted by confidence descending.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    db = request.app["bot"].db
+
+    # Parse member CSV from request
+    member_csv = ""
+    content_type = request.content_type or ""
+    if "multipart" in content_type:
+        reader = await request.multipart()
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name in ("file", "content", "members"):
+                member_csv = (await part.read(decode=True)).decode("utf-8", errors="replace")
+                break
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid request body"}, status=400)
+        member_csv = body.get("content", "") or body.get("members", "")
+
+    # Parse User,ID CSV
+    members: dict[str, int] = {}  # username -> discord_id
+    for line in member_csv.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.rsplit(",", 1)
+        if len(parts) != 2:
+            continue
+        name = parts[0].strip()
+        try:
+            did = int(parts[1].strip())
+        except ValueError:
+            continue
+        if name.lower() in ("user", "username", "name"):
+            continue  # skip header
+        members[name] = did
+
+    if not members:
+        return web.json_response({"error": "No valid members found in CSV. Expected 'User,ID' format."}, status=400)
+
+    # Fetch orphan records (discord_id < 0) for this guild
+    orphan_rows = await db.fetchall(
+        """
+        SELECT u.discord_id, u.discord_name, w.slug, w.name, u.status, u.slot_limit
+        FROM whitelist_users u
+        JOIN whitelists w ON w.id = u.whitelist_id
+        WHERE u.guild_id=%s AND u.discord_id < 0
+        ORDER BY u.discord_name
+        """,
+        (guild_id,),
+    )
+
+    if not orphan_rows:
+        return web.json_response({
+            "ok": True,
+            "members_loaded": len(members),
+            "orphans_found": 0,
+            "results": [],
+        })
+
+    # Fetch identifiers for orphan discord_ids
+    orphan_ids = list({r[0] for r in orphan_rows})
+    id_map: dict[int, list[str]] = {}
+    if orphan_ids:
+        placeholders = ",".join(["%s"] * len(orphan_ids))
+        id_rows = await db.fetchall(
+            f"SELECT discord_id, id_type, id_value FROM whitelist_identifiers WHERE guild_id=%s AND discord_id IN ({placeholders})",
+            tuple([guild_id] + orphan_ids),
+        )
+        for irow in id_rows:
+            key = int(irow[0])
+            if key not in id_map:
+                id_map[key] = []
+            id_map[key].append(f"{irow[1]}:{irow[2]}")
+
+    # Match each orphan against member list
+    results = []
+    for row in orphan_rows:
+        orphan_id = int(row[0])
+        orphan_name = row[1] or ""
+        wl_slug = row[2]
+        wl_name = row[3]
+        identifiers = id_map.get(orphan_id, [])
+
+        best_match = None
+        best_score = 0.0
+        for member_name, member_did in members.items():
+            score = _reconcile_score(orphan_name, member_name)
+            if score > best_score:
+                best_score = score
+                best_match = {"discord_name": member_name, "discord_id": member_did}
+
+        results.append({
+            "orphan_discord_id": orphan_id,
+            "orphan_name": orphan_name,
+            "whitelist_slug": wl_slug,
+            "whitelist_name": wl_name,
+            "identifiers": identifiers,
+            "match": best_match,
+            "confidence": round(best_score, 2),
+        })
+
+    results.sort(key=lambda x: x["confidence"], reverse=True)
+
+    return web.json_response({
+        "ok": True,
+        "members_loaded": len(members),
+        "orphans_found": len(results),
+        "results": results,
+    })
+
+
+@require_admin
+async def admin_reconcile_apply(request: web.Request) -> web.Response:
+    """Apply reconcile matches: re-parent orphan records to real Discord IDs.
+
+    Body: { matches: [{orphan_discord_id, real_discord_id, real_discord_name}] }
+    For each match:
+    - If the real user already has a record in the same whitelist, delete the orphan.
+    - Otherwise re-parent by updating discord_id in both tables.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    actor_id = int(session["discord_id"])
+    db = request.app["bot"].db
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid request body"}, status=400)
+
+    matches = body.get("matches", [])
+    if not matches:
+        return web.json_response({"error": "No matches provided"}, status=400)
+
+    applied = 0
+    skipped = 0
+    errors = 0
+
+    for match in matches:
+        try:
+            orphan_id = int(match["orphan_discord_id"])
+            real_id = int(match["real_discord_id"])
+            real_name = str(match.get("real_discord_name", ""))
+
+            if orphan_id >= 0:
+                skipped += 1
+                continue  # Safety: never touch real records this way
+
+            # Check if real_id already has a record in whitelist_users
+            existing = await db.fetchone(
+                "SELECT discord_id FROM whitelist_users WHERE guild_id=%s AND discord_id=%s",
+                (guild_id, real_id),
+            )
+
+            if existing:
+                # Real user already exists — delete the orphan duplicate
+                await db.execute_transaction([
+                    ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s",
+                     (guild_id, orphan_id)),
+                    ("DELETE FROM whitelist_users WHERE guild_id=%s AND discord_id=%s",
+                     (guild_id, orphan_id)),
+                ])
+            else:
+                # Re-parent: update discord_id in both tables
+                await db.execute_transaction([
+                    ("UPDATE whitelist_identifiers SET discord_id=%s WHERE guild_id=%s AND discord_id=%s",
+                     (real_id, guild_id, orphan_id)),
+                    ("UPDATE whitelist_users SET discord_id=%s, discord_name=%s WHERE guild_id=%s AND discord_id=%s",
+                     (real_id, real_name, guild_id, orphan_id)),
+                ])
+
+            applied += 1
+        except Exception as e:
+            log.error("Reconcile apply error for match %s: %s", match, e)
+            errors += 1
+
+    await db.audit(
+        guild_id, "admin_reconcile", actor_id, None,
+        f"Reconciled {applied} orphan record(s) — {skipped} skipped, {errors} errors",
+    )
+
+    await _trigger_sync(request, guild_id)
+
+    return web.json_response({"ok": True, "applied": applied, "skipped": skipped, "errors": errors})
+
+
+@require_admin
 async def admin_export(request: web.Request) -> web.Response:
     """Export whitelist data in various formats."""
     session = await aiohttp_session.get_session(request)
@@ -3611,6 +3837,8 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/import/headers", admin_import_headers)
     app.router.add_post("/api/admin/import/preview", admin_import_preview)
     app.router.add_post("/api/admin/import", admin_import)
+    app.router.add_post("/api/admin/reconcile/preview", admin_reconcile_preview)
+    app.router.add_post("/api/admin/reconcile/apply", admin_reconcile_apply)
     app.router.add_get("/api/admin/export", admin_export)
     app.router.add_post("/api/admin/verify-roles", admin_verify_roles)
     # Admin Tier Categories CRUD
