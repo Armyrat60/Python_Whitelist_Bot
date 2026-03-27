@@ -91,12 +91,12 @@
 
 /* ─── Tactical Dark Theme ─── */
 .dark {
-  /* Background layers */
-  --background: oklch(0.09 0.012 240);       /* #0B0F14 — deepest layer */
+  /* Background layers — lifted to feel less cave-black */
+  --background: oklch(0.13 0.018 240);       /* #141b26 — main bg */
   --foreground: oklch(0.92 0.005 240);       /* #E5E7EB — primary text */
-  --card: oklch(0.13 0.015 240);             /* #111827 — panel surface */
+  --card: oklch(0.17 0.020 240 / 0.65);     /* glass card — semi-transparent */
   --card-foreground: oklch(0.92 0.005 240);
-  --popover: oklch(0.13 0.015 240);
+  --popover: oklch(0.17 0.020 240);          /* popover stays opaque */
   --popover-foreground: oklch(0.92 0.005 240);
 
   /* Green primary accent */
@@ -127,7 +127,7 @@
   --chart-5: oklch(0.50 0.10 200);
 
   /* Sidebar: slightly darker than bg */
-  --sidebar: oklch(0.10 0.012 240);
+  --sidebar: oklch(0.11 0.016 240);
   --sidebar-foreground: oklch(0.92 0.005 240);
   --sidebar-primary: oklch(0.73 0.20 142);
   --sidebar-primary-foreground: oklch(0.09 0 0);
@@ -143,9 +143,11 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Subtle noise texture via SVG data URI */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-    background-size: 128px 128px;
+    /* Radial gradient — lighter blue-teal bloom at top-left, dark everywhere else */
+    background-image:
+      radial-gradient(ellipse 80% 50% at 10% -10%, oklch(0.22 0.06 220 / 0.5) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 90% 100%, oklch(0.18 0.04 200 / 0.3) 0%, transparent 55%);
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;
@@ -191,5 +193,14 @@
   /* Card depth shadow */
   .card-depth {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  }
+
+  /* Glassmorphism panel */
+  .glass-panel {
+    background: oklch(0.16 0.020 240 / 0.60);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid oklch(1 0 0 / 0.07);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 1px 0 oklch(1 0 0 / 0.06) inset;
   }
 }

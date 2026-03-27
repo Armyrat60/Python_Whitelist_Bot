@@ -158,39 +158,64 @@ function TierBadge({ tier, whitelist }: { tier: string | null | undefined; white
   );
 }
 
-/** Slot visualization — smooth progress bar + numeric */
+/* ── Discord-palette avatar colors (deterministic per discord_id) ── */
+const DISCORD_COLORS = [
+  "#5865F2", // blurple
+  "#3BA55D", // green
+  "#FAA61A", // yellow
+  "#ED4245", // red
+  "#9C84EC", // purple
+  "#00CDD7", // teal
+  "#F47B67", // salmon
+  "#43B581", // muted green
+  "#EB459E", // fuchsia
+  "#1DA0F2", // sky blue
+];
+
+function getAvatarColor(discordId: string): string {
+  let hash = 0;
+  for (let i = 0; i < discordId.length; i++) {
+    hash = ((hash * 31) + discordId.charCodeAt(i)) >>> 0;
+  }
+  return DISCORD_COLORS[hash % DISCORD_COLORS.length];
+}
+
+/** Slot visualization — colored dot + count + slim progress bar */
 function SlotBar({
   used,
   total,
+  color,
 }: {
   used: number;
   total: number;
+  color?: string;
 }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
   const isOver = used > total;
+  const barColor = isOver ? "#F87171" : (color ?? "var(--accent-primary)");
+  const glowColor = isOver ? "rgba(248,113,113,0.5)" : `${color ?? ""}80`;
 
   return (
     <div className="flex items-center gap-2">
-      <div className="relative h-[3px] w-16 overflow-hidden rounded-full bg-white/10">
+      {/* Colored identity dot */}
+      <span
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ background: barColor, boxShadow: `0 0 5px ${glowColor}` }}
+      />
+      <span className={cn("min-w-[26px] text-[11px] tabular-nums font-medium", isOver ? "text-red-400" : "text-white/60")}>
+        {used}/{total}
+      </span>
+      {/* Progress track */}
+      <div className="relative h-[3px] w-20 overflow-hidden rounded-full bg-white/10">
         <div
           className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
           style={{
             width: `${pct}%`,
-            background: isOver ? "#F87171" : "var(--accent-primary)",
-            boxShadow: !isOver
-              ? "0 0 6px color-mix(in srgb, var(--accent-primary) 80%, transparent)"
-              : "none",
+            background: barColor,
+            boxShadow: `0 0 6px ${glowColor}`,
           }}
         />
       </div>
-      <span
-        className={cn(
-          "min-w-[28px] text-[11px] tabular-nums",
-          isOver ? "text-red-400" : "text-muted-foreground"
-        )}
-      >
-        {used}/{total}
-      </span>
     </div>
   );
 }
@@ -1025,9 +1050,9 @@ function UserListView({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.06]" style={{ background: "oklch(0.13 0.015 240)" }}>
+    <div className="glass-panel overflow-hidden rounded-xl">
       {/* Header */}
-      <div className="hidden items-center gap-3 border-b border-white/[0.05] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 sm:flex">
+      <div className="hidden items-center gap-3 border-b border-white/[0.05] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 sm:flex">
         <span
           className="flex w-8 cursor-pointer items-center justify-center"
           onClick={(e) => {
@@ -1043,8 +1068,8 @@ function UserListView({
         </span>
         <span className="w-8" />
         <span className="flex-1">Discord Name</span>
+        <span className="w-44">Slots</span>
         <span className="w-28 text-center">Tier</span>
-        <span className="w-28 text-center">Slots</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
       </div>
@@ -1078,23 +1103,31 @@ function UserListView({
                   onCheckedChange={() => onToggleSelect(key)}
                 />
               </span>
-              <Avatar size="sm">
-                <AvatarFallback>
-                  {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
-                </AvatarFallback>
-              </Avatar>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
-                {user.discord_name}
-              </span>
-              <span className="hidden w-28 text-center sm:block">
-                <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
-              </span>
-              <span className="flex w-28 items-center justify-center">
-                <SlotBar used={usedSlots} total={user.effective_slot_limit} />
-              </span>
-              <span className="w-20 text-center">
-                <StatusBadge status={user.status} />
-              </span>
+              {(() => {
+                const avatarColor = getAvatarColor(user.discord_id);
+                return (
+                  <>
+                    <Avatar size="sm">
+                      <AvatarFallback style={{ background: avatarColor, color: "#fff", fontWeight: 600 }}>
+                        {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
+                      {user.discord_name}
+                    </span>
+                    {/* Slots — left of tier, colored per user */}
+                    <span className="flex w-44 items-center">
+                      <SlotBar used={usedSlots} total={user.effective_slot_limit} color={avatarColor} />
+                    </span>
+                    <span className="hidden w-28 text-center sm:block">
+                      <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+                    </span>
+                    <span className="w-20 text-center">
+                      <StatusBadge status={user.status} />
+                    </span>
+                  </>
+                );
+              })()}
               <ChevronDown
                 className={cn(
                   "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
