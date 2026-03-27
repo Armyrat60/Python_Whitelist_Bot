@@ -608,57 +608,10 @@ class WhitelistBot(commands.Bot):
                 break
 
     async def _build_panel_embed(self, guild_id: int, wl: dict) -> discord.Embed:
-        wl_name = wl["name"]
-        wl_id = wl["id"]
-
-        # Strip leading "Default " from the display title
-        display_name = re.sub(r'^\s*Default\s+', '', wl_name).strip() or wl_name
-
-        # Get tier entries from panel's category, or fall back to role_mappings
+        from bot.panel_builder import build_panel_embed
         panels = await self.db.get_panels(guild_id)
-        panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
-
-        tier_lines = []
-        if panel and panel.get("tier_category_id"):
-            tier_entries = await self.db.get_tier_entries(guild_id, panel["tier_category_id"])
-            # Only show active tiers, sorted by slot_limit ascending
-            tier_entries = sorted(
-                [te for te in tier_entries if te[6]],  # te[6] = is_active
-                key=lambda te: te[3],
-            )
-            for te in tier_entries:
-                role_id = te[1]
-                slot_limit = te[3]
-                # Role mention renders as colored role pill in Discord; pings suppressed via allowed_mentions
-                tier_lines.append(f"▸ <@&{role_id}> — **{slot_limit} {'slot' if slot_limit == 1 else 'slots'}**")
-        else:
-            role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
-            for rm in role_mappings:
-                role_id = rm[0] if len(rm) > 0 else 0
-                slot_limit = rm[2] if len(rm) > 2 else 1
-                is_active = rm[3] if len(rm) > 3 else True
-                if not is_active:
-                    continue
-                tier_lines.append(f"▸ <@&{role_id}> — **{slot_limit} {'slot' if slot_limit == 1 else 'slots'}**")
-
-        _base_url = WEB_BASE_URL or 'https://squadwhitelister.com'
-        _domain = _base_url.replace('https://', '').replace('http://', '').rstrip('/')
-        description = "Use the buttons below to manage your whitelist entry.\n\n"
-        if tier_lines:
-            description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
-        description += (
-            "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
-            "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
-            f"🌐 [**{_domain}**]({_base_url})"
-        )
-
-        embed = discord.Embed(
-            title=f"🛡️ {display_name}",
-            description=description,
-            color=discord.Color.from_rgb(249, 115, 22),  # Orange
-        )
-        embed.set_footer(text=f"Squad Whitelister • {_domain}")
-        return embed
+        panel = next((p for p in panels if p.get("whitelist_id") == wl["id"]), None)
+        return await build_panel_embed(self.db, guild_id, panel, wl)
 
     async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):
         """Post or refresh a whitelist panel. whitelist_type is the slug for backward compat.

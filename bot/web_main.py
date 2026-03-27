@@ -4,6 +4,7 @@ Uses a lightweight Discord REST client for guild/channel/role data
 instead of the full discord.py bot.
 """
 import asyncio
+import signal
 
 from aiohttp import web
 
@@ -311,11 +312,31 @@ async def start_web():
         except Exception:
             log.exception("Failed to prime cache for guild %s", guild.id)
 
+    # Graceful shutdown: handle SIGTERM (Docker stop) by cancelling the main task
+    loop = asyncio.get_running_loop()
+    shutdown_event = asyncio.Event()
+
+    def _handle_signal():
+        log.info("Shutdown signal received — stopping web service cleanly")
+        shutdown_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _handle_signal)
+        except (NotImplementedError, OSError):
+            # Windows doesn't support add_signal_handler for SIGTERM
+            pass
+
     # Keep running
     tick = 0
     try:
-        while True:
-            await asyncio.sleep(60)
+        while not shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=60)
+                break  # Shutdown was signalled during sleep
+            except asyncio.TimeoutError:
+                pass  # Normal 60-second tick
+
             tick += 1
 
             # Refresh whitelist file cache every 60 seconds so Squad servers
@@ -334,8 +355,10 @@ async def start_web():
                 except Exception:
                     log.debug("Guild cache refresh failed")
     finally:
-        await discord_client.close()
+        log.info("Web service shutting down — draining connections")
         await runner.cleanup()
+        await discord_client.close()
+        log.info("Web service stopped cleanly")
 
 
 def main():

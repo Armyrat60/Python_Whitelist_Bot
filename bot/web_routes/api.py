@@ -186,8 +186,85 @@ def require_login(handler: Callable) -> Callable:
     return wrapper
 
 
+_IS_MOD_TTL = 300  # Re-verify every 5 minutes
+
+
+async def _reverify_is_mod(request: web.Request, session, active_guild_id: str) -> bool:
+    """Re-check mod status using the bot's guild cache + DB, without OAuth token.
+
+    Returns the current is_mod value and updates the session guilds in-place.
+    Falls back to the cached session value if the bot is unavailable.
+    """
+    bot = request.app.get("bot")
+    if bot is None:
+        # Web-only mode with no bot cache — keep existing value
+        guilds = session.get("guilds", [])
+        g = _find_guild_in_session(guilds, active_guild_id)
+        return bool(g and g.get("is_mod"))
+
+    discord_id_str = session.get("discord_id", "")
+    try:
+        user_discord_id = int(discord_id_str)
+    except (ValueError, TypeError):
+        return False
+
+    try:
+        guild_id_int = int(active_guild_id)
+        discord_guild = bot.get_guild(guild_id_int)
+        is_mod = False
+
+        if discord_guild:
+            # Guild owner is always admin
+            if discord_guild.owner_id == user_discord_id:
+                is_mod = True
+
+            if not is_mod:
+                member = discord_guild.get_member(user_discord_id)
+                if member:
+                    if member.guild_permissions.administrator:
+                        is_mod = True
+                    elif member.guild_permissions.manage_guild:
+                        is_mod = True
+
+                    if not is_mod:
+                        # Check custom mod roles from DB
+                        db = getattr(bot, "db", None) or request.app.get("db")
+                        if db:
+                            mod_role_id_str = await db.get_setting(guild_id_int, "mod_role_id", "")
+                            if mod_role_id_str:
+                                mod_role_ids = {
+                                    int(r.strip())
+                                    for r in mod_role_id_str.split(",")
+                                    if r.strip().isdigit()
+                                }
+                                if any(r.id in mod_role_ids for r in member.roles):
+                                    is_mod = True
+
+        # Patch session in-place
+        now = time.monotonic()
+        guilds = session.get("guilds", [])
+        for g in guilds:
+            if str(g.get("id")) == active_guild_id:
+                g["is_mod"] = is_mod
+                g["_is_mod_verified_at"] = now
+                break
+        session["guilds"] = guilds
+        session["is_mod"] = is_mod
+        return is_mod
+
+    except Exception:
+        log.warning("is_mod re-verification failed for discord_id=%s guild=%s", discord_id_str, active_guild_id)
+        guilds = session.get("guilds", [])
+        g = _find_guild_in_session(guilds, active_guild_id)
+        return bool(g and g.get("is_mod"))
+
+
 def require_admin(handler: Callable) -> Callable:
-    """Decorator that checks the user is a mod/admin for the ACTIVE guild."""
+    """Decorator that checks the user is a mod/admin for the ACTIVE guild.
+
+    The is_mod flag is re-verified against the live Discord guild every
+    _IS_MOD_TTL seconds so that demoted mods lose access promptly.
+    """
     @functools.wraps(handler)
     async def wrapper(request: web.Request) -> web.Response:
         session = await aiohttp_session.get_session(request)
@@ -196,10 +273,19 @@ def require_admin(handler: Callable) -> Callable:
         active_guild_id = session.get("active_guild_id")
         if not active_guild_id:
             return web.json_response({"error": "No active guild selected."}, status=400)
-        # Check is_mod for the active guild
+
         guilds = session.get("guilds", [])
         active_guild = _find_guild_in_session(guilds, active_guild_id)
-        if not active_guild or not active_guild.get("is_mod"):
+
+        # Re-verify is_mod if TTL has elapsed
+        now = time.monotonic()
+        verified_at = active_guild.get("_is_mod_verified_at", 0) if active_guild else 0
+        if active_guild is None or (now - verified_at) > _IS_MOD_TTL:
+            is_mod = await _reverify_is_mod(request, session, active_guild_id)
+        else:
+            is_mod = active_guild.get("is_mod", False)
+
+        if not is_mod:
             return web.json_response({"error": "Admin access required for this guild."}, status=403)
         return await handler(request)
     return wrapper
@@ -3814,75 +3900,12 @@ async def admin_push_panel(request: web.Request) -> web.Response:
     if not panel["whitelist_id"]:
         return web.json_response({"error": "Panel has no whitelist linked."}, status=400)
 
-    # Build the panel embed
+    # Build the panel embed using the shared builder
+    from bot.panel_builder import build_panel_embed_dict, build_panel_components
     wl = await db.get_whitelist(panel["whitelist_id"])
     wl_slug = wl["slug"] if wl else "default"
-
-    # Use just the panel name as title (user-controlled), strip any leading "Default "
-    panel_display = re.sub(r'^\s*Default\s+', '', panel['name']).strip() or panel['name']
-
-    # Get tiers: prefer tier_category_id on panel, fall back to role_mappings
-    # Use role mentions so Discord renders colored role pills; pings suppressed via allowed_mentions
-    tier_lines = []
-    if panel.get("tier_category_id"):
-        tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
-        tier_entries = sorted([te for te in tier_entries if bool(te[6])], key=lambda te: te[3])
-        for te in tier_entries:
-            role_id = te[1]
-            slots = te[3]
-            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
-    else:
-        role_mappings = await db.get_role_mappings(guild_id, panel["whitelist_id"])
-        for rm in role_mappings:
-            role_id = rm[0] if isinstance(rm, tuple) else rm.get("role_id", 0)
-            slots = rm[2] if isinstance(rm, tuple) else rm.get("slot_limit", 1)
-            is_active = rm[3] if isinstance(rm, tuple) else rm.get("is_active", True)
-            if not is_active:
-                continue
-            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
-
-    _base_url = WEB_BASE_URL or "https://squadwhitelister.com"
-    _domain = _base_url.replace("https://", "").replace("http://", "").rstrip("/")
-
-    description = "Use the buttons below to manage your whitelist entry.\n\n"
-    if tier_lines:
-        description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
-    description += (
-        "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
-        "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
-        f"🌐 [**{_domain}**]({_base_url})"
-    )
-
-    embed = {
-        "title": f"🛡️ {panel_display}",
-        "description": description,
-        "color": 0xF97316,  # Orange
-        "footer": {"text": f"Squad Whitelister • {_domain}"},
-    }
-
-    # Both buttons in a single ACTION_ROW so they appear side-by-side
-    # custom_ids match the bot-worker's persistent views so the bot handles clicks
-    components = [
-        {
-            "type": 1,  # ACTION_ROW
-            "components": [
-                {
-                    "type": 2,  # BUTTON
-                    "style": 3,  # SUCCESS (green)
-                    "label": "Manage Whitelist",
-                    "emoji": {"name": "🛡️"},
-                    "custom_id": f"panel:submit:{wl_slug}",
-                },
-                {
-                    "type": 2,  # BUTTON
-                    "style": 2,  # SECONDARY (gray)
-                    "label": "Manager Tools",
-                    "emoji": {"name": "⚙️"},
-                    "custom_id": f"panel:manage:{wl_slug}",
-                },
-            ],
-        },
-    ]
+    embed = await build_panel_embed_dict(db, guild_id, panel, wl)
+    components = build_panel_components(wl_slug)
 
     # Try to send or edit the message
     discord_client = getattr(bot, "_discord", None)

@@ -9,29 +9,56 @@ class GeneralCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="help", description="Show help")
+    @app_commands.command(name="help", description="Show available bot commands and dashboard link")
     async def help_cmd(self, interaction: discord.Interaction):
         dashboard_url = WEB_BASE_URL or "https://squadwhitelister.com"
-        embed = discord.Embed(title="Squad Whitelister", color=discord.Color.blurple())
+        domain = dashboard_url.replace("https://", "").replace("http://", "").rstrip("/")
+
+        embed = discord.Embed(
+            title="🛡️ Squad Whitelister — Help",
+            color=discord.Color.from_rgb(249, 115, 22),
+        )
+
         embed.add_field(
-            name="Discord Commands",
+            name="👤 Member Commands",
             value=(
-                "`/whitelist` \u2014 Submit your Steam/EOS IDs\n"
-                "`/my_whitelist` \u2014 View your current whitelist entries\n"
-                "`/status` \u2014 Check bot status"
+                "`/whitelist` — Submit or update your Steam64 / EOS IDs\n"
+                "`/my_whitelist` — View your current whitelist entries\n"
+                "`/status` — Check bot and whitelist status\n"
+                "`/help` — Show this message"
             ),
             inline=False,
         )
+
         embed.add_field(
-            name="Web Dashboard",
+            name="🔧 Moderator Commands",
             value=(
-                f"**{dashboard_url}**\n"
-                "Setup, user management, search, audit log,\n"
-                "import/export, statistics, and more."
+                "`/search` — Look up a Steam64 or EOS ID\n"
+                "`/mod_view` — View a user's whitelist entries\n"
+                "`/mod_override` — Set or clear a slot override for a user\n"
+                "`/mod_remove` — Remove a user from the active whitelist\n"
+                "`/mod_set` — Replace a user's IDs directly\n"
+                "`/audit` — View recent audit log entries\n"
+                "`/export` — Export whitelist data as CSV\n"
+                "`/import_csv` — Import whitelist data from a CSV file\n"
+                "`/stats` — Show whitelist statistics\n"
+                "`/whitelist_panel` — Post or refresh the whitelist panel\n"
+                "`/setup` — Launch the interactive setup wizard\n"
+                "`/setup_mod_role` — Set the bot moderator role"
             ),
             inline=False,
         )
-        embed.set_footer(text="Steam64 and EOSID supported.")
+
+        embed.add_field(
+            name=f"🌐 Web Dashboard — [{domain}]({dashboard_url})",
+            value=(
+                "Full user management, import/export, audit log,\n"
+                "tier configuration, whitelist URLs, and more."
+            ),
+            inline=False,
+        )
+
+        embed.set_footer(text="Supports Steam64 IDs and EOS IDs • Replies are private")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="status", description="Show bot status")
