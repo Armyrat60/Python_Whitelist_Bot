@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
@@ -583,6 +584,9 @@ class WhitelistBot(commands.Bot):
         wl_name = wl["name"]
         wl_id = wl["id"]
 
+        # Strip leading "Default " from the display title
+        display_name = re.sub(r'^\s*Default\s+', '', wl_name).strip() or wl_name
+
         # Get tier entries from panel's category, or fall back to role_mappings
         panels = await self.db.get_panels(guild_id)
         panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
@@ -598,8 +602,8 @@ class WhitelistBot(commands.Bot):
             for te in tier_entries:
                 role_id = te[1]
                 slot_limit = te[3]
-                # Role mention for colored display in Discord; pings suppressed via allowed_mentions
-                tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+                # Role mention renders as colored role pill in Discord; pings suppressed via allowed_mentions
+                tier_lines.append(f"▸ <@&{role_id}> — **{slot_limit} {'slot' if slot_limit == 1 else 'slots'}**")
         else:
             role_mappings = await self.db.get_role_mappings(guild_id, wl_id)
             for rm in role_mappings:
@@ -608,20 +612,21 @@ class WhitelistBot(commands.Bot):
                 is_active = rm[3] if len(rm) > 3 else True
                 if not is_active:
                     continue
-                tier_lines.append(f"<@&{role_id}> — {slot_limit} {'slot' if slot_limit == 1 else 'slots'}")
+                tier_lines.append(f"▸ <@&{role_id}> — **{slot_limit} {'slot' if slot_limit == 1 else 'slots'}**")
 
-        _domain = WEB_BASE_URL.replace('https://', '').replace('http://', '') if WEB_BASE_URL else 'squadwhitelister.com'
+        _base_url = WEB_BASE_URL or 'https://squadwhitelister.com'
+        _domain = _base_url.replace('https://', '').replace('http://', '').rstrip('/')
         description = "Use the buttons below to manage your whitelist entry.\n\n"
         if tier_lines:
             description += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
         description += (
             "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
             "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
-            f"🌐 {_domain}"
+            f"🌐 [**{_domain}**]({_base_url})"
         )
 
         embed = discord.Embed(
-            title=f"🛡️ {wl_name}",
+            title=f"🛡️ {display_name}",
             description=description,
             color=discord.Color.from_rgb(249, 115, 22),  # Orange
         )
@@ -656,22 +661,36 @@ class WhitelistBot(commands.Bot):
         posted = None
         stored_channel_id = panel_record["channel_id"] if panel_record else wl.get("panel_channel_id")
         stored_message_id = panel_record["panel_message_id"] if panel_record else wl.get("panel_message_id")
+
+        async def _resolve_channel(ch_id: int):
+            """Get channel from cache; fall back to REST fetch if not cached."""
+            ch = self.get_channel(ch_id)
+            if ch is None:
+                try:
+                    ch = await self.fetch_channel(ch_id)
+                except Exception:
+                    pass
+            return ch
+
         if stored_message_id and stored_channel_id:
-            try:
-                stored_ch = self.get_channel(int(stored_channel_id))
-                if stored_ch:
+            stored_ch = await _resolve_channel(int(stored_channel_id))
+            if stored_ch:
+                try:
                     old = await stored_ch.fetch_message(int(stored_message_id))
                     await old.edit(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
                     posted = old
-            except Exception:
-                posted = None
+                except discord.NotFound:
+                    # Old message was deleted — will post fresh below
+                    log.info("Panel message %s not found in channel %s, posting fresh", stored_message_id, stored_channel_id)
+                except Exception:
+                    log.exception("Failed to edit panel message %s", stored_message_id)
 
-        # If no existing panel found, post a new one
+        # If no existing panel found (or edit failed), post a new one
         if posted is None:
             # Use provided channel, or fall back to the configured panel channel
             target = channel
             if target is None and stored_channel_id:
-                target = self.get_channel(int(stored_channel_id))
+                target = await _resolve_channel(int(stored_channel_id))
             if target is not None:
                 posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
 
