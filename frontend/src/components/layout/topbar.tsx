@@ -5,7 +5,6 @@ import { LogOut, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { useSession } from "@/hooks/use-session";
-import { GuildSwitcher } from "@/components/layout/guild-switcher";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
@@ -51,8 +50,6 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        <GuildSwitcher />
-
         {session && (
           <div className="flex items-center gap-2">
             <Avatar size="sm">

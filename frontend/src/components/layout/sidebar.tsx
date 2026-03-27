@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -13,9 +14,26 @@ import {
   Lock,
   Sliders,
   Crown,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { useGuild } from "@/hooks/use-guild";
 
 const mainLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -38,6 +56,95 @@ const settingsLinks = [
 const userLinks = [
   { href: "/my-whitelist", label: "My Whitelist", icon: List },
 ];
+
+function guildIconUrl(guildId: string, icon: string | null) {
+  if (!icon) return null;
+  if (icon.startsWith("http")) return icon;
+  return `https://cdn.discordapp.com/icons/${guildId}/${icon}.webp?size=64`;
+}
+
+function SidebarGuildCard() {
+  const { activeGuild, guilds, switchGuild } = useGuild();
+  const [open, setOpen] = useState(false);
+  const [flashing, setFlashing] = useState(false);
+  const prevGuildId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (prevGuildId.current !== undefined && prevGuildId.current !== activeGuild?.id) {
+      setFlashing(false);
+      // Re-trigger animation by toggling off then on next frame
+      requestAnimationFrame(() => setFlashing(true));
+    }
+    prevGuildId.current = activeGuild?.id;
+  }, [activeGuild?.id]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger>
+        <div
+          onAnimationEnd={() => setFlashing(false)}
+          className={cn(
+            "mx-3 mt-3 mb-1 flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.08] px-3 py-2.5 transition-colors hover:border-white/[0.15] hover:bg-white/[0.04]",
+            flashing && "guild-switch-flash"
+          )}
+        >
+          <Avatar size="md">
+            <AvatarImage
+              src={guildIconUrl(activeGuild?.id ?? "", activeGuild?.icon ?? null) ?? undefined}
+              alt={activeGuild?.name ?? ""}
+            />
+            <AvatarFallback className="text-xs font-bold">
+              {activeGuild?.name?.slice(0, 2).toUpperCase() ?? "??"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="truncate text-sm font-semibold text-white/90 leading-tight">
+              {activeGuild?.name ?? "Select server"}
+            </p>
+            <p className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--accent-primary)" }}>
+              Active Server
+            </p>
+          </div>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-white/30" />
+        </div>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={8} className="w-56 p-0">
+        <Command>
+          <CommandInput placeholder="Search server..." />
+          <CommandList>
+            <CommandEmpty>No servers found.</CommandEmpty>
+            <CommandGroup>
+              {guilds.map((guild) => (
+                <CommandItem
+                  key={guild.id}
+                  data-checked={guild.id === activeGuild?.id || undefined}
+                  onSelect={() => {
+                    switchGuild(guild.id);
+                    setOpen(false);
+                  }}
+                >
+                  <Avatar size="sm">
+                    <AvatarImage
+                      src={guildIconUrl(guild.id, guild.icon) ?? undefined}
+                      alt={guild.name}
+                    />
+                    <AvatarFallback className="text-xs">
+                      {guild.name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="truncate">{guild.name}</span>
+                  {guild.id === activeGuild?.id && (
+                    <Check className="ml-auto h-3.5 w-3.5 shrink-0" style={{ color: "var(--accent-primary)" }} />
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -76,8 +183,15 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* Active guild card */}
+      <SidebarGuildCard />
+
       {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
+        <div className="pt-2 pb-1">
+          <div className="h-px bg-white/[0.06]" />
+        </div>
+
         {mainLinks.map((link) => (
           <NavLink
             key={link.href}
@@ -224,7 +338,12 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
             </span>
           </div>
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+        {/* Guild card in mobile sidebar too */}
+        <SidebarGuildCard />
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
+          <div className="pt-2 pb-1">
+            <div className="h-px bg-white/[0.06]" />
+          </div>
           {allLinks.map((link) => (
             <NavLink
               key={link.href}
