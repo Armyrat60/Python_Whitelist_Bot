@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
-import { useGroups, useCreateGroup, useUpdateGroup, useDeleteGroup } from "@/hooks/use-settings";
+import { useGroups, useCreateGroup, useUpdateGroup, useDeleteGroup, useSetDefaultGroup } from "@/hooks/use-settings";
 import type { SquadGroup } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -179,6 +179,7 @@ function EditGroupDialog({
 }) {
   const updateGroup = useUpdateGroup();
   const deleteGroup = useDeleteGroup();
+  const setDefault = useSetDefaultGroup();
   const currentPerms = group.permissions
     ? group.permissions.split(",").filter(Boolean)
     : [];
@@ -265,11 +266,28 @@ function EditGroupDialog({
           ))}
         </div>
         <DialogFooter className="flex justify-between">
-          {!group.is_default && (
-            <Button variant="destructive" size="sm" onClick={handleDelete}>
-              Delete Group
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {!group.is_default && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setDefault.mutate(group.group_name, {
+                    onSuccess: () => { toast.success("Default group updated"); onClose(); },
+                    onError: () => toast.error("Failed to set default"),
+                  })
+                }
+                disabled={setDefault.isPending}
+              >
+                Set as Default
+              </Button>
+            )}
+            {!group.is_default && (
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleteGroup.isPending}>
+                Delete Group
+              </Button>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
               Cancel

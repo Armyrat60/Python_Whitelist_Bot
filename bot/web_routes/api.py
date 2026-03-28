@@ -4708,6 +4708,32 @@ async def admin_delete_group(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_set_default_group(request: web.Request) -> web.Response:
+    """Set a squad group as the default for this guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    group_name = request.match_info["group_name"]
+    existing = await db.get_squad_group(guild_id, group_name)
+    if not existing:
+        return web.json_response({"error": "Group not found."}, status=404)
+
+    # Clear is_default on all groups for this guild, then set the chosen one
+    await db.execute(
+        "UPDATE squad_groups SET is_default=%s WHERE guild_id=%s",
+        (False if db.engine == "postgres" else 0, guild_id),
+    )
+    await db.execute(
+        "UPDATE squad_groups SET is_default=%s WHERE guild_id=%s AND group_name=%s",
+        (True if db.engine == "postgres" else 1, guild_id, group_name),
+    )
+    log.info("Guild %s: admin set default squad group to '%s'", guild_id, group_name)
+    return web.json_response({"ok": True, "default": group_name})
+
+
+@require_admin
 async def admin_get_permissions(request: web.Request) -> web.Response:
     """Return the list of available Squad permissions."""
     return web.json_response({"permissions": SQUAD_PERMISSIONS})
@@ -5138,6 +5164,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/groups", admin_create_group)
     app.router.add_put("/api/admin/groups/{group_name}", admin_update_group)
     app.router.add_delete("/api/admin/groups/{group_name}", admin_delete_group)
+    app.router.add_post("/api/admin/groups/{group_name}/set-default", admin_set_default_group)
     app.router.add_get("/api/admin/permissions", admin_get_permissions)
     # Admin Import / Export
     app.router.add_post("/api/admin/import/headers", admin_import_headers)

@@ -617,6 +617,21 @@ MYSQL_MIGRATIONS = [
     # --- Tier entry per-role stackable flag ---
     "ALTER TABLE tier_entries ADD COLUMN is_stackable TINYINT(1) NOT NULL DEFAULT 0",
 
+    # --- Fix duplicate is_default flags on squad_groups ---
+    # Keep only the alphabetically-first group per guild as default; clear the rest.
+    """
+    UPDATE squad_groups sg
+    JOIN (
+        SELECT guild_id, MIN(group_name) AS keep_name
+        FROM squad_groups
+        WHERE is_default = 1
+        GROUP BY guild_id
+    ) t ON t.guild_id = sg.guild_id
+    SET sg.is_default = 0
+    WHERE sg.is_default = 1
+      AND sg.group_name != t.keep_name
+    """,
+
     # --- Steam name cache ---
     """
     CREATE TABLE IF NOT EXISTS steam_name_cache (
@@ -738,6 +753,19 @@ POSTGRES_MIGRATIONS = [
 
     # --- Tier entry per-role stackable flag ---
     "ALTER TABLE tier_entries ADD COLUMN IF NOT EXISTS is_stackable BOOLEAN NOT NULL DEFAULT FALSE",
+
+    # --- Fix duplicate is_default flags on squad_groups ---
+    """
+    UPDATE squad_groups
+    SET is_default = FALSE
+    WHERE is_default = TRUE
+      AND group_name != (
+          SELECT MIN(g2.group_name)
+          FROM squad_groups g2
+          WHERE g2.guild_id = squad_groups.guild_id
+            AND g2.is_default = TRUE
+      )
+    """,
 
     # --- Steam name cache ---
     """

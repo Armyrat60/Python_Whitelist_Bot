@@ -138,6 +138,15 @@ export function useDeleteGroup() {
   });
 }
 
+export function useSetDefaultGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (group_name: string) =>
+      api.post(`/api/admin/groups/${encodeURIComponent(group_name)}/set-default`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
+  });
+}
+
 export function useStats() {
   return useQuery<Stats>({
     queryKey: ["stats"],
