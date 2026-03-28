@@ -1992,6 +1992,151 @@ async def admin_role_sync_check(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_backfill_sources(request: web.Request) -> web.Response:
+    """Backfill created_via for existing users using the audit log.
+
+    Finds the first recorded action per (discord_id, whitelist_id) and maps it
+    to a created_via value. Only updates rows where created_via IS NULL.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    db = request.app["bot"].db
+
+    action_to_source = {
+        "user_submit":            "self_register",
+        "orphan_self_claimed":    "self_register",
+        "web_update_ids":         "web_dashboard",
+        "admin_add_user":         "admin",
+        "admin_import":           "import",
+        "role_sync_pull":         "role_sync",
+        "daily_role_sync_add":    "role_sync",
+        "auto_enroll_role_gain":  "role_sync",
+    }
+    placeholders = ",".join(["%s"] * len(action_to_source))
+
+    # Get earliest qualifying audit entry per (target_id, whitelist_id)
+    if db.engine == "postgres":
+        rows = await db.fetchall(
+            f"""
+            SELECT DISTINCT ON (target_id, whitelist_id)
+                target_id, whitelist_id, action
+            FROM audit_log
+            WHERE guild_id=%s AND action IN ({placeholders})
+            ORDER BY target_id, whitelist_id, created_at ASC
+            """,
+            (guild_id, *action_to_source.keys()),
+        )
+    else:
+        rows = await db.fetchall(
+            f"""
+            SELECT target_id, whitelist_id, action FROM (
+                SELECT target_id, whitelist_id, action,
+                       ROW_NUMBER() OVER (PARTITION BY target_id, whitelist_id ORDER BY created_at ASC) as rn
+                FROM audit_log
+                WHERE guild_id=%s AND action IN ({placeholders})
+            ) sub WHERE rn=1
+            """,
+            (guild_id, *action_to_source.keys()),
+        )
+
+    updated = 0
+    for row in (rows or []):
+        discord_id, whitelist_id, action = row[0], row[1], row[2]
+        source = action_to_source.get(action)
+        if not source or not whitelist_id:
+            continue
+        result = await db.execute(
+            "UPDATE whitelist_users SET created_via=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s AND created_via IS NULL",
+            (source, guild_id, discord_id, whitelist_id),
+        )
+        if result:
+            updated += 1
+
+    log.info("Guild %s: backfilled created_via for %d users", guild_id, updated)
+    return web.json_response({"ok": True, "updated": updated})
+
+
+@require_admin
+async def admin_backfill_tiers(request: web.Request) -> web.Response:
+    """Backfill last_plan_name (tier) for active users based on current Discord roles.
+
+    Fetches all guild members, matches their roles against tier_entries,
+    and updates whitelist_users.last_plan_name for rows where it is NULL or empty.
+    Works in both gateway and REST-only mode.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    # Load tier entries: role_id -> (display_name or role_name, slot_limit)
+    is_true = "true" if db.engine == "postgres" else "1"
+    te_rows = await db.fetchall(
+        f"SELECT role_id, COALESCE(display_name, role_name), slot_limit FROM tier_entries WHERE guild_id=%s AND is_active={is_true}",
+        (guild_id,),
+    )
+    if not te_rows:
+        return web.json_response({"ok": True, "updated": 0, "message": "No active tier entries found"})
+
+    # role_id_str -> (tier_name, slot_limit)
+    tier_by_role: dict[str, tuple[str, int]] = {}
+    for r in te_rows:
+        try:
+            tier_by_role[str(int(r[0]))] = (r[1] or str(r[0]), int(r[2] or 1))
+        except (ValueError, TypeError):
+            pass
+
+    # Fetch member → roles mapping
+    member_roles: dict[int, list[str]] = {}  # discord_id -> list of role_id strs
+    if hasattr(bot, "get_guild") and (guild := getattr(bot, "get_guild", lambda _: None)(guild_id)):
+        for member in guild.members:
+            member_roles[member.id] = [str(r.id) for r in member.roles]
+    elif hasattr(bot, "_discord") and hasattr(bot._discord, "fetch_all_members"):
+        raw = await bot._discord.fetch_all_members(guild_id)
+        for m in raw:
+            user = m.get("user") or {}
+            try:
+                uid = int(user.get("id", 0))
+                member_roles[uid] = list(m.get("roles") or [])
+            except (ValueError, TypeError):
+                pass
+    else:
+        return web.json_response({"error": "Cannot fetch Discord members"}, status=503)
+
+    # Load all active users with empty tier
+    user_rows = await db.fetchall(
+        "SELECT discord_id, whitelist_id FROM whitelist_users WHERE guild_id=%s AND status='active' AND (last_plan_name IS NULL OR last_plan_name='')",
+        (guild_id,),
+    )
+
+    updated = 0
+    for row in (user_rows or []):
+        discord_id = int(row[0])
+        whitelist_id = row[1]
+        roles = member_roles.get(discord_id, [])
+        if not roles:
+            continue
+        # Pick the tier with highest slot_limit among matched roles
+        best: tuple[str, int] | None = None
+        for role_str in roles:
+            entry = tier_by_role.get(role_str)
+            if entry and (best is None or entry[1] > best[1]):
+                best = entry
+        if not best:
+            continue
+        tier_name = best[0]
+        plan_meta = _pack_plan_meta(plan=tier_name)
+        await db.execute(
+            "UPDATE whitelist_users SET last_plan_name=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s AND (last_plan_name IS NULL OR last_plan_name='')",
+            (plan_meta, guild_id, discord_id, whitelist_id),
+        )
+        updated += 1
+
+    log.info("Guild %s: backfilled tiers for %d users", guild_id, updated)
+    return web.json_response({"ok": True, "updated": updated})
+
+
+@require_admin
 async def admin_report(request: web.Request) -> web.Response:
     """Trigger report generation."""
     bot = request.app["bot"]
@@ -4767,6 +4912,8 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/admin/health", admin_health)
     app.router.add_post("/api/admin/resync", admin_resync)
     app.router.add_post("/api/admin/role-sync/check", admin_role_sync_check)
+    app.router.add_post("/api/admin/backfill/sources", admin_backfill_sources)
+    app.router.add_post("/api/admin/backfill/tiers", admin_backfill_tiers)
     app.router.add_post("/api/admin/report", admin_report)
     # Admin Whitelist CRUD
     app.router.add_post("/api/admin/whitelists", admin_create_whitelist)
