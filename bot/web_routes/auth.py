@@ -223,6 +223,11 @@ async def session_info(request: web.Request) -> web.Response:
     guilds = session.get("guilds", [])
     active_guild = next((g for g in guilds if g["id"] == active_guild_id), None)
 
+    # Derive is_mod from mod_reason (set at OAuth login, never overwritten by
+    # re-verification) so that corrupted sessions recover automatically.
+    # mod_reason is non-empty only when the user was a mod at login time.
+    is_mod = bool(active_guild and (active_guild.get("mod_reason") or active_guild.get("is_mod")))
+
     return web.json_response({
         "logged_in": True,
         "discord_id": session.get("discord_id", ""),
@@ -231,7 +236,7 @@ async def session_info(request: web.Request) -> web.Response:
         "avatar": session.get("avatar", ""),
         "guilds": guilds,
         "active_guild_id": active_guild_id,
-        "is_mod": active_guild["is_mod"] if active_guild else False,
+        "is_mod": is_mod,
         "roles": active_guild.get("roles", []) if active_guild else [],
     })
 

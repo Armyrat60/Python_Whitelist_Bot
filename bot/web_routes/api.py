@@ -198,12 +198,16 @@ async def _reverify_is_mod(request: web.Request, session, active_guild_id: str) 
     """
     bot = request.app.get("bot")
     # In REST-only mode (WebOnlyApp / no bot), get_member() always returns None
-    # and owner_id is 0, so we cannot reliably check permissions. Fall back to
-    # the OAuth-verified session value instead.
+    # and owner_id is 0, so we cannot reliably check permissions. Recover from
+    # the OAuth-verified session data instead.
+    # mod_reason is set at login and never overwritten by re-verification, so
+    # it is a reliable signal even if session["is_mod"] was corrupted.
     if bot is None or getattr(bot, "is_rest_only", False):
         guilds = session.get("guilds", [])
         g = _find_guild_in_session(guilds, active_guild_id)
-        return bool(g and g.get("is_mod"))
+        if not g:
+            return False
+        return bool(g.get("mod_reason") or g.get("is_mod"))
 
     discord_id_str = session.get("discord_id", "")
     try:
@@ -286,7 +290,8 @@ def require_admin(handler: Callable) -> Callable:
         if active_guild is None or (now - verified_at) > _IS_MOD_TTL:
             is_mod = await _reverify_is_mod(request, session, active_guild_id)
         else:
-            is_mod = active_guild.get("is_mod", False)
+            # Use mod_reason as a corruption-resistant signal
+            is_mod = bool(active_guild.get("mod_reason") or active_guild.get("is_mod"))
 
         if not is_mod:
             return web.json_response({"error": "Admin access required for this guild."}, status=403)
@@ -334,9 +339,12 @@ async def switch_guild(request: web.Request) -> web.Response:
     if not target_guild:
         return web.json_response({"error": "You do not have access to this guild."}, status=403)
 
+    # Derive is_mod from mod_reason (robust against session corruption)
+    is_mod = bool(target_guild.get("mod_reason") or target_guild.get("is_mod"))
+
     # Update session
     session["active_guild_id"] = target_guild_id
-    session["is_mod"] = target_guild.get("is_mod", False)
+    session["is_mod"] = is_mod
     session["roles"] = target_guild.get("roles", [])
 
     log.info(
@@ -348,7 +356,7 @@ async def switch_guild(request: web.Request) -> web.Response:
         "ok": True,
         "active_guild_id": target_guild_id,
         "guild_name": target_guild.get("name"),
-        "is_mod": target_guild.get("is_mod", False),
+        "is_mod": is_mod,
     })
 
 
