@@ -97,6 +97,7 @@ export interface Settings {
   allow_global_duplicates: string;
   timezone: string;
   bot_status_message: string;
+  combined_filename: string;
 }
 
 export interface WhitelistUser {

@@ -180,6 +180,7 @@ export default function SettingsPage() {
   const [welcomeDmText, setWelcomeDmText]       = useState("");
   const [allowDuplicates, setAllowDuplicates]   = useState("true");
   const [botStatusMsg, setBotStatusMsg]          = useState("");
+  const [combinedFilename, setCombinedFilename] = useState("whitelist.txt");
 
   /* ── Notifications form state ── */
   const [reportFreq, setReportFreq]       = useState("disabled");
@@ -203,6 +204,7 @@ export default function SettingsPage() {
     setReportFreq(botSettings.report_frequency ?? "disabled");
     setNotifChannelId(botSettings.notification_channel_id ?? "");
     setTimezone(botSettings.timezone ?? "UTC");
+    setCombinedFilename(botSettings.combined_filename ?? "whitelist.txt");
     setModRoleIds(
       botSettings.mod_role_id
         ? botSettings.mod_role_id.split(",").filter(Boolean)
@@ -225,9 +227,10 @@ export default function SettingsPage() {
       welcome_dm_text: welcomeDmText,
       allow_global_duplicates: allowDuplicates,
       bot_status_message: botStatusMsg,
+      combined_filename: combinedFilename.trim() || "whitelist.txt",
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg]);
+  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg, combinedFilename]);
 
   const saveNotifications = useCallback(() => {
     save({
@@ -381,6 +384,32 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-4 w-4" /> Whitelist File URL
+              </CardTitle>
+              <CardDescription>
+                The filename used when serving your combined whitelist to Squad servers.
+                This is what appears in the URL on the Whitelists page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Label>Combined Output Filename</Label>
+              <Input
+                value={combinedFilename}
+                onChange={(e) => setCombinedFilename(e.target.value)}
+                placeholder="whitelist.txt"
+                className="max-w-xs font-mono text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Example:{" "}
+                <code className="rounded bg-white/[0.06] px-1">DMHwhitelist.txt</code>. Change
+                this if the URL shown on your Whitelists page has the wrong filename.
+              </p>
+            </CardContent>
+          </Card>
+
           <SaveBar onSave={saveGeneral} isPending={saveSettings.isPending} />
         </div>
       )}
