@@ -569,15 +569,6 @@ function CategoryCard({
               {category.name}
             </span>
           )}
-          {category.is_default && (
-            <Badge
-              variant="secondary"
-              className="text-[10px] cursor-help"
-              title="Default category — cannot be deleted but can be renamed"
-            >
-              Default
-            </Badge>
-          )}
           <span className="ml-auto flex items-center gap-2">
             {totalCapacity > 0 && (
               <Badge variant="outline" className="text-[10px] font-mono" title="Total active slot capacity">
@@ -748,9 +739,7 @@ function CategoryCard({
         </div>
       </CardContent>
 
-      {/* Delete category (not for default) */}
-      {!category.is_default && (
-        <CardFooter>
+      <CardFooter>
           <AlertDialog>
             <AlertDialogTrigger
               render={
@@ -787,7 +776,6 @@ function CategoryCard({
             </AlertDialogContent>
           </AlertDialog>
         </CardFooter>
-      )}
     </Card>
     </>
   );

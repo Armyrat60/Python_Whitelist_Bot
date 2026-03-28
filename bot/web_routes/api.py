@@ -4247,7 +4247,7 @@ async def admin_update_whitelist(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_delete_whitelist(request: web.Request) -> web.Response:
-    """Delete a whitelist (cannot delete the default one)."""
+    """Delete a whitelist. The last remaining whitelist cannot be deleted."""
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
@@ -4257,8 +4257,10 @@ async def admin_delete_whitelist(request: web.Request) -> web.Response:
     wl = await db.get_whitelist_by_slug(guild_id, wl_slug)
     if not wl:
         return web.json_response({"error": "Whitelist not found."}, status=404)
-    if wl["is_default"]:
-        return web.json_response({"error": "Cannot delete the default whitelist."}, status=400)
+
+    all_wls = await db.get_whitelists(guild_id)
+    if len(all_wls) <= 1:
+        return web.json_response({"error": "Cannot delete the only whitelist. Create another one first."}, status=400)
 
     wl_id = wl["id"]
 
@@ -4508,8 +4510,9 @@ async def admin_delete_panel(request: web.Request) -> web.Response:
     panel = await db.get_panel_by_id(panel_id)
     if not panel or panel["guild_id"] != guild_id:
         return web.json_response({"error": "Panel not found."}, status=404)
-    if panel["is_default"]:
-        return web.json_response({"error": "Cannot delete the default panel."}, status=400)
+    all_panels = await db.get_panels(guild_id)
+    if len(all_panels) <= 1:
+        return web.json_response({"error": "Cannot delete the only panel. Create another one first."}, status=400)
 
     await db.delete_panel(panel_id)
 
@@ -4931,8 +4934,9 @@ async def admin_delete_tier_category(request: web.Request) -> web.Response:
     cat = await db.get_tier_category(category_id)
     if not cat or cat["guild_id"] != guild_id:
         return web.json_response({"error": "Tier category not found."}, status=404)
-    if cat["is_default"]:
-        return web.json_response({"error": "Cannot delete the default tier category."}, status=400)
+    all_cats = await db.get_tier_categories(guild_id)
+    if len(all_cats) <= 1:
+        return web.json_response({"error": "Cannot delete the only tier category. Create another one first."}, status=400)
 
     await db.delete_tier_category(category_id)
 

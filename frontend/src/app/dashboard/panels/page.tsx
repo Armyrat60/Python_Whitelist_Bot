@@ -281,11 +281,6 @@ function PanelCard({
               {panel.name}
             </span>
           )}
-          {panel.is_default && (
-            <Badge variant="secondary" className="text-[10px] shrink-0">
-              Default
-            </Badge>
-          )}
           <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0" title="Panel ID">
             #{panel.id}
           </span>
@@ -466,8 +461,7 @@ function PanelCard({
             </Button>
           </>
         )}
-        {!panel.is_default && (
-          <AlertDialog>
+        <AlertDialog>
             <AlertDialogTrigger
               render={
                 <Button
@@ -495,7 +489,6 @@ function PanelCard({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        )}
       </CardFooter>
     </Card>
   );

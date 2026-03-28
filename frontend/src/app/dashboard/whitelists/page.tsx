@@ -281,9 +281,6 @@ function WhitelistCard({
               {whitelist.name}
             </span>
           )}
-          {whitelist.is_default && (
-            <Badge variant="secondary" className="text-[10px] shrink-0">Default</Badge>
-          )}
           <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0 ml-auto" title="Whitelist ID">
             #{whitelist.id}
           </span>
@@ -324,8 +321,7 @@ function WhitelistCard({
         </div>
         <div className="ml-auto flex gap-2">
           <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
-          {!whitelist.is_default && (
-            <AlertDialog>
+          <AlertDialog>
               <AlertDialogTrigger
                 render={
                   <Button size="sm" variant="destructive">
@@ -349,7 +345,6 @@ function WhitelistCard({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          )}
         </div>
       </CardFooter>
     </Card>
