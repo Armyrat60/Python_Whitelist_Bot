@@ -131,6 +131,8 @@ export interface Stats {
   total_identifiers: number;
   recent_audit_count: number;
   per_type: Record<string, { active_users: number; total_ids: number }>;
+  daily_submissions: { day: string; date: string; count: number }[];
+  orphan_count: number;
 }
 
 export interface HealthAlert {

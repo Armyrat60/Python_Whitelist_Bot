@@ -9,7 +9,7 @@ import {
   Settings2,
   AlertTriangle,
   Info,
-  Clock,
+  UserX,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -107,18 +107,101 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Charts placeholder + Health */}
+      {/* System Overview + Health */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Placeholder for charts */}
+        {/* System Overview */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Activity</CardTitle>
-            <CardDescription>Charts coming soon</CardDescription>
+            <CardTitle>System Overview</CardTitle>
+            <CardDescription>Submissions last 7 days · whitelist breakdown · issues</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-white/[0.10] text-muted-foreground">
-              Recharts integration placeholder
-            </div>
+          <CardContent className="space-y-5">
+            {statsLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
+            ) : (
+              <>
+                {/* Daily submissions bar chart */}
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Submissions — Last 7 Days
+                  </p>
+                  {stats?.daily_submissions && stats.daily_submissions.length > 0 ? (() => {
+                    const max = Math.max(...stats.daily_submissions.map((d) => d.count), 1);
+                    return (
+                      <div className="flex h-24 items-end gap-1.5">
+                        {stats.daily_submissions.map((d) => (
+                          <div key={d.date} className="group flex flex-1 flex-col items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                              {d.count}
+                            </span>
+                            <div
+                              className="w-full rounded-t-sm transition-all"
+                              style={{
+                                height: `${Math.max((d.count / max) * 72, d.count > 0 ? 4 : 2)}px`,
+                                background: d.count > 0
+                                  ? `linear-gradient(180deg, var(--accent-primary) 0%, color-mix(in srgb, var(--accent-primary) 60%, transparent) 100%)`
+                                  : "rgba(255,255,255,0.06)",
+                              }}
+                            />
+                            <span className="text-[10px] text-muted-foreground">{d.day}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })() : (
+                    <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-white/[0.08] text-xs text-muted-foreground">
+                      No submissions in the last 7 days
+                    </div>
+                  )}
+                </div>
+
+                {/* Per-whitelist breakdown */}
+                {stats?.per_type && Object.keys(stats.per_type).length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Whitelist Breakdown
+                    </p>
+                    <div className="space-y-2">
+                      {Object.entries(stats.per_type).map(([slug, s]) => (
+                        <div key={slug} className="flex items-center gap-3 text-sm">
+                          <span className="w-28 truncate text-white/70 capitalize">{slug.replace(/-/g, " ")}</span>
+                          <div className="flex flex-1 items-center gap-2">
+                            <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                              <div
+                                className="absolute inset-y-0 left-0 rounded-full"
+                                style={{
+                                  width: `${Math.min((s.active_users / Math.max(stats.total_active_users, 1)) * 100, 100)}%`,
+                                  background: "var(--accent-primary)",
+                                }}
+                              />
+                            </div>
+                            <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
+                              {s.active_users} users · {s.total_ids} IDs
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Orphan warning */}
+                {(stats?.orphan_count ?? 0) > 0 && (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-800/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-400">
+                    <UserX className="h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="font-semibold">{stats!.orphan_count}</span> unlinked{" "}
+                      {stats!.orphan_count === 1 ? "entry" : "entries"} — imported but no Discord account matched.{" "}
+                      <Link href="/dashboard/roster" className="underline underline-offset-2 hover:text-amber-300">
+                        View in Roster
+                      </Link>
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 

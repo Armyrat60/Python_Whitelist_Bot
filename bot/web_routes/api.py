@@ -673,11 +673,46 @@ async def admin_stats(request: web.Request) -> web.Response:
     )
     recent_audit = audit_row[0] if audit_row else 0
 
+    # Daily submission counts for the last 7 days
+    if db.engine == "postgres":
+        daily_rows = await db.fetchall(
+            "SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'Dy') AS day_label, "
+            "       created_at::date AS day_date, COUNT(*) AS cnt "
+            "FROM audit_log "
+            "WHERE guild_id=%s AND action_type='submit' "
+            "  AND created_at >= NOW() - INTERVAL '7 days' "
+            "GROUP BY day_date, day_label ORDER BY day_date ASC",
+            (guild_id,),
+        )
+    else:
+        daily_rows = await db.fetchall(
+            "SELECT DATE_FORMAT(created_at, '%%a') AS day_label, "
+            "       DATE(created_at) AS day_date, COUNT(*) AS cnt "
+            "FROM audit_log "
+            "WHERE guild_id=%s AND action_type='submit' "
+            "  AND created_at >= NOW() - INTERVAL 7 DAY "
+            "GROUP BY day_date, day_label ORDER BY day_date ASC",
+            (guild_id,),
+        )
+    daily_submissions = [
+        {"day": str(r[0]), "date": str(r[1]), "count": int(r[2])}
+        for r in (daily_rows or [])
+    ]
+
+    # Orphaned whitelist entries (discord_id < 0 = imported but not linked to Discord)
+    orphan_row = await db.fetchone(
+        "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND discord_id < 0 AND status='active'",
+        (guild_id,),
+    )
+    orphan_count = orphan_row[0] if orphan_row else 0
+
     return web.json_response({
         "total_active_users": total_active,
         "total_identifiers": total_ids,
         "recent_audit_count": recent_audit,
         "per_type": stats,
+        "daily_submissions": daily_submissions,
+        "orphan_count": orphan_count,
     })
 
 
