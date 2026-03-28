@@ -331,8 +331,9 @@ class WebServer:
             raise web.HTTPNotFound(text="Not found")
 
         guild_cache = self._cache.get(guild_id)
-        if guild_cache is None:
-            # Cache miss — try a live DB load (covers cold-start / missed refresh)
+        # Regenerate if guild has no cache at all, or if the specific filename is missing
+        # (handles stale cache after filename changes or new per-whitelist files are added)
+        if guild_cache is None or filename not in guild_cache:
             try:
                 from bot.output import generate_output_files
                 db = getattr(self.bot, "db", None)
