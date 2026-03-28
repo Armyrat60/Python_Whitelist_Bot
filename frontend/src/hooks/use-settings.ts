@@ -486,3 +486,37 @@ export function useSteamNames(users: WhitelistUser[]) {
 
   return nameMap;
 }
+
+// ─── Notification Routing ───────────────────────────────────────────────────
+
+export interface NotificationEventType {
+  label: string;
+  description: string;
+}
+
+export interface NotificationsConfig {
+  routing: Record<string, string>;
+  event_types: Record<string, NotificationEventType>;
+}
+
+export function useNotifications() {
+  return useQuery<NotificationsConfig>({
+    queryKey: ["notifications"],
+    queryFn: () => api.get<NotificationsConfig>("/api/admin/notifications"),
+  });
+}
+
+export function useSaveNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (routing: Record<string, string>) =>
+      api.put("/api/admin/notifications", { routing }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+}
+
+export function useTriggerReport() {
+  return useMutation({
+    mutationFn: () => api.post("/api/admin/report", {}),
+  });
+}

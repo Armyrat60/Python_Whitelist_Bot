@@ -16,6 +16,7 @@ import {
   Crown,
   ChevronsUpDown,
   Check,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -50,6 +51,7 @@ const manageLinks = [
 
 const settingsLinks = [
   { href: "/dashboard/settings", label: "Settings", icon: Sliders },
+  { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
 ];
 

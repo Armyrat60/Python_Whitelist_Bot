@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
@@ -169,6 +170,7 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const saveSettings = useSaveSettings();
   const accent = useAccent();
+  const router = useRouter();
 
   const botSettings = data?.bot_settings as Record<string, string> | undefined;
 
@@ -281,7 +283,13 @@ export default function SettingsPage() {
             <button
               key={t.id}
               type="button"
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => {
+                if (t.id === "notifications") {
+                  router.push("/dashboard/notifications");
+                } else {
+                  setActiveTab(t.id);
+                }
+              }}
               className={cn(
                 "flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors",
                 active
@@ -374,57 +382,6 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
           <SaveBar onSave={saveGeneral} isPending={saveSettings.isPending} />
-        </div>
-      )}
-
-      {/* ── Notifications ── */}
-      {activeTab === "notifications" && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reports</CardTitle>
-              <CardDescription>
-                Automatic whitelist status reports posted to a Discord channel.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label>Report Frequency</Label>
-                <Select
-                  value={reportFreq}
-                  onValueChange={(v) => setReportFreq(v ?? "disabled")}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REPORT_FREQUENCIES.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Notification Channel</Label>
-                <Combobox
-                  options={(channels ?? []).map((ch) => ({ value: ch.id, label: `#${ch.name}` }))}
-                  value={notifChannelId}
-                  onValueChange={(v) => setNotifChannelId(v)}
-                  placeholder="Select channel"
-                  searchPlaceholder="Search channels…"
-                  emptyText="No channels found."
-                  className="w-64"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Reports and system alerts will be posted to this channel.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <SaveBar onSave={saveNotifications} isPending={saveSettings.isPending} />
         </div>
       )}
 

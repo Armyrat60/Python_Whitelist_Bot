@@ -117,6 +117,18 @@ DEFAULT_SETTINGS = {
     "accent_secondary": "",
 }
 
+# Notification event types for per-channel routing
+NOTIFICATION_EVENT_TYPES = {
+    "user_joined":       {"label": "User Joined Whitelist",    "description": "Sent when a user is added to a whitelist via panel submit or admin action"},
+    "user_removed":      {"label": "User Removed",             "description": "Sent when a user is removed, disabled, or their entry expires"},
+    "role_lost":         {"label": "Role Lost (Auto-Disable)", "description": "Sent when a user is auto-disabled because they lost their whitelisted role"},
+    "role_returned":     {"label": "Role Returned (Re-Enable)","description": "Sent when a user is re-enabled because their role returned"},
+    "user_left_discord": {"label": "User Left Discord",        "description": "Sent when a whitelisted user leaves the Discord server"},
+    "report":            {"label": "Scheduled Reports",        "description": "Daily or weekly whitelist summary reports"},
+    "bot_alert":         {"label": "Bot System Alerts",        "description": "System-level alerts: expiry batches, errors, resync events"},
+    "admin_action":      {"label": "Admin Actions",            "description": "Bulk imports, bulk deletes, panel pushes, and settings changes"},
+}
+
 # Legacy: hardcoded type definitions (used by Discord slash command cogs as fallback).
 # New code uses dynamic whitelists from the database instead.
 DEFAULT_TYPES = {}

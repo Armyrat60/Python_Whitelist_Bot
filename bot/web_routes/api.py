@@ -891,6 +891,9 @@ async def admin_audit(request: web.Request) -> web.Response:
 
     wl_type = request.query.get("type", "").strip()
     action = request.query.get("action", "").strip()
+    date_from = request.query.get("date_from", "").strip()
+    date_to = request.query.get("date_to", "").strip()
+    actor = request.query.get("actor", "").strip()
     page = max(1, int(request.query.get("page", "1")))
     per_page = min(100, max(1, int(request.query.get("per_page", "25"))))
 
@@ -905,6 +908,18 @@ async def admin_audit(request: web.Request) -> web.Response:
     if action:
         conditions.append("a.action_type=%s")
         params.append(action)
+    if date_from:
+        conditions.append("a.created_at >= %s")
+        params.append(date_from + " 00:00:00")
+    if date_to:
+        conditions.append("a.created_at <= %s")
+        params.append(date_to + " 23:59:59")
+    if actor:
+        conditions.append("a.actor_discord_id=%s")
+        try:
+            params.append(int(actor))
+        except ValueError:
+            pass
 
     where = f"WHERE {' AND '.join(conditions)}"
 
@@ -949,6 +964,74 @@ async def admin_audit(request: web.Request) -> web.Response:
         "per_page": per_page,
         "pages": max(1, (total + per_page - 1) // per_page),
     })
+
+
+@require_admin
+async def admin_audit_export(request: web.Request) -> web.Response:
+    """Export audit log as CSV for the active guild."""
+    import csv, io
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app["bot"]
+    db = bot.db
+
+    wl_type = request.query.get("type", "").strip()
+    action = request.query.get("action", "").strip()
+    date_from = request.query.get("date_from", "").strip()
+    date_to = request.query.get("date_to", "").strip()
+
+    conditions = ["a.guild_id=%s"]
+    params: list = [guild_id]
+
+    if wl_type:
+        wl_resolved = await _resolve_whitelist_id(db, guild_id, wl_type)
+        if wl_resolved is not None:
+            conditions.append("a.whitelist_id=%s")
+            params.append(wl_resolved)
+    if action:
+        conditions.append("a.action_type=%s")
+        params.append(action)
+    if date_from:
+        conditions.append("a.created_at >= %s")
+        params.append(date_from + " 00:00:00")
+    if date_to:
+        conditions.append("a.created_at <= %s")
+        params.append(date_to + " 23:59:59")
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    rows = await db.fetchall(
+        f"""
+        SELECT a.id, w.slug, a.action_type, a.actor_discord_id,
+               a.target_discord_id, a.details, a.created_at
+        FROM audit_log a
+        LEFT JOIN whitelists w ON w.id = a.whitelist_id
+        {where}
+        ORDER BY a.created_at DESC
+        LIMIT 10000
+        """,
+        tuple(params),
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "whitelist", "action_type", "actor_discord_id", "target_discord_id", "details", "created_at"])
+    for row in rows:
+        writer.writerow([
+            row[0],
+            row[1] or "",
+            row[2],
+            str(row[3]) if row[3] else "",
+            str(row[4]) if row[4] else "",
+            row[5] or "",
+            str(row[6]) if row[6] else "",
+        ])
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    return web.Response(
+        body=csv_bytes,
+        content_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="audit_log.csv"'},
+    )
 
 
 # ── Admin Player Management API routes ───────────────────────────────────────
@@ -2165,16 +2248,49 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_report(request: web.Request) -> web.Response:
-    """Trigger report generation."""
+    """Trigger immediate report generation for the active guild."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
-    if hasattr(bot, "schedule_report"):
+    if hasattr(bot, "_send_report_for_guild"):
         try:
-            bot.schedule_report()
+            import asyncio
+            asyncio.get_event_loop().create_task(bot._send_report_for_guild(guild_id, force=True))
         except Exception:
-            log.warning("schedule_report call failed")
-    else:
-        log.info("Report requested but schedule_report not available")
+            log.warning("Forced report failed for guild %s", guild_id)
     return web.json_response({"ok": True, "message": "Report generation triggered"})
+
+
+@require_admin
+async def admin_get_notifications(request: web.Request) -> web.Response:
+    """Return the notification routing config for the active guild."""
+    from bot.config import NOTIFICATION_EVENT_TYPES
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    db = request.app["bot"].db
+    routing = await db.get_notification_routing(guild_id)
+    return web.json_response({
+        "routing": routing,
+        "event_types": NOTIFICATION_EVENT_TYPES,
+    })
+
+
+@require_admin
+async def admin_update_notifications(request: web.Request) -> web.Response:
+    """Update notification routing for the active guild."""
+    from bot.config import NOTIFICATION_EVENT_TYPES
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    db = request.app["bot"].db
+    body = await request.json()
+    routing = body.get("routing", {})
+    if not isinstance(routing, dict):
+        return web.json_response({"error": "routing must be an object"}, status=400)
+    for event_type, channel_id in routing.items():
+        if event_type not in NOTIFICATION_EVENT_TYPES:
+            continue  # Silently skip unknown event types
+        await db.set_notification_routing(guild_id, event_type, str(channel_id) if channel_id else "")
+    return web.json_response({"ok": True})
 
 
 PLAN_SLOT_MAP = {
@@ -4926,6 +5042,9 @@ def setup_routes(app: web.Application):
     app.router.add_get("/api/admin/members/gap", admin_members_gap)
     app.router.add_get("/api/admin/role-stats", admin_role_stats)
     app.router.add_get("/api/admin/audit", admin_audit)
+    app.router.add_get("/api/admin/audit/export", admin_audit_export)
+    app.router.add_get("/api/admin/notifications", admin_get_notifications)
+    app.router.add_put("/api/admin/notifications", admin_update_notifications)
     # Admin Setup API
     app.router.add_get("/api/admin/settings", admin_get_settings)
     app.router.add_post("/api/admin/settings", admin_update_settings)

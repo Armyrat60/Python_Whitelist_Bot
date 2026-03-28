@@ -346,6 +346,14 @@ MYSQL_SCHEMA = [
         processed TINYINT(1) NOT NULL DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    """
+    CREATE TABLE IF NOT EXISTS notification_routing (
+        guild_id BIGINT NOT NULL DEFAULT 0,
+        event_type VARCHAR(50) NOT NULL,
+        channel_id VARCHAR(20) NOT NULL DEFAULT '',
+        PRIMARY KEY (guild_id, event_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 
 POSTGRES_SCHEMA = [
@@ -527,6 +535,14 @@ POSTGRES_SCHEMA = [
         reason VARCHAR(200) NOT NULL DEFAULT 'settings_changed',
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         processed BOOLEAN NOT NULL DEFAULT FALSE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS notification_routing (
+        guild_id BIGINT NOT NULL DEFAULT 0,
+        event_type VARCHAR(50) NOT NULL,
+        channel_id VARCHAR(20) NOT NULL DEFAULT '',
+        PRIMARY KEY (guild_id, event_type)
     )
     """,
 ]
@@ -1328,6 +1344,43 @@ class Database:
             "DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
             (guild_id, whitelist_id, role_id),
         )
+
+    # ── Notification routing ──
+
+    async def get_notification_routing(self, guild_id: int) -> dict:
+        """Return a dict of {event_type: channel_id} for the guild."""
+        rows = await self.fetchall(
+            "SELECT event_type, channel_id FROM notification_routing WHERE guild_id=%s",
+            (guild_id,),
+        )
+        return {row[0]: row[1] for row in rows if row[1]}
+
+    async def set_notification_routing(self, guild_id: int, event_type: str, channel_id: str):
+        """Upsert a single routing entry. Empty channel_id removes the route."""
+        if not channel_id:
+            await self.execute(
+                "DELETE FROM notification_routing WHERE guild_id=%s AND event_type=%s",
+                (guild_id, event_type),
+            )
+            return
+        if self.engine == "postgres":
+            await self.execute(
+                """
+                INSERT INTO notification_routing (guild_id, event_type, channel_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, event_type) DO UPDATE SET channel_id=EXCLUDED.channel_id
+                """,
+                (guild_id, event_type, channel_id),
+            )
+        else:
+            await self.execute(
+                """
+                INSERT INTO notification_routing (guild_id, event_type, channel_id)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE channel_id=VALUES(channel_id)
+                """,
+                (guild_id, event_type, channel_id),
+            )
 
     # ── Audit log ──
 

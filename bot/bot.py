@@ -276,18 +276,26 @@ class WhitelistBot(commands.Bot):
 
     async def send_notification(self, guild_id: int, title: str, description: str, color: discord.Color = discord.Color.orange()):
         """Send a system notification to the guild's configured notification channel."""
-        channel_id = await self.db.get_setting(guild_id, "notification_channel_id")
+        await self.send_notification_event(guild_id, "bot_alert", title, description, color)
+
+    async def send_notification_event(self, guild_id: int, event_type: str, title: str, description: str, color: discord.Color = discord.Color.blurple()):
+        """Route a notification to the configured channel for this event type.
+        Falls back to the legacy notification_channel_id setting if no routing is configured."""
+        routing = await self.db.get_notification_routing(guild_id)
+        channel_id = routing.get(event_type, "")
+        if not channel_id:
+            channel_id = await self.db.get_setting(guild_id, "notification_channel_id") or ""
         if not channel_id:
             return
         channel = self.get_channel(int(channel_id))
         if not channel:
             return
         embed = discord.Embed(title=title, description=description, color=color, timestamp=datetime.now(timezone.utc))
-        embed.set_footer(text="Squad Whitelister System Alert")
+        embed.set_footer(text="Squad Whitelister")
         try:
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except discord.Forbidden:
-            log.warning("Missing access to notification channel %s", channel_id)
+            log.warning("Missing access to notification channel %s for event %s", channel_id, event_type)
 
     async def calculate_user_slots(self, guild_id: int, member: discord.Member, whitelist_id: int, *, user_record=None, wl=None, panel=None) -> tuple:
         """Calculate effective slots for a member.
@@ -730,11 +738,13 @@ class WhitelistBot(commands.Bot):
                     await self.db.set_user_status(guild_id, member.id, whitelist_id, "disabled_role_lost")
                     await self.db.audit(guild_id, "auto_disable_role_lost", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
+                    await self.send_notification_event(guild_id, "role_lost", "⚠️ Role Lost — Whitelist Disabled", f"<@{member.id}> lost their required role and was auto-disabled from `{wl['name']}`.", discord.Color.orange())
             else:
                 if status_before != "active" and to_bool(await self.db.get_setting(guild_id, "auto_reactivate_on_role_return", "true")):
                     await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), "active", slots, plan, user_record[2])
                     await self.db.audit(guild_id, "auto_reactivate_role_return", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Re-enabled", f"User <@{member.id}> regained eligible role(s).", discord.Color.green())
+                    await self.send_notification_event(guild_id, "role_returned", "✅ Role Returned — Re-enabled", f"<@{member.id}> regained their role and was re-enabled in `{wl['name']}`.", discord.Color.green())
                 else:
                     await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), status_before, slots, plan, user_record[2])
         self.schedule_github_sync(guild_id)
@@ -753,6 +763,7 @@ class WhitelistBot(commands.Bot):
                 await self.db.set_user_status(guild_id, member.id, whitelist_id, "left_guild")
                 await self.db.audit(guild_id, "left_guild", None, member.id, f"type={wl['slug']}", whitelist_id)
                 await self.send_log_embed(guild_id, whitelist_id, "User Left Guild", f"<@{member.id}> removed from active output.", discord.Color.red())
+                await self.send_notification_event(guild_id, "user_left_discord", "🚪 User Left Discord", f"<@{member.id}> left the server and was removed from the `{wl['name']}` whitelist.", discord.Color.red())
         self.schedule_github_sync(guild_id)
 
     @tasks.loop(hours=24)
@@ -849,28 +860,88 @@ class WhitelistBot(commands.Bot):
     async def _before_housekeeping(self):
         await self.wait_until_ready()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def weekly_report(self):
+        """Check every hour and send reports based on guild frequency settings."""
         for guild in self.guilds:
             guild_id = guild.id
-            frequency = (await self.db.get_setting(guild_id, "report_frequency", "weekly")).lower()
-            now = datetime.now(timezone.utc)
-            should_send = frequency == "daily" or (frequency == "weekly" and now.weekday() == 0)
-            if not should_send:
-                continue
-            whitelists = await self.db.get_whitelists(guild_id)
-            for wl in whitelists:
-                if not wl["log_channel_id"]:
-                    continue
-                whitelist_id = wl["id"]
-                active = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'", (guild_id, whitelist_id))
-                ids = await self.db.fetchone("SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s", (guild_id, whitelist_id))
-                actions = await self.db.fetchone("SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND whitelist_id=%s AND created_at >= %s", (guild_id, whitelist_id, utcnow() - timedelta(days=7 if frequency == 'weekly' else 1)))
-                await self.send_log_embed(guild_id, whitelist_id, f"{frequency.title()} Report", f"Active users: `{active[0]}`\nIdentifiers: `{ids[0]}`\nActions in window: `{actions[0]}`", discord.Color.blurple())
+            try:
+                await self._send_report_for_guild(guild_id)
+            except Exception:
+                log.exception("Error sending report for guild %s", guild_id)
 
     @weekly_report.before_loop
     async def _before_weekly_report(self):
         await self.wait_until_ready()
+
+    async def _send_report_for_guild(self, guild_id: int, force: bool = False):
+        """Send a whitelist report for a single guild. If force=True, ignore frequency gate."""
+        frequency = (await self.db.get_setting(guild_id, "report_frequency", "weekly")).lower()
+        if frequency == "disabled" and not force:
+            return
+        now = datetime.now(timezone.utc)
+        should_send = force or frequency == "daily" or (frequency == "weekly" and now.weekday() == 0)
+        if not should_send:
+            return
+        whitelists = await self.db.get_whitelists(guild_id)
+        lines = []
+        for wl in whitelists:
+            whitelist_id = wl["id"]
+            active = await self.db.fetchone(
+                "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'",
+                (guild_id, whitelist_id))
+            ids_row = await self.db.fetchone(
+                "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s",
+                (guild_id, whitelist_id))
+            actions = await self.db.fetchone(
+                "SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND whitelist_id=%s AND created_at >= %s",
+                (guild_id, whitelist_id, utcnow() - timedelta(days=7 if frequency == "weekly" else 1)))
+            lines.append(
+                f"**{wl['name']}** — {active[0]} active | {ids_row[0]} IDs | {actions[0]} actions"
+            )
+        if not lines:
+            return
+        label = "Forced" if force else frequency.title()
+        description = "\n".join(lines)
+        # Try notification routing channel first; fall back to first whitelist log channel
+        await self.send_notification_event(
+            guild_id, "report",
+            f"📊 {label} Whitelist Report",
+            description,
+            discord.Color.blurple(),
+        )
+        # Also send to each whitelist's own log channel if set (preserves existing behaviour)
+        for wl in whitelists:
+            if wl.get("log_channel_id"):
+                whitelist_id = wl["id"]
+                active = await self.db.fetchone(
+                    "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_id=%s AND status='active'",
+                    (guild_id, whitelist_id))
+                ids_row = await self.db.fetchone(
+                    "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_id=%s",
+                    (guild_id, whitelist_id))
+                actions = await self.db.fetchone(
+                    "SELECT COUNT(*) FROM audit_log WHERE guild_id=%s AND whitelist_id=%s AND created_at >= %s",
+                    (guild_id, whitelist_id, utcnow() - timedelta(days=7 if frequency == "weekly" else 1)))
+                await self.send_log_embed(
+                    guild_id, whitelist_id,
+                    f"📊 {label} Report",
+                    f"Active users: `{active[0]}`\nIdentifiers: `{ids_row[0]}`\nActions in window: `{actions[0]}`",
+                    discord.Color.blurple(),
+                )
+
+    def schedule_report(self):
+        """Immediately trigger reports for all guilds. Called by the web API."""
+        import asyncio
+        asyncio.get_event_loop().create_task(self._run_reports_now())
+
+    async def _run_reports_now(self):
+        """Force-send reports for all guilds regardless of frequency schedule."""
+        for guild in self.guilds:
+            try:
+                await self._send_report_for_guild(guild.id, force=True)
+            except Exception:
+                log.exception("Error in forced report for guild %s", guild.id)
 
     @tasks.loop(seconds=15)
     async def panel_refresh_poller(self):
