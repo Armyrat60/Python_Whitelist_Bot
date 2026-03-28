@@ -68,15 +68,26 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
 
     outputs = {}
 
+    # Pre-seed group sets from all enabled whitelists so group headers always appear
+    # even when a whitelist has zero entries.
+    all_enabled_groups: set[str] = set()
+    per_wl_default_groups: dict[str, set] = {}
+    for wl in whitelists:
+        if not wl.get("enabled"):
+            continue
+        grp = wl.get("squad_group") or "Whitelist"
+        all_enabled_groups.add(grp)
+        per_wl_default_groups[wl["slug"]] = {grp}
+
     # Combined mode: all whitelists in one file
     combined_lines = []
     combined_seen = set()
-    combined_groups = set()
+    combined_groups: set[str] = set(all_enabled_groups)  # always include all groups
 
     # Per-whitelist mode: separate file per whitelist
     per_wl_lines: dict[str, list[str]] = {}
     per_wl_seen: dict[str, set] = {}
-    per_wl_groups: dict[str, set] = {}
+    per_wl_groups: dict[str, set] = {slug: set(grps) for slug, grps in per_wl_default_groups.items()}
 
     for row in rows:
         wl_slug, output_filename, discord_id, discord_name, id_type, id_value = row
@@ -100,7 +111,8 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
             if wl_slug not in per_wl_lines:
                 per_wl_lines[wl_slug] = []
                 per_wl_seen[wl_slug] = set()
-                per_wl_groups[wl_slug] = set()
+            if wl_slug not in per_wl_groups:
+                per_wl_groups[wl_slug] = {group_name}
 
             if dedup_key not in per_wl_seen[wl_slug]:
                 per_wl_lines[wl_slug].append(line)
