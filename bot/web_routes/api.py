@@ -3592,6 +3592,26 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
     added: list[dict] = []
     already_exist_count = 0
 
+    # Pre-load tier entries so we can calculate tiers during the pull
+    # rather than requiring a separate Sync Tiers pass afterwards
+    is_true = "true" if db.engine == "postgres" else "1"
+    panels_for_wl = await db.fetchall(
+        f"SELECT tier_category_id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND tier_category_id IS NOT NULL AND enabled={is_true} LIMIT 1",
+        (guild_id, wl["id"]),
+    )
+    tier_by_role: dict[int, tuple[str, int]] = {}
+    if panels_for_wl:
+        cat_id = panels_for_wl[0][0]
+        te_rows = await db.fetchall(
+            f"SELECT role_id, COALESCE(display_name, role_name), slot_limit FROM tier_entries WHERE guild_id=%s AND category_id=%s AND is_active={is_true}",
+            (guild_id, cat_id),
+        )
+        for te in te_rows:
+            try:
+                tier_by_role[int(te[0])] = (te[1] or str(te[0]), int(te[2] or 1))
+            except (ValueError, TypeError):
+                pass
+
     for member in members_raw:
         mid = member["id"]
         if mid in existing_ids:
@@ -3599,11 +3619,30 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
             continue
         name = member["name"]
         username = member.get("username") or ""
-        # Store username in plan_meta so matching can try both nick and username
-        plan_meta = _pack_plan_meta(username=username) if username and username != name else ""
+
+        # Calculate tier from current Discord roles if bot has gateway access
+        plan_str = ""
+        effective_slots = default_slot
+        if tier_by_role and guild and hasattr(guild, "get_member"):
+            discord_member = guild.get_member(mid)
+            if discord_member:
+                matched = [
+                    tier_by_role[r.id]
+                    for r in discord_member.roles
+                    if r.id in tier_by_role
+                ]
+                if matched:
+                    matched.sort(key=lambda x: x[1], reverse=True)
+                    plan_str = " + ".join(f"{n}:{s}" for n, s in matched)
+                    effective_slots = sum(x[1] for x in matched) if len(matched) > 1 else matched[0][1]
+
+        # Pack username for orphan matching; preserve tier plan if calculated
+        if not plan_str:
+            plan_str = _pack_plan_meta(username=username) if username and username != name else ""
+
         if not dry_run:
             await db.upsert_user_record(
-                guild_id, mid, wl["id"], name, "active", default_slot, plan_meta, None, created_via="role_sync",
+                guild_id, mid, wl["id"], name, "active", effective_slots, plan_str, None, created_via="role_sync",
             )
             await db.audit(
                 guild_id, "role_sync_pull", actor_id, mid,
