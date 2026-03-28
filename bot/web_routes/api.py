@@ -4337,15 +4337,13 @@ async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
             "note": "Add this URL to your Squad server's RemoteAdminListHosts.cfg",
         })
 
-    # Always show per-whitelist URLs (for whitelist cards and separate mode)
+    # Always show per-whitelist URLs — each whitelist card always uses its own output_filename.
+    # In combined mode, output.py copies combined content to each whitelist's filename so
+    # these URLs are valid regardless of output_mode.
     for wl in whitelists:
         wl_url = ""
-        # In combined mode, point to the combined file; in separate mode, per-file
-        if web_server:
-            if output_mode == "combined" and combined_filename:
-                wl_url = web_server.get_file_url(guild_id, combined_filename)
-            elif wl.get("output_filename"):
-                wl_url = web_server.get_file_url(guild_id, wl["output_filename"])
+        if web_server and wl.get("output_filename"):
+            wl_url = web_server.get_file_url(guild_id, wl["output_filename"])
         urls.append({
             "slug": wl["slug"],
             "name": wl["name"],

@@ -110,7 +110,16 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
     # Build combined output
     if output_mode in ("combined", "hybrid"):
         content = build_group_headers(combined_groups) + combined_lines
-        outputs[combined_filename] = "\n".join(content)
+        combined_content = "\n".join(content)
+        outputs[combined_filename] = combined_content
+        # Also serve the combined content under each whitelist's own output_filename so
+        # per-whitelist URLs always work regardless of output_mode.
+        for wl in whitelists:
+            if not wl.get("enabled"):
+                continue
+            wl_fn = wl.get("output_filename")
+            if wl_fn and wl_fn != combined_filename:
+                outputs[wl_fn] = combined_content
 
     # Build per-whitelist outputs
     if output_mode in ("separate", "hybrid"):
