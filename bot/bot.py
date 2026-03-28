@@ -703,31 +703,43 @@ class WhitelistBot(commands.Bot):
             whitelist_id = wl["id"]
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
-                # Auto-enroll: if member gained a role mapped to this whitelist, add them
+                # Auto-enroll: check role_mappings AND tier_entries for this whitelist's panel
                 role_mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-                if role_mappings:
-                    active_mapped = {rm[0] for rm in role_mappings if rm[3]}  # role_id where is_active
-                    if active_mapped & member_role_ids:
-                        name = member.display_name or str(member)
-                        default_slot = wl.get("default_slot_limit") or 1
-                        await self.db.upsert_user_record(
-                            guild_id, member.id, whitelist_id, name, "active", default_slot, "", None, created_via="role_sync"
-                        )
-                        await self.db.audit(
-                            guild_id, "auto_enroll_role_gain", None, member.id,
-                            f"type={wl['slug']}", whitelist_id,
-                        )
-                        await self.send_log_embed(
-                            guild_id, whitelist_id, "Auto-Enrolled",
-                            f"<@{member.id}> gained a mapped role — added to **{wl['slug']}** whitelist.",
-                            discord.Color.green(),
-                        )
-                        user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
-                        if not user_record:
-                            continue
-                    else:
-                        continue
-                else:
+                active_mapped = {int(rm[0]) for rm in role_mappings if rm[3]}
+
+                # Also collect role IDs from tier_entries linked via any panel for this whitelist
+                panel_for_wl = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
+                if panel_for_wl:
+                    tier_entries = await self.db.get_tier_entries(guild_id, panel_for_wl["tier_category_id"])
+                    for te in tier_entries:
+                        if bool(te[6]):  # is_active
+                            active_mapped.add(int(te[1]))  # role_id
+
+                if not active_mapped or not (active_mapped & member_role_ids):
+                    continue
+
+                # Member has a qualifying role — auto-enroll
+                name = member.display_name or str(member)
+                default_slot = wl.get("default_slot_limit") or 1
+                await self.db.upsert_user_record(
+                    guild_id, member.id, whitelist_id, name, "active", default_slot, "", None, created_via="role_sync"
+                )
+                await self.db.audit(
+                    guild_id, "auto_enroll_role_gain", None, member.id,
+                    f"type={wl['slug']}", whitelist_id,
+                )
+                await self.send_log_embed(
+                    guild_id, whitelist_id, "Auto-Enrolled",
+                    f"<@{member.id}> gained a qualifying role — added to **{wl['slug']}** whitelist.",
+                    discord.Color.green(),
+                )
+                await self.send_notification_event(
+                    guild_id, "user_joined", "✅ Auto-Enrolled",
+                    f"<@{member.id}> was auto-enrolled in `{wl['name']}` after gaining a qualifying role.",
+                    discord.Color.green(),
+                )
+                user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
+                if not user_record:
                     continue
             # Find panel with tier_category for this whitelist
             panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
