@@ -170,6 +170,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     req.session.guilds       = mutualGuilds
     req.session.activeGuildId = mutualGuilds[0]?.id
     // oauth_state cookie already cleared above after state verification
+    await req.session.save()  // flush session to cookie before redirect
 
     const dashboardUrl = `${env.CORS_ORIGIN || env.WEB_BASE_URL}/dashboard`
     return reply.redirect(dashboardUrl)
