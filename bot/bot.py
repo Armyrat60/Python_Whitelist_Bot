@@ -777,6 +777,8 @@ class WhitelistBot(commands.Bot):
             # Role-based membership sync — catch any changes missed by on_member_update
             try:
                 await self._daily_role_sync(guild)
+                # Record successful sync time so health alerts can detect stale syncs
+                await self.db.set_setting(guild_id, "last_role_sync_at", utcnow().isoformat())
             except Exception as e:
                 log.error("Guild %s: daily role sync failed: %s", guild_id, e)
 

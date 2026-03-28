@@ -25,7 +25,8 @@ class GeneralCog(commands.Cog):
                 "`/whitelist` — Submit or update your Steam64 / EOS IDs\n"
                 "`/my_whitelist` — View your current whitelist entries\n"
                 "`/status` — Check bot and whitelist status\n"
-                "`/help` — Show this message"
+                "`/help` — Show this message\n"
+                f"**Website** — Same IDs as above: [My Whitelist]({dashboard_url}/my-whitelist)"
             ),
             inline=False,
         )

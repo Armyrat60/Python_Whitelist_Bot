@@ -7,6 +7,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/hooks/use-session";
 import { api } from "@/lib/api";
@@ -23,6 +24,7 @@ const GuildContext = createContext<GuildContextValue | null>(null);
 export function GuildProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const guilds = useMemo(() => session?.guilds ?? [], [session?.guilds]);
 
@@ -34,12 +36,13 @@ export function GuildProvider({ children }: { children: ReactNode }) {
   const switchGuild = useCallback(
     async (guildId: string) => {
       await api.post("/api/guilds/switch", { guild_id: guildId });
-      // Clear the entire cache — every endpoint is guild-scoped so stale data
-      // from the old guild must not bleed through. clear() removes all entries
-      // and React Query will re-fetch active queries immediately on next render.
+      // Remove all cached guild-scoped data so the old guild's data doesn't bleed through.
+      // Then call router.refresh() which causes Next.js to re-render the component tree,
+      // at which point React Query observers see the empty cache and re-fetch everything.
       queryClient.clear();
+      router.refresh();
     },
-    [queryClient]
+    [queryClient, router]
   );
 
   const value = useMemo(

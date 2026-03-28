@@ -768,10 +768,15 @@ async def admin_users(request: web.Request) -> web.Response:
         conditions.append("u.status=%s")
         params.append(status)
     if tier_filter:
-        # Match both plain-text plan name and JSON-packed format {"plan": "Solo", ...}
-        json_pattern = f'%"plan": "{tier_filter}"%'
-        conditions.append("(u.last_plan_name = %s OR u.last_plan_name LIKE %s)")
-        params.extend([tier_filter, json_pattern])
+        # last_plan_name format: "RoleName:slots" or "Role1:slots1 + Role2:slots2"
+        # Match the tier name at the start ("RoleName:...") or after " + " (" + RoleName:...")
+        plan_start = f"{tier_filter}:%"
+        plan_middle = f"% + {tier_filter}:%"
+        # Also support legacy plain-text exact match (no colon suffix)
+        conditions.append(
+            "(u.last_plan_name LIKE %s OR u.last_plan_name LIKE %s OR u.last_plan_name = %s)"
+        )
+        params.extend([plan_start, plan_middle, tier_filter])
 
     where = f"WHERE {' AND '.join(conditions)}"
 
@@ -1939,6 +1944,26 @@ async def admin_health(request: web.Request) -> web.Response:
         alerts.append({
             "level": "info",
             "message": f"{expiring_count} entries expiring within 7 days",
+        })
+
+    # Role sync staleness — warn if the bot-worker hasn't synced in >26h
+    last_sync_raw = await db.get_setting(guild_id, "last_role_sync_at")
+    if last_sync_raw:
+        try:
+            last_sync_dt = datetime.fromisoformat(last_sync_raw.replace("Z", "+00:00"))
+            age_hours = (datetime.now(timezone.utc) - last_sync_dt).total_seconds() / 3600
+            if age_hours > 26:
+                alerts.append({
+                    "level": "warning",
+                    "message": f"Role sync last ran {int(age_hours)}h ago — expected every 24h. Check that the bot-worker service is running.",
+                })
+        except (ValueError, TypeError):
+            pass
+    else:
+        # Never synced — only surface as info (bot may have just started)
+        alerts.append({
+            "level": "info",
+            "message": "Role sync hasn't run yet — it runs automatically every 24h after the bot-worker starts.",
         })
 
     return web.json_response({"alerts": alerts})

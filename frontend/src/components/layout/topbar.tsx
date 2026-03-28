@@ -4,7 +4,9 @@ import { usePathname } from "next/navigation";
 import { LogOut, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { MobileSidebar } from "@/components/layout/sidebar";
+import { GuildSwitcher } from "@/components/layout/guild-switcher";
 import { useSession } from "@/hooks/use-session";
+import { useGuild } from "@/hooks/use-guild";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { APP_VERSION } from "@/lib/version";
@@ -30,6 +32,7 @@ function avatarUrl(userId: string, avatar: string) {
 export function Topbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { activeGuild } = useGuild();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const title = pageTitles[pathname] ?? "Dashboard";
@@ -54,10 +57,20 @@ export function Topbar() {
             Squad Whitelister
           </span>
         </div>
-        <h1 className="hidden text-lg font-semibold md:block">{title}</h1>
+        <div className="hidden min-w-0 flex-col md:flex">
+          <h1 className="truncate text-lg font-semibold">{title}</h1>
+          {activeGuild ? (
+            <p className="truncate text-xs text-muted-foreground">
+              Managing <span className="font-medium text-foreground/85">{activeGuild.name}</span>
+            </p>
+          ) : null}
+        </div>
+        <div className="hidden md:block">
+          <GuildSwitcher />
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <span className="hidden rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
           v{APP_VERSION}
         </span>

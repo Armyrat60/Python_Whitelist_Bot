@@ -49,7 +49,7 @@ const manageLinks = [
 ];
 
 const settingsLinks = [
-  { href: "/dashboard/settings", label: "General", icon: Sliders },
+  { href: "/dashboard/settings", label: "Settings", icon: Sliders },
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
 ];
 

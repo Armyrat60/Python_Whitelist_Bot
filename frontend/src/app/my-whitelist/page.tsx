@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Save, Shield } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useWhitelists } from "@/hooks/use-settings";
+import { useGuild } from "@/hooks/use-guild";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,12 +37,39 @@ function useMyWhitelists() {
   });
 }
 
+function guildIconUrl(guildId: string, icon: string) {
+  return `https://cdn.discordapp.com/icons/${guildId}/${icon}.webp?size=64`;
+}
+
+function GuildBanner({ guildId, name, icon }: { guildId: string; name: string; icon: string | null }) {
+  return (
+    <div className="mb-6 flex items-center gap-3">
+      <Avatar size="lg">
+        {icon ? (
+          <AvatarImage src={guildIconUrl(guildId, icon)} alt={name} />
+        ) : null}
+        <AvatarFallback className="text-sm font-semibold">
+          {name.slice(0, 2).toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
+      <div>
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Whitelist Portal
+        </p>
+        <h2 className="text-xl font-bold text-foreground">{name}</h2>
+      </div>
+    </div>
+  );
+}
+
 export default function MyWhitelistPage() {
   const { data, isLoading, error } = useMyWhitelists();
+  const { activeGuild } = useGuild();
 
   if (isLoading) {
     return (
       <div className="space-y-4">
+        <Skeleton className="h-16 w-64 rounded-xl" />
         {Array.from({ length: 2 }).map((_, i) => (
           <Skeleton key={i} className="h-48 w-full rounded-xl" />
         ))}
@@ -50,36 +77,63 @@ export default function MyWhitelistPage() {
     );
   }
 
+  const guildBanner = activeGuild ? (
+    <GuildBanner guildId={activeGuild.id} name={activeGuild.name} icon={activeGuild.icon} />
+  ) : null;
+
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">
-          Unable to load your whitelist data
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Please try again later or contact an administrator.
-        </p>
-      </div>
+      <>
+        {guildBanner}
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">
+            Unable to load your whitelist data
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Please try again later or contact{" "}
+            {activeGuild ? (
+              <strong>{activeGuild.name}</strong>
+            ) : (
+              "a server administrator"
+            )}{" "}
+            for help.
+          </p>
+        </div>
+      </>
     );
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">
-          You don&apos;t have whitelist access
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Contact a server administrator to get whitelisted.
-        </p>
-      </div>
+      <>
+        {guildBanner}
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">
+            You don&apos;t have whitelist access
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Contact{" "}
+            {activeGuild ? (
+              <strong>{activeGuild.name}</strong>
+            ) : (
+              "a server administrator"
+            )}{" "}
+            to get whitelisted.
+          </p>
+        </div>
+      </>
     );
   }
 
   return (
     <div className="space-y-6">
+      {guildBanner}
+      <p className="text-sm text-muted-foreground">
+        Entries here are the same as using{" "}
+        <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/whitelist</code> in Discord.
+      </p>
       {data.map((wl) => (
         <WhitelistCard key={wl.whitelist_slug} data={wl} />
       ))}
@@ -100,20 +154,50 @@ function extractSteam64FromUrl(val: string): string {
   return m ? m[1] : val;
 }
 
+function buildSlotsFromData(d: MyWhitelistData): string[] {
+  const existingIds = [...(d.steam_ids ?? []), ...(d.eos_ids ?? [])];
+  const padded = [...existingIds];
+  while (padded.length < d.effective_slot_limit) padded.push("");
+  return padded;
+}
+
 function WhitelistCard({ data }: { data: MyWhitelistData }) {
-  // Combine all IDs into unified slots
-  const existingIds = [
-    ...(data.steam_ids ?? []),
-    ...(data.eos_ids ?? []),
-  ];
   const totalSlots = data.effective_slot_limit;
+  const serverFingerprint = useMemo(
+    () =>
+      `${data.whitelist_slug}|${data.effective_slot_limit}|${(data.steam_ids ?? []).join(",")}|${(data.eos_ids ?? []).join(",")}`,
+    [
+      data.whitelist_slug,
+      data.effective_slot_limit,
+      data.steam_ids,
+      data.eos_ids,
+    ]
+  );
 
-  // Pad to slot count
-  const initial = [...existingIds];
-  while (initial.length < totalSlots) initial.push("");
-
-  const [slots, setSlots] = useState<string[]>(initial);
+  const [slots, setSlots] = useState<string[]>(() => buildSlotsFromData(data));
+  const [baseline, setBaseline] = useState<string[]>(() => buildSlotsFromData(data));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const next = buildSlotsFromData(data);
+    setSlots(next);
+    setBaseline(next);
+  }, [serverFingerprint]);
+
+  const isDirty = useMemo(
+    () => JSON.stringify(slots) !== JSON.stringify(baseline),
+    [slots, baseline]
+  );
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   const usedSlots = slots.filter(Boolean).length;
 
@@ -173,6 +257,7 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
         eos_ids: eosIds,
       });
       toast.success("Whitelist saved!");
+      setBaseline([...slots]);
     } catch {
       toast.error("Failed to save whitelist");
     } finally {
