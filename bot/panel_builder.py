@@ -45,17 +45,19 @@ async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict
             key=lambda te: te[3],  # sort by slot_limit ascending
         )
         for te in tier_entries:
-            role_id, slots = te[1], te[3]
-            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
+            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
+            slots = te[3]
+            display = te[4] or te[2]  # display_name or role_name
+            tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
     elif wl:
         role_mappings = await db.get_role_mappings(guild_id, wl["id"])
         for rm in role_mappings:
-            role_id = rm[0] if isinstance(rm, tuple) else rm.get("role_id", 0)
+            role_name = rm[1] if isinstance(rm, tuple) else rm.get("role_name", "Unknown")
             slots = rm[2] if isinstance(rm, tuple) else rm.get("slot_limit", 1)
             is_active = rm[3] if isinstance(rm, tuple) else rm.get("is_active", True)
             if not is_active:
                 continue
-            tier_lines.append(f"▸ <@&{role_id}> — **{slots} {'slot' if slots == 1 else 'slots'}**")
+            tier_lines.append(f"▸ **{role_name}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
 
     return tier_lines
 
