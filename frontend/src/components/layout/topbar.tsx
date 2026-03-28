@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import { LogOut, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { MobileSidebar } from "@/components/layout/sidebar";
-import { GuildSwitcher } from "@/components/layout/guild-switcher";
 import { useSession } from "@/hooks/use-session";
 import { useGuild } from "@/hooks/use-guild";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -21,6 +20,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard/users": "WL Roster",
   "/dashboard/roster": "WL Roster",
   "/dashboard/audit": "Audit Log",
+  "/dashboard/notifications": "Notifications",
   "/dashboard/import-export": "Import / Export",
   "/my-whitelist": "My Whitelist",
 };
@@ -64,9 +64,6 @@ export function Topbar() {
               Managing <span className="font-medium text-foreground/85">{activeGuild.name}</span>
             </p>
           ) : null}
-        </div>
-        <div className="hidden md:block">
-          <GuildSwitcher />
         </div>
       </div>
 
