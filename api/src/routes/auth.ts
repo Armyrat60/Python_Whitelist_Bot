@@ -9,15 +9,25 @@
  * Port of bot/web_routes/auth.py.
  */
 import type { FastifyPluginAsync } from "fastify"
-import { randomBytes } from "crypto"
+import { randomBytes, createHmac } from "crypto"
 import { env } from "../lib/env.js"
 
-// ─── Session type augmentation ────────────────────────────────────────────────
+// ─── OAuth state helpers ───────────────────────────────────────────────────────
+// State is stored in a signed cookie rather than the in-memory session so it
+// survives server restarts and doesn't require server-side session storage.
 
-declare module "@fastify/session" {
-  interface FastifySessionObject {
-    oauthState?: string
-  }
+function signState(state: string): string {
+  const sig = createHmac("sha256", env.WEB_SESSION_SECRET).update(state).digest("hex").slice(0, 16)
+  return `${state}.${sig}`
+}
+
+function verifyState(cookie: string, urlState: string): boolean {
+  const dot = cookie.lastIndexOf(".")
+  if (dot < 0) return false
+  const stateValue = cookie.slice(0, dot)
+  const sig = cookie.slice(dot + 1)
+  const expected = createHmac("sha256", env.WEB_SESSION_SECRET).update(stateValue).digest("hex").slice(0, 16)
+  return sig === expected && stateValue === urlState
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -34,7 +44,15 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/login", async (req, reply) => {
     const state = randomBytes(16).toString("hex")
-    req.session.oauthState = state
+    const isSecure = env.NODE_ENV === "production"
+
+    reply.setCookie("oauth_state", signState(state), {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: "lax",
+      maxAge: 300,  // 5 minutes — enough time to complete OAuth
+      path: "/",
+    })
 
     const params = new URLSearchParams({
       client_id:     env.DISCORD_CLIENT_ID,
@@ -58,9 +76,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.redirect(`${env.CORS_ORIGIN || env.WEB_BASE_URL}/dashboard?error=oauth_denied`)
     }
 
-    if (!code || !state || state !== req.session.oauthState) {
+    const stateCookie = req.cookies.oauth_state ?? ""
+    if (!code || !state || !verifyState(stateCookie, state)) {
       return reply.code(400).send({ error: "Invalid OAuth state" })
     }
+    reply.clearCookie("oauth_state", { path: "/" })
 
     // ── Exchange code for access token ────────────────────────────────────────
 
@@ -149,7 +169,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     req.session.avatar       = discordUser.avatar ?? undefined
     req.session.guilds       = mutualGuilds
     req.session.activeGuildId = mutualGuilds[0]?.id
-    delete req.session.oauthState
+    // oauth_state cookie already cleared above after state verification
 
     const dashboardUrl = `${env.CORS_ORIGIN || env.WEB_BASE_URL}/dashboard`
     return reply.redirect(dashboardUrl)
