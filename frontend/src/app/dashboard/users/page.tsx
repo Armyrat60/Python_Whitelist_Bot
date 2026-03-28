@@ -134,10 +134,10 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/** Tier / whitelist badge — colored pill by keyword */
-function TierBadge({ tier, whitelist }: { tier: string | null | undefined; whitelist: string | null | undefined }) {
-  const label = tier ?? whitelist ?? "—";
-  const lower = label.toLowerCase();
+/** Tier badge — colored pill based on tier name only */
+function TierBadge({ tier }: { tier: string | null | undefined }) {
+  if (!tier) return <span className="text-[11px] text-muted-foreground/40">—</span>;
+  const lower = tier.toLowerCase();
 
   let bg: string, border: string, color: string;
   if (lower.includes("spectre") || lower.includes("command") || lower.includes("elite")) {
@@ -149,16 +149,34 @@ function TierBadge({ tier, whitelist }: { tier: string | null | undefined; white
   } else if (lower.includes("vip") || lower.includes("gold")) {
     bg = "rgba(245,158,11,0.12)"; border = "rgba(245,158,11,0.28)"; color = "#FCD34D";
   } else {
-    // Solo / default
     bg = "rgba(148,163,184,0.09)"; border = "rgba(148,163,184,0.20)"; color = "#94A3B8";
   }
 
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium max-w-[7rem] truncate"
       style={{ background: bg, borderColor: border, color }}
+      title={tier}
     >
-      {label}
+      {tier}
+    </span>
+  );
+}
+
+/** Whitelist badge — simple muted pill showing which whitelist */
+function WhitelistBadge({ name }: { name: string | null | undefined }) {
+  if (!name) return <span className="text-[11px] text-muted-foreground/40">—</span>;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium max-w-[8rem] truncate"
+      style={{
+        background: "color-mix(in srgb, var(--accent-primary) 10%, transparent)",
+        borderColor: "color-mix(in srgb, var(--accent-primary) 25%, transparent)",
+        color: "var(--accent-primary)",
+      }}
+      title={name}
+    >
+      {name}
     </span>
   );
 }
@@ -1127,7 +1145,8 @@ function UserListView({
         </span>
         <span className="w-8" />
         <span className="flex-1">Discord Name</span>
-        <span className="w-44">Slots</span>
+        <span className="w-36">Slots</span>
+        <span className="w-32 text-center">Whitelist</span>
         <span className="w-28 text-center">Tier</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
@@ -1170,12 +1189,14 @@ function UserListView({
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
                 {user.discord_name}
               </span>
-              {/* Slots — left of tier */}
-              <span className="flex w-44 items-center">
+              <span className="flex w-36 items-center">
                 <SlotBar used={usedSlots} total={user.effective_slot_limit} />
               </span>
-              <span className="hidden w-28 text-center sm:block">
-                <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+              <span className="hidden w-32 justify-center sm:flex">
+                <WhitelistBadge name={user.whitelist_name} />
+              </span>
+              <span className="hidden w-28 justify-center sm:flex">
+                <TierBadge tier={user.last_plan_name} />
               </span>
               <span className="hidden gap-1.5 lg:flex">
                 <RegSourceChip source={user.registration_source} />
@@ -1452,9 +1473,10 @@ function UserCard({
       </CardHeader>
 
       <CardContent className="flex-1 space-y-3">
-        {/* Tier + slot bar */}
-        <div className="flex items-center gap-2">
-          <TierBadge tier={user.last_plan_name} whitelist={user.whitelist_name} />
+        {/* Whitelist + Tier + slot bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <WhitelistBadge name={user.whitelist_name} />
+          <TierBadge tier={user.last_plan_name} />
           <span className="ml-auto">
             <SlotBar used={usedSlots} total={slotLimit} />
           </span>
