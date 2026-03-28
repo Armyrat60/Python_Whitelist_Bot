@@ -328,28 +328,31 @@ async def start_web():
             pass
 
     # Keep running
+    # In two-process deployments the bot-worker pushes cache updates immediately
+    # via POST /internal/sync/{guild_id}, so we only need a slow heartbeat here
+    # as a fallback (catches anything the push might have missed).
+    _CACHE_HEARTBEAT = 300   # 5 minutes — fallback full refresh
+    _GUILD_REFRESH   = 1800  # 30 minutes — guild list refresh
     tick = 0
     try:
         while not shutdown_event.is_set():
             try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=60)
+                await asyncio.wait_for(shutdown_event.wait(), timeout=_CACHE_HEARTBEAT)
                 break  # Shutdown was signalled during sleep
             except asyncio.TimeoutError:
-                pass  # Normal 60-second tick
+                pass
 
             tick += 1
 
-            # Refresh whitelist file cache every 60 seconds so Squad servers
-            # always get up-to-date content even in two-process deployments
-            # where the bot-worker updates DB but this service holds the cache.
+            # Fallback: refresh whitelist file cache for all guilds
             for guild in discord_client.guilds:
                 try:
                     await sync_outputs(db, guild.id, web_server=web_server)
                 except Exception:
-                    log.debug("Whitelist cache refresh failed for guild %s", guild.id)
+                    log.debug("Whitelist cache heartbeat failed for guild %s", guild.id)
 
-            # Refresh Discord guild list every 5 minutes (every 5 ticks)
-            if tick % 5 == 0:
+            # Refresh Discord guild list every 30 minutes
+            if tick * _CACHE_HEARTBEAT >= _GUILD_REFRESH * tick:
                 try:
                     await discord_client.fetch_guilds()
                 except Exception:

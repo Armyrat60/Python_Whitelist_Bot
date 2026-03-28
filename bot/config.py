@@ -45,6 +45,7 @@ SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
 WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
 WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://wl.yourdomain.com
+WEB_INTERNAL_URL = os.getenv("WEB_INTERNAL_URL", "").rstrip("/")  # e.g. http://web:8080 (Docker internal)
 _raw_file_secret = os.getenv("WEB_FILE_SECRET", "")
 if not _raw_file_secret:
     # Auto-generate a stable secret from DISCORD_TOKEN so it survives restarts

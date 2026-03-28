@@ -24,11 +24,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      web:
+        condition: service_healthy
     env_file: .env
     environment:
       DB_ENGINE: postgres
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/whitelist_bot
       WEB_ENABLED: "false"
+      WEB_INTERNAL_URL: "http://web:8080"
     restart: unless-stopped
 
   web:

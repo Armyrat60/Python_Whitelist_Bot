@@ -349,6 +349,40 @@ async def switch_guild(request: web.Request) -> web.Response:
     })
 
 
+async def internal_sync(request: web.Request) -> web.Response:
+    """Internal endpoint: bot-worker calls this after a whitelist change so the
+    web service can refresh its cache immediately without waiting for the poll cycle.
+
+    Protected by WEB_FILE_SECRET passed as a Bearer token.
+    Not exposed publicly — should be firewalled to the Docker internal network.
+    """
+    from bot.config import WEB_FILE_SECRET
+    auth = request.headers.get("Authorization", "")
+    if not WEB_FILE_SECRET or auth != f"Bearer {WEB_FILE_SECRET}":
+        return web.json_response({"error": "Unauthorized."}, status=401)
+
+    guild_id_str = request.match_info.get("guild_id", "")
+    try:
+        guild_id = int(guild_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid guild_id."}, status=400)
+
+    bot = request.app.get("bot")
+    web_server = request.app.get("web_server")
+    if not bot or not web_server:
+        return web.json_response({"error": "Service not ready."}, status=503)
+
+    try:
+        from bot.output import generate_output_files
+        outputs = await generate_output_files(bot.db, guild_id)
+        web_server.update_cache(guild_id, outputs)
+        log.debug("Internal sync: refreshed cache for guild %s (%d files)", guild_id, len(outputs))
+        return web.json_response({"ok": True, "files": len(outputs)})
+    except Exception:
+        log.exception("Internal sync failed for guild %s", guild_id)
+        return web.json_response({"error": "Sync failed."}, status=500)
+
+
 async def guild_theme(request: web.Request) -> web.Response:
     """Return the active guild's org accent colors. Requires login only (not admin).
 
@@ -4456,6 +4490,9 @@ async def admin_delete_tier_entry(request: web.Request) -> web.Response:
 
 
 def setup_routes(app: web.Application):
+    # Guild API
+    # Internal (bot-worker → web service cache invalidation, Docker network only)
+    app.router.add_post("/internal/sync/{guild_id}", internal_sync)
     # Guild API
     app.router.add_get("/api/guilds", get_guilds)
     app.router.add_post("/api/guilds/switch", switch_guild)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bot.config import log
+from bot.config import log, WEB_FILE_SECRET, WEB_INTERNAL_URL
 
 if TYPE_CHECKING:
     from bot.database import Database
@@ -127,6 +127,24 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
     return outputs
 
 
+async def _notify_web_service(guild_id: int) -> None:
+    """Fire-and-forget HTTP call to tell the web service to refresh its cache.
+
+    Only called by the bot-worker in two-process deployments where WEB_INTERNAL_URL
+    is set.  The web service validates WEB_FILE_SECRET and re-runs sync_outputs.
+    """
+    import aiohttp
+    url = f"{WEB_INTERNAL_URL}/internal/sync/{guild_id}"
+    headers = {"Authorization": f"Bearer {WEB_FILE_SECRET}"}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    log.debug("Web service sync notification returned %s for guild %s", resp.status, guild_id)
+    except Exception:
+        log.debug("Web service sync notification failed for guild %s (web service may be down)", guild_id)
+
+
 async def sync_outputs(db: "Database", guild_id: int, web_server=None, github=None) -> int:
     """Generate output files and push to web cache + optional GitHub.
 
@@ -143,9 +161,13 @@ async def sync_outputs(db: "Database", guild_id: int, web_server=None, github=No
 
     outputs = await generate_output_files(db, guild_id)
 
-    # Update web server cache
+    # Update web server cache (single-process mode)
     if web_server:
         web_server.update_cache(guild_id, outputs)
+    elif WEB_INTERNAL_URL:
+        # Two-process mode: notify the web service to pull fresh data from DB
+        import asyncio
+        asyncio.create_task(_notify_web_service(guild_id))
 
     # Publish to GitHub if configured
     changed = 0
