@@ -77,7 +77,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -1142,7 +1141,6 @@ function UserListView({
             onCheckedChange={() => onToggleSelectAll()}
           />
         </span>
-        <span className="w-8" />
         <span className="flex-1">Discord Name</span>
         <span className="w-36">Slots</span>
         <span className="w-32 text-center">Whitelist</span>
@@ -1181,11 +1179,6 @@ function UserListView({
                   onCheckedChange={() => onToggleSelect(key)}
                 />
               </span>
-              <Avatar size="sm">
-                <AvatarFallback>
-                  {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
-                </AvatarFallback>
-              </Avatar>
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
                 {user.discord_name}
               </span>
@@ -1448,15 +1441,6 @@ function UserCard({
               onCheckedChange={() => onToggleSelect()}
             />
           </span>
-          <Avatar
-            size="default"
-            className="cursor-pointer"
-            onClick={onSelect}
-          >
-            <AvatarFallback>
-              {user.discord_name?.slice(0, 2).toUpperCase() ?? "??"}
-            </AvatarFallback>
-          </Avatar>
           <div className="min-w-0 flex-1">
             <CardTitle
               className="cursor-pointer truncate hover:underline"
