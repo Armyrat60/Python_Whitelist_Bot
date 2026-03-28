@@ -19,6 +19,7 @@ import {
   useCreateWhitelist,
   useDeleteWhitelist,
 } from "@/hooks/use-settings";
+import { useGuild } from "@/hooks/use-guild";
 import { api } from "@/lib/api";
 import type { Whitelist, SquadGroup } from "@/lib/types";
 
@@ -75,10 +76,15 @@ export default function WhitelistsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
 
+  function slugify(name: string) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+  }
+
   function handleCreate() {
     if (!newName.trim()) return;
+    const slug = slugify(newName.trim());
     createWhitelist.mutate(
-      { name: newName.trim() },
+      { name: newName.trim(), output_filename: `${slug}.txt` },
       {
         onSuccess: () => {
           toast.success("Whitelist created");
@@ -211,9 +217,11 @@ function WhitelistCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const { activeGuild } = useGuild();
   const { data: urlsData } = useQuery<{ urls: { slug: string; url: string }[] }>({
-    queryKey: ["whitelist-urls"],
+    queryKey: ["whitelist-urls", activeGuild?.id ?? null],
     queryFn: () => api.get("/api/admin/whitelist-urls"),
+    enabled: !!activeGuild?.id,
   });
   const url = urlsData?.urls?.find((u) => u.slug === whitelist.slug)?.url ?? "Loading...";
 

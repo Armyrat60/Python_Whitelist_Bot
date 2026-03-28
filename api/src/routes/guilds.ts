@@ -50,6 +50,7 @@ export const guildRoutes: FastifyPluginAsync = async (app) => {
       }
 
       req.session.activeGuildId = guild_id
+      await req.session.save()
       return reply.send({ ok: true, active_guild_id: guild_id })
     },
   )

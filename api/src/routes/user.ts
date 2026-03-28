@@ -42,6 +42,10 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       where: { guildId, enabled: true },
     })
 
+    // Check if user is an admin/mod for this guild (from session)
+    const sessionGuild = req.session.guilds?.find((g) => g.id === String(guildId))
+    const isAdmin = sessionGuild?.isAdmin ?? false
+
     const results: unknown[] = []
 
     for (const wl of whitelists) {
@@ -50,6 +54,12 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
 
       let tierName: string | null = null
       let slots = 0
+
+      // Admins/mods always get access with default slot limit
+      if (isAdmin) {
+        tierName = "Admin"
+        slots = wl.defaultSlotLimit
+      }
 
       if (panel?.tierCategoryId) {
         const entries = await app.prisma.tierEntry.findMany({

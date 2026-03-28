@@ -30,10 +30,11 @@ interface MyWhitelistData {
   eos_ids: string[];
 }
 
-function useMyWhitelists() {
+function useMyWhitelists(activeGuildId: string | undefined) {
   return useQuery<MyWhitelistData[]>({
-    queryKey: ["my-whitelists"],
+    queryKey: ["my-whitelists", activeGuildId ?? null],
     queryFn: () => api.get<MyWhitelistData[]>("/api/my-whitelist"),
+    enabled: !!activeGuildId,
   });
 }
 
@@ -63,8 +64,8 @@ function GuildBanner({ guildId, name, icon }: { guildId: string; name: string; i
 }
 
 export default function MyWhitelistPage() {
-  const { data, isLoading, error } = useMyWhitelists();
   const { activeGuild } = useGuild();
+  const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
 
   if (isLoading) {
     return (

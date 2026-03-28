@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useSession } from "./use-session";
 import type {
   Settings,
   Whitelist,
@@ -42,9 +43,12 @@ interface SettingsResponse {
 }
 
 export function useSettings() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id ?? null;
   return useQuery<SettingsResponse>({
-    queryKey: ["settings"],
+    queryKey: ["settings", guildId],
     queryFn: () => api.get<SettingsResponse>("/api/admin/settings"),
+    enabled: !!guildId,
   });
 }
 
