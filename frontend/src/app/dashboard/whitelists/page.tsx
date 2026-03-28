@@ -216,7 +216,6 @@ function WhitelistCard({
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(whitelist.name);
   const [savingName, setSavingName] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
 
   function copyUrl() {
     navigator.clipboard.writeText(url);
@@ -239,18 +238,6 @@ function WhitelistCard({
     }
   }
 
-  async function handleRegenerateUrl() {
-    setRegenerating(true);
-    try {
-      await api.post("/api/admin/whitelist-url/regenerate", {});
-      toast.success("URL regenerated — update your Squad server config with the new link");
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
-    } catch {
-      toast.error("Failed to regenerate URL");
-    } finally {
-      setRegenerating(false);
-    }
-  }
 
   return (
     <Card className={`border-l-4 ${whitelist.enabled ? "border-l-emerald-500" : "border-l-red-500 opacity-60"}`}>
@@ -303,9 +290,6 @@ function WhitelistCard({
           </span>
           <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">
             <Copy className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="icon-xs" onClick={handleRegenerateUrl} disabled={regenerating} title="Regenerate URL (old URL will stop working)">
-            <RefreshCw className={`h-3 w-3 ${regenerating ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </CardContent>
@@ -385,6 +369,16 @@ function WhitelistConfigSheet({
     }
   }
 
+  async function handleRegenerate() {
+    try {
+      await api.post("/api/admin/whitelist-url/regenerate", {});
+      toast.success("URL regenerated — update your Squad server config with the new link");
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+    } catch {
+      toast.error("Failed to regenerate URL");
+    }
+  }
+
   return (
     <Sheet>
       <SheetTrigger render={<Button size="sm" variant="outline" />}>
@@ -425,6 +419,40 @@ function WhitelistConfigSheet({
             <Save className="mr-1.5 h-3.5 w-3.5" />
             Save
           </Button>
+
+          <div className="border-t border-white/[0.06] pt-4 space-y-2">
+            <Label>Whitelist URL</Label>
+            <p className="text-[11px] text-muted-foreground">
+              Regenerating the URL invalidates the old link immediately. You will need to
+              update your Squad server&apos;s RemoteAdminListHosts.cfg with the new URL.
+            </p>
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button variant="outline" size="sm" className="w-full">
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Regenerate URL
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Regenerate whitelist URL?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The current URL will stop working immediately. You must update your
+                    Squad server&apos;s RemoteAdminListHosts.cfg with the new URL or your
+                    whitelist will stop loading on the server.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRegenerate}>
+                    Regenerate
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
