@@ -4,6 +4,9 @@
  * Builds Squad RemoteAdminList format files from DB data.
  * Port of bot/output.py — generate_output_files().
  *
+ * Each whitelist always gets its own file (separate mode only).
+ * combined_filename and output_mode are no longer used.
+ *
  * Format:
  *   Group=Whitelist:reserve
  *   Group=Admin:kick,ban,chat,cameraman,immune,reserve
@@ -34,9 +37,7 @@ export async function syncOutputs(
   })
   const settings = Object.fromEntries(settingsRows.map((r) => [r.settingKey, r.settingValue]))
 
-  const outputMode      = settings["output_mode"]      ?? "combined"
-  const combinedFilename = settings["combined_filename"] ?? "whitelist.txt"
-  const dedupe          = toBool(settings["duplicate_output_dedupe"] ?? "true")
+  const dedupe = toBool(settings["duplicate_output_dedupe"] ?? "true")
 
   // ── Whitelists ────────────────────────────────────────────────────────────
   const whitelists = await prisma.whitelist.findMany({
@@ -85,20 +86,9 @@ export async function syncOutputs(
     return `Admin=${idValue}:${groupName} // ${name}${suffix}`
   }
 
-  // ── Pre-seed group sets from all enabled whitelists ───────────────────────
-  // Ensures group headers always appear even when a whitelist is empty.
+  // ── Per-whitelist output (always separate mode) ───────────────────────────
   const enabledWhitelists = whitelists.filter((w) => w.enabled)
-  const allEnabledGroups = new Set(enabledWhitelists.map((w) => w.squadGroup))
 
-  // Build slug -> whitelist lookup for the loop below
-  const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
-
-  // ── Combined mode ─────────────────────────────────────────────────────────
-  const combinedLines:   string[] = []
-  const combinedSeen  = new Set<string>()
-  const combinedGroups = new Set<string>(allEnabledGroups)
-
-  // ── Per-whitelist mode ────────────────────────────────────────────────────
   const perWlLines:  Record<string, string[]> = {}
   const perWlSeen:   Record<string, Set<string>> = {}
   const perWlGroups: Record<string, Set<string>> = {}
@@ -107,7 +97,9 @@ export async function syncOutputs(
     perWlGroups[wl.slug] = new Set([wl.squadGroup])
   }
 
-  // ── Process rows ──────────────────────────────────────────────────────────
+  // Build slug -> whitelist lookup
+  const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
+
   for (const row of rows) {
     const wl = wlBySlug[row.wlSlug]
     if (!wl || !wl.enabled) continue
@@ -115,51 +107,27 @@ export async function syncOutputs(
     const groupName = wl.squadGroup || "Whitelist"
     const line      = buildLine(row.idType, row.idValue, row.discordName, groupName)
     const dedupKey  = dedupe ? `${row.idType}:${row.idValue}` : line
+    const slug      = row.wlSlug
 
-    if (outputMode === "combined" || outputMode === "hybrid") {
-      if (!combinedSeen.has(dedupKey)) {
-        combinedLines.push(line)
-        combinedSeen.add(dedupKey)
-        combinedGroups.add(groupName)
-      }
-    }
+    perWlLines[slug]  ??= []
+    perWlSeen[slug]   ??= new Set()
+    perWlGroups[slug] ??= new Set([groupName])
 
-    if (outputMode === "separate" || outputMode === "hybrid") {
-      const slug = row.wlSlug
-      perWlLines[slug]  ??= []
-      perWlSeen[slug]   ??= new Set()
-      perWlGroups[slug] ??= new Set([groupName])
-
-      if (!perWlSeen[slug].has(dedupKey)) {
-        perWlLines[slug].push(line)
-        perWlSeen[slug].add(dedupKey)
-        perWlGroups[slug].add(groupName)
-      }
+    if (!perWlSeen[slug].has(dedupKey)) {
+      perWlLines[slug].push(line)
+      perWlSeen[slug].add(dedupKey)
+      perWlGroups[slug].add(groupName)
     }
   }
 
   // ── Assemble outputs ──────────────────────────────────────────────────────
   const outputs: OutputMap = {}
 
-  if (outputMode === "combined" || outputMode === "hybrid") {
-    const content = [...buildGroupHeaders(combinedGroups), ...combinedLines].join("\n")
-    outputs[combinedFilename] = content
-
-    // Also serve combined content under each whitelist's own filename so
-    // per-whitelist URLs are always valid regardless of output_mode.
-    for (const wl of enabledWhitelists) {
-      if (wl.outputFilename && wl.outputFilename !== combinedFilename) {
-        outputs[wl.outputFilename] = content
-      }
-    }
-  }
-
-  if (outputMode === "separate" || outputMode === "hybrid") {
-    for (const wl of enabledWhitelists) {
-      const lines  = perWlLines[wl.slug]  ?? []
-      const groups = perWlGroups[wl.slug] ?? new Set([wl.squadGroup])
-      outputs[wl.outputFilename] = [...buildGroupHeaders(groups), ...lines].join("\n")
-    }
+  for (const wl of enabledWhitelists) {
+    const filename = wl.outputFilename || `${wl.slug}.txt`
+    const lines    = perWlLines[wl.slug]  ?? []
+    const wlGroups = perWlGroups[wl.slug] ?? new Set([wl.squadGroup])
+    outputs[filename] = [...buildGroupHeaders(wlGroups), ...lines].join("\n")
   }
 
   return outputs

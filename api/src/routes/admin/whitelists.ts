@@ -225,13 +225,6 @@ export default async function whitelistRoutes(app: FastifyInstance) {
       }
     }
 
-    // Force separate output mode so each whitelist always gets its own file
-    await prisma.botSetting.upsert({
-      where: { guildId_settingKey: { guildId, settingKey: "output_mode" } },
-      update: { settingValue: "separate" },
-      create: { guildId, settingKey: "output_mode", settingValue: "separate" },
-    })
-
     await triggerSync(app, guildId)
     return reply.send({ ok: true, updated })
   })
