@@ -20,14 +20,6 @@ export function DashboardFooter() {
           <Link href="/terms" className="hover:text-foreground transition-colors">
             Terms of Service
           </Link>
-          <a
-            href="https://discord.gg/squadwhitelister"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
-          >
-            Support
-          </a>
         </div>
       </div>
     </footer>
