@@ -2088,7 +2088,9 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
 
     # Fetch member → roles mapping
     member_roles: dict[int, list[str]] = {}  # discord_id -> list of role_id strs
-    if hasattr(bot, "get_guild") and (guild := getattr(bot, "get_guild", lambda _: None)(guild_id)):
+    guild = getattr(bot, "get_guild", lambda _: None)(guild_id) if hasattr(bot, "get_guild") else None
+    if guild and hasattr(guild, "members"):
+        # Full gateway bot — use cached guild members
         for member in guild.members:
             member_roles[member.id] = [str(r.id) for r in member.roles]
     elif hasattr(bot, "_discord") and hasattr(bot._discord, "fetch_all_members"):
