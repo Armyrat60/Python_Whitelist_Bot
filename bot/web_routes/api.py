@@ -787,7 +787,8 @@ async def admin_users(request: web.Request) -> web.Response:
     rows = await db.fetchall(
         f"""
         SELECT u.discord_id, u.discord_name, w.slug, u.status,
-               u.effective_slot_limit, u.last_plan_name, u.updated_at, w.name
+               u.effective_slot_limit, u.last_plan_name, u.updated_at, w.name,
+               u.created_via
         FROM whitelist_users u
         LEFT JOIN whitelists w ON w.id = u.whitelist_id
         {where}
@@ -839,11 +840,14 @@ async def admin_users(request: web.Request) -> web.Response:
         key = f"{row[0]}:{row[2] or ''}"
         ids = id_map.get(key, {"steam_ids": [], "eos_ids": [], "sources": set()})
         did = int(row[0])
-        sources: set = ids.get("sources", set())
-        if did < 0:
-            reg_source = "orphan"
-        else:
-            reg_source = next((s for s in _REG_PRIORITY if s in sources), "admin" if not sources else sources.pop())
+        # created_via is column 8; fall back to identifier-based heuristic for legacy rows
+        created_via = row[8] if len(row) > 8 else None
+        if not created_via:
+            sources: set = ids.get("sources", set())
+            if did < 0:
+                created_via = "orphan"
+            else:
+                created_via = next((s for s in _REG_PRIORITY if s in sources), None)
         users.append({
             "discord_id": str(row[0]),
             "discord_name": row[1],
@@ -859,7 +863,7 @@ async def admin_users(request: web.Request) -> web.Response:
             "created_at": str(row[6]) if row[6] else "",
             "steam_ids": ids["steam_ids"],
             "eos_ids": ids["eos_ids"],
-            "registration_source": reg_source,
+            "registration_source": created_via,
         })
 
     return web.json_response({
@@ -1031,6 +1035,7 @@ async def admin_add_user(request: web.Request) -> web.Response:
         guild_id, discord_id, wl_id, discord_name, "active",
         effective_slot, plan_meta,
         slot_limit_override=slot_limit,
+        created_via="admin",
     )
 
     # -- Create identifiers --
@@ -2732,7 +2737,7 @@ async def admin_import(request: web.Request) -> web.Response:
                 await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
                 await db.upsert_user_record(
                     guild_id, discord_id, wl_id, discord_name, "active",
-                    slot_limit, plan_meta, slot_limit_override=None,
+                    slot_limit, plan_meta, slot_limit_override=None, created_via="import",
                 )
                 updated += 1
             elif dup_handling == "merge":
@@ -2757,7 +2762,7 @@ async def admin_import(request: web.Request) -> web.Response:
                 identifiers.append(("eosid", str(eid), False, "import"))
             await db.upsert_user_record(
                 guild_id, discord_id, wl_id, discord_name, "active",
-                slot_limit, plan_meta, slot_limit_override=None,
+                slot_limit, plan_meta, slot_limit_override=None, created_via="import",
             )
             await db.replace_identifiers(guild_id, discord_id, wl_id, identifiers)
             added += 1
@@ -3306,7 +3311,7 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
         plan_meta = _pack_plan_meta(username=username) if username and username != name else ""
         if not dry_run:
             await db.upsert_user_record(
-                guild_id, mid, wl["id"], name, "active", default_slot, plan_meta, None,
+                guild_id, mid, wl["id"], name, "active", default_slot, plan_meta, None, created_via="role_sync",
             )
             await db.audit(
                 guild_id, "role_sync_pull", actor_id, mid,

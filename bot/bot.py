@@ -517,6 +517,7 @@ class WhitelistBot(commands.Bot):
                 "active",
                 slots,
                 plan,
+                created_via="self_register",
             )
             await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_id, submitted)
 
@@ -702,7 +703,7 @@ class WhitelistBot(commands.Bot):
                         name = member.display_name or str(member)
                         default_slot = wl.get("default_slot_limit") or 1
                         await self.db.upsert_user_record(
-                            guild_id, member.id, whitelist_id, name, "active", default_slot, "", None
+                            guild_id, member.id, whitelist_id, name, "active", default_slot, "", None, created_via="role_sync"
                         )
                         await self.db.audit(
                             guild_id, "auto_enroll_role_gain", None, member.id,
@@ -824,7 +825,7 @@ class WhitelistBot(commands.Bot):
                         continue
                     name = member.display_name or str(member)
                     await self.db.upsert_user_record(
-                        guild_id, member_id, wl_id, name, "active", default_slot, "", None
+                        guild_id, member_id, wl_id, name, "active", default_slot, "", None, created_via="role_sync"
                     )
                     await self.db.audit(guild_id, "daily_role_sync_add", None, member_id,
                                         f"type={wl['slug']}", wl_id)

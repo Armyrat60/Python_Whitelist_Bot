@@ -182,18 +182,18 @@ function WhitelistBadge({ name }: { name: string | null | undefined }) {
 }
 
 /** Registration source chip — how the user was first added */
-function RegSourceChip({ source }: { source?: string }) {
-  if (!source || source === "admin") return null;
+function RegSourceChip({ source }: { source?: string | null }) {
   const cfgs: Record<string, { label: string; bg: string; border: string; color: string }> = {
     self_register: { label: "Self Reg",  bg: "rgba(34,197,94,0.12)",  border: "rgba(34,197,94,0.30)",  color: "#4ADE80" },
     role_sync:     { label: "Role Sync", bg: "rgba(168,85,247,0.12)", border: "rgba(168,85,247,0.30)", color: "#C084FC" },
     import:        { label: "Import",    bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.28)", color: "#94A3B8" },
     web_dashboard: { label: "Dashboard", bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.28)", color: "#7DD3FC" },
-    admin_web:     { label: "Admin",     bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.28)", color: "#94A3B8" },
+    admin:         { label: "Admin",     bg: "rgba(56,189,248,0.10)", border: "rgba(56,189,248,0.22)", color: "#7DD3FC" },
+    admin_web:     { label: "Admin",     bg: "rgba(56,189,248,0.10)", border: "rgba(56,189,248,0.22)", color: "#7DD3FC" },
     orphan:        { label: "Unmatched", bg: "rgba(251,146,60,0.12)", border: "rgba(251,146,60,0.30)", color: "#FB923C" },
   };
-  const c = cfgs[source];
-  if (!c) return null;
+  const c = source ? cfgs[source] : null;
+  if (!c) return <span className="text-[10px] text-muted-foreground/40">—</span>;
   return (
     <span
       className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
@@ -1148,6 +1148,7 @@ function UserListView({
         <span className="w-36">Slots</span>
         <span className="w-32 text-center">Whitelist</span>
         <span className="w-28 text-center">Tier</span>
+        <span className="hidden w-24 text-center lg:block">Source</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
       </div>
@@ -1198,12 +1199,12 @@ function UserListView({
               <span className="hidden w-28 justify-center sm:flex">
                 <TierBadge tier={user.last_plan_name} />
               </span>
-              <span className="hidden gap-1.5 lg:flex">
+              <span className="hidden w-24 justify-center lg:flex">
                 <RegSourceChip source={user.registration_source} />
-                <TempChip expiresAt={user.expires_at} createdAt={user.created_at} />
               </span>
-              <span className="w-20 text-center">
+              <span className="flex w-20 flex-col items-center gap-0.5">
                 <StatusBadge status={user.status} />
+                <TempChip expiresAt={user.expires_at} createdAt={user.created_at} />
               </span>
               <ChevronDown
                 className={cn(

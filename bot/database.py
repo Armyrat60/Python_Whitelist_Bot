@@ -712,6 +712,9 @@ POSTGRES_MIGRATIONS = [
     # --- Timed whitelist: optional expiration ---
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NULL",
 
+    # --- Registration source tracking ---
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS created_via VARCHAR(50) NULL",
+
     # --- Steam name cache ---
     """
     CREATE TABLE IF NOT EXISTS steam_name_cache (
@@ -1349,14 +1352,14 @@ class Database:
             (guild_id, discord_id, whitelist_id),
         )
 
-    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None):
+    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None):
         now = utcnow()
         if self.engine == "postgres":
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                     discord_name=EXCLUDED.discord_name,
                     status=EXCLUDED.status,
@@ -1364,16 +1367,17 @@ class Database:
                     effective_slot_limit=EXCLUDED.effective_slot_limit,
                     last_plan_name=EXCLUDED.last_plan_name,
                     expires_at=EXCLUDED.expires_at,
-                    updated_at=EXCLUDED.updated_at
+                    updated_at=EXCLUDED.updated_at,
+                    created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via)
                 """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
             )
         else:
             await self.execute(
                 """
                 INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
                     discord_name=VALUES(discord_name),
                     status=VALUES(status),
@@ -1381,9 +1385,10 @@ class Database:
                     effective_slot_limit=VALUES(effective_slot_limit),
                     last_plan_name=VALUES(last_plan_name),
                     expires_at=VALUES(expires_at),
-                    updated_at=VALUES(updated_at)
+                    updated_at=VALUES(updated_at),
+                    created_via=COALESCE(created_via, VALUES(created_via))
                 """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now),
+                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
             )
 
     async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):
