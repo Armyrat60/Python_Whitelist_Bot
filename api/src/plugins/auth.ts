@@ -52,8 +52,9 @@ const authPlugin: FastifyPluginAsync = fp(async (app) => {
       secure: isSecure,
       httpOnly: true,
       sameSite: "lax",
-      maxAge: 86400,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     },
+    rolling: true,       // reset expiry on every request
     saveUninitialized: false,
   })
 
