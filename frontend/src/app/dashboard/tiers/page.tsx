@@ -56,11 +56,14 @@ import { Combobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
 
 function RoleStatsSection() {
-  const { data: stats, isLoading, error, refetch, isFetching } = useRoleStats();
+  const { data, isLoading, error, refetch, isFetching } = useRoleStats();
   const [resyncing, setResyncing] = useState(false);
 
-  const totalDiscord = stats?.reduce((s, r) => s + (r.discord_count ?? 0), 0) ?? 0;
-  const totalRegistered = stats?.reduce((s, r) => s + (r.registered_count ?? 0), 0) ?? 0;
+  const stats = data?.stats ?? [];
+  const gatewayMode = data?.gateway_mode ?? false;
+
+  const totalDiscord = stats.reduce((s, r) => s + r.discord_count, 0);
+  const totalRegistered = stats.reduce((s, r) => s + r.registered_count, 0);
   const totalUnregistered = totalDiscord - totalRegistered;
 
   async function handleResync() {
@@ -91,7 +94,7 @@ function RoleStatsSection() {
           <Users className="h-4 w-4" />
           Role Registration Stats
           <span className="ml-auto flex items-center gap-3">
-            {stats && (
+            {data && (
               <span className="text-sm font-normal text-muted-foreground flex items-center gap-3">
                 <span style={{ color: "var(--accent-primary)" }}>{totalRegistered} registered</span>
                 {totalUnregistered > 0 && (
@@ -99,16 +102,18 @@ function RoleStatsSection() {
                 )}
               </span>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleResync}
-              disabled={resyncing || isFetching}
-              title="Re-check Discord role membership and update whitelist status"
-            >
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${resyncing ? "animate-spin" : ""}`} />
-              Resync Roles
-            </Button>
+            {gatewayMode && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleResync}
+                disabled={resyncing || isFetching}
+                title="Re-check Discord role membership and update whitelist status"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${resyncing ? "animate-spin" : ""}`} />
+                Resync Roles
+              </Button>
+            )}
             <button
               onClick={() => refetch()}
               disabled={isFetching}
@@ -134,15 +139,15 @@ function RoleStatsSection() {
           <p className="text-sm text-destructive">
             Failed to load role stats — bot may not be connected.
           </p>
-        ) : !stats || stats.length === 0 ? (
+        ) : stats.length === 0 ? (
           <p className="text-sm text-muted-foreground">No active tier roles found.</p>
         ) : (
           <div className="space-y-2">
             {stats.map((r) => {
               const pct = r.discord_count > 0
-                ? Math.round(((r.registered_count ?? 0) / r.discord_count) * 100)
+                ? Math.round((r.registered_count / r.discord_count) * 100)
                 : 100;
-              const missing = r.unregistered_count ?? 0;
+              const missing = r.unregistered_count;
               return (
                 <div key={r.role_id} className="flex items-center gap-3 text-sm">
                   <span className="w-36 truncate font-medium" title={r.role_name}>{r.role_name}</span>
@@ -158,7 +163,7 @@ function RoleStatsSection() {
                     />
                   </div>
                   <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
-                    {r.registered_count ?? "?"}/{r.discord_count} registered
+                    {r.registered_count}/{r.discord_count} registered
                     {missing > 0 && (
                       <span className="ml-1 text-amber-400">({missing} missing)</span>
                     )}

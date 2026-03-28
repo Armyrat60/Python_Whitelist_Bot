@@ -3655,30 +3655,32 @@ async def admin_role_stats(request: web.Request) -> web.Response:
         except (ValueError, TypeError):
             pass
 
-    # Fetch live member counts per role from Discord
-    discord_counts: dict[int, int] = {}
+    # Fetch live member IDs per role from Discord (gateway or REST)
+    # role_members: rid -> set of Discord member IDs
+    role_members: dict[int, set[int]] = {}
     guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
+
     if guild and hasattr(guild, "get_role"):
+        # Full gateway bot — use cached guild
         for rid in role_map:
             role = guild.get_role(rid)
             if role:
                 role_map[rid] = role.name
-                discord_counts[rid] = len(role.members)
+                role_members[rid] = {m.id for m in role.members}
             else:
-                discord_counts[rid] = 0
+                role_members[rid] = set()
     elif hasattr(bot, "get_role_members"):
+        # REST-only mode — fetch each role's members via pagination
         for rid in role_map:
             try:
                 members = await bot.get_role_members(guild_id, rid)
-                discord_counts[rid] = len(members)
+                role_members[rid] = {m["id"] for m in members}
             except Exception:
-                discord_counts[rid] = -1  # unknown
+                role_members[rid] = set()
     else:
         return web.json_response({"error": "Bot not connected — cannot fetch Discord members."}, status=503)
 
-    # Count registered whitelist_users per role via their Discord membership
-    # We query all active whitelist_users discord_ids for this guild, then cross-reference
-    # against each role's member list
+    # All active whitelist_users for this guild
     reg_rows = await db.fetchall(
         "SELECT DISTINCT discord_id FROM whitelist_users WHERE guild_id=%s AND status='active'",
         (guild_id,),
@@ -3686,33 +3688,21 @@ async def admin_role_stats(request: web.Request) -> web.Response:
     registered_ids: set[int] = {int(r[0]) for r in (reg_rows or [])}
 
     stats = []
-    if guild and hasattr(guild, "get_role"):
-        for rid, rname in role_map.items():
-            role = guild.get_role(rid)
-            member_ids = {m.id for m in role.members} if role else set()
-            discord_count = len(member_ids)
-            registered_count = len(member_ids & registered_ids)
-            stats.append({
-                "role_id": str(rid),
-                "role_name": rname,
-                "discord_count": discord_count,
-                "registered_count": registered_count,
-                "unregistered_count": max(0, discord_count - registered_count),
-            })
-    else:
-        # REST fallback — we have counts but not member sets, so estimate
-        for rid, rname in role_map.items():
-            dc = discord_counts.get(rid, 0)
-            stats.append({
-                "role_id": str(rid),
-                "role_name": rname,
-                "discord_count": dc,
-                "registered_count": None,  # can't compute per-role without member list
-                "unregistered_count": None,
-            })
+    for rid, rname in role_map.items():
+        member_ids = role_members.get(rid, set())
+        discord_count = len(member_ids)
+        registered_count = len(member_ids & registered_ids)
+        stats.append({
+            "role_id": str(rid),
+            "role_name": rname,
+            "discord_count": discord_count,
+            "registered_count": registered_count,
+            "unregistered_count": max(0, discord_count - registered_count),
+        })
 
     stats.sort(key=lambda x: x["role_name"].lower())
-    return web.json_response({"stats": stats})
+    gateway_mode = bool(guild and hasattr(guild, "get_role"))
+    return web.json_response({"stats": stats, "gateway_mode": gateway_mode})
 
 
 @require_admin

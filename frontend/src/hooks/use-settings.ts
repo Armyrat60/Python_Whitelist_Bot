@@ -346,17 +346,19 @@ export interface RoleStat {
   role_id: string;
   role_name: string;
   discord_count: number;
-  registered_count: number | null;
-  unregistered_count: number | null;
+  registered_count: number;
+  unregistered_count: number;
+}
+
+export interface RoleStatsResult {
+  stats: RoleStat[];
+  gateway_mode: boolean;
 }
 
 export function useRoleStats() {
-  return useQuery<RoleStat[]>({
+  return useQuery<RoleStatsResult>({
     queryKey: ["role-stats"],
-    queryFn: async () => {
-      const res = await api.get<{ stats: RoleStat[] }>("/api/admin/role-stats");
-      return res.stats;
-    },
+    queryFn: () => api.get<RoleStatsResult>("/api/admin/role-stats"),
     staleTime: 30_000,
   });
 }
