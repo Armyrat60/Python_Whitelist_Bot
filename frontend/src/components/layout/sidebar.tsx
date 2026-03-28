@@ -88,7 +88,7 @@ function SidebarGuildCard() {
             flashing && "guild-switch-flash"
           )}
         >
-          <Avatar size="md">
+          <Avatar>
             <AvatarImage
               src={guildIconUrl(activeGuild?.id ?? "", activeGuild?.icon ?? null) ?? undefined}
               alt={activeGuild?.name ?? ""}
