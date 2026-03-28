@@ -152,8 +152,8 @@ class DiscordRESTClient:
                 return None
             return await resp.json()
 
-    async def fetch_members_with_role(self, guild_id: int, role_id: int) -> list[dict]:
-        """Fetch all guild members that have a specific role (REST pagination)."""
+    async def fetch_all_members(self, guild_id: int) -> list[dict]:
+        """Fetch all guild members via REST pagination. Returns raw member dicts."""
         await self._ensure_session()
         results = []
         after = 0
@@ -171,14 +171,17 @@ class DiscordRESTClient:
                 batch = await resp.json()
                 if not batch:
                     break
-                role_id_str = str(role_id)
-                for m in batch:
-                    if role_id_str in (m.get("roles") or []):
-                        results.append(m)
+                results.extend(batch)
                 if len(batch) < 1000:
                     break
                 after = int(batch[-1]["user"]["id"])
         return results
+
+    async def fetch_members_with_role(self, guild_id: int, role_id: int) -> list[dict]:
+        """Fetch all guild members that have a specific role (REST pagination)."""
+        role_id_str = str(role_id)
+        all_members = await self.fetch_all_members(guild_id)
+        return [m for m in all_members if role_id_str in (m.get("roles") or [])]
 
 
 class _LightGuild:
@@ -251,6 +254,23 @@ class WebOnlyApp:
         if not member:
             return []
         return [int(r) for r in member.get("roles", [])]
+
+    async def get_all_members_by_role(self, guild_id: int, role_ids: set[int]) -> dict[int, set[int]]:
+        """Fetch all guild members once and return a mapping of role_id -> set of member IDs.
+        Much faster than calling get_role_members() per role when checking multiple roles."""
+        all_members = await self._discord.fetch_all_members(guild_id)
+        result: dict[int, set[int]] = {rid: set() for rid in role_ids}
+        role_id_strs = {str(rid): rid for rid in role_ids}
+        for m in all_members:
+            user = m.get("user") or {}
+            try:
+                uid = int(user.get("id", 0))
+            except (ValueError, TypeError):
+                continue
+            for r_str in (m.get("roles") or []):
+                if r_str in role_id_strs:
+                    result[role_id_strs[r_str]].add(uid)
+        return result
 
     async def get_role_members(self, guild_id: int, role_id: int) -> list[dict]:
         """Fetch all members with a specific role via REST. Returns list of {id, name, username} dicts."""

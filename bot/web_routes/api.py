@@ -3577,24 +3577,28 @@ async def admin_members_gap(request: web.Request) -> web.Response:
                         "matched_roles": [],
                     }
                 role_holders[member.id]["matched_roles"].append(role.name)
-    elif hasattr(bot, "get_role_members"):
-        # REST fallback — paginate each role
-        for rid in whitelisted_role_ids:
-            role_name = role_name_map.get(rid, str(rid))
+    elif hasattr(bot, "_discord") and hasattr(bot._discord, "fetch_all_members"):
+        # REST fallback — fetch all guild members once, process in a single pass
+        try:
+            all_members_raw = await bot._discord.fetch_all_members(guild_id)
+        except Exception as exc:
+            log.warning("Gap report: failed to fetch members: %s", exc)
+            all_members_raw = []
+        whitelisted_role_strs = {str(rid): rid for rid in whitelisted_role_ids}
+        for m in all_members_raw:
+            user = m.get("user") or {}
             try:
-                members = await bot.get_role_members(guild_id, rid)
-            except Exception as exc:
-                log.warning("Gap report: failed to fetch role %s: %s", rid, exc)
+                mid = int(user.get("id", 0))
+            except (ValueError, TypeError):
                 continue
-            for m in members:
-                mid = m["id"]
-                if mid not in role_holders:
-                    role_holders[mid] = {
-                        "discord_id": str(mid),
-                        "name": m["name"],
-                        "matched_roles": [],
-                    }
-                role_holders[mid]["matched_roles"].append(role_name)
+            matched = [whitelisted_role_strs[r] for r in (m.get("roles") or []) if r in whitelisted_role_strs]
+            if not matched:
+                continue
+            name = m.get("nick") or user.get("global_name") or user.get("username", str(mid))
+            if mid not in role_holders:
+                role_holders[mid] = {"discord_id": str(mid), "name": name, "matched_roles": []}
+            for rid in matched:
+                role_holders[mid]["matched_roles"].append(role_name_map.get(rid, str(rid)))
     else:
         return web.json_response({"error": "Bot not connected — cannot fetch Discord members."}, status=503)
 
@@ -3669,14 +3673,12 @@ async def admin_role_stats(request: web.Request) -> web.Response:
                 role_members[rid] = {m.id for m in role.members}
             else:
                 role_members[rid] = set()
-    elif hasattr(bot, "get_role_members"):
-        # REST-only mode — fetch each role's members via pagination
-        for rid in role_map:
-            try:
-                members = await bot.get_role_members(guild_id, rid)
-                role_members[rid] = {m["id"] for m in members}
-            except Exception:
-                role_members[rid] = set()
+    elif hasattr(bot, "get_all_members_by_role"):
+        # REST-only mode — fetch all guild members once, distribute into role buckets
+        try:
+            role_members = await bot.get_all_members_by_role(guild_id, set(role_map.keys()))
+        except Exception:
+            role_members = {rid: set() for rid in role_map}
     else:
         return web.json_response({"error": "Bot not connected — cannot fetch Discord members."}, status=503)
 
