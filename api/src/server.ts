@@ -55,7 +55,7 @@ async function build() {
 
   await app.register(fileRoutes)
   await app.register(internalRoutes, { prefix: "/internal" })
-  await app.register(authRoutes, { prefix: "/auth" })
+  await app.register(authRoutes)   // login/callback/logout are top-level paths
   await app.register(guildRoutes, { prefix: "/api" })
   await app.register(adminSettingsRoutes, { prefix: "/api/admin" })
   await app.register(whitelistRoutes, { prefix: "/api/admin" })

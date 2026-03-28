@@ -16,6 +16,10 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# BACKEND_URL must be set at build time — Next.js standalone compiles rewrites during next build
+ARG BACKEND_URL=http://localhost:8080
+ENV BACKEND_URL=${BACKEND_URL}
+
 RUN npm run build
 
 # Production image
@@ -33,8 +37,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
-EXPOSE 3000
-ENV PORT=3000
+EXPOSE 8080
+ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
-const API_URL = process.env.BACKEND_URL || "https://pythonwhitelistbot-production.up.railway.app";
+// BACKEND_URL must be set to the TypeScript API service URL (e.g. Railway private URL)
+const API_URL = process.env.BACKEND_URL || "http://localhost:8080";
 
 const nextConfig: NextConfig = {
   output: "standalone",
