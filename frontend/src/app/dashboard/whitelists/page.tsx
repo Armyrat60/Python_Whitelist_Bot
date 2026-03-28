@@ -224,7 +224,7 @@ function WhitelistCard({
     if (!nameValue.trim() || nameValue === whitelist.name) { setEditingName(false); return; }
     setSavingName(true);
     try {
-      await api.put(`/api/admin/whitelists/${whitelist.slug}`, { name: nameValue.trim() });
+      await api.put(`/api/admin/whitelists/${whitelist.id}`, { name: nameValue.trim() });
       toast.success("Renamed");
       setEditingName(false);
     } catch {
@@ -355,7 +355,7 @@ function WhitelistConfigSheet({
 
   async function handleSave() {
     try {
-      await api.put(`/api/admin/whitelists/${whitelist.slug}`, {
+      await api.put(`/api/admin/whitelists/${whitelist.id}`, {
         name,
         squad_group: squadGroup,
         output_filename: outputFilename,

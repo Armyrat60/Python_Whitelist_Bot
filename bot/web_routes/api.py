@@ -3836,6 +3836,59 @@ async def admin_create_whitelist(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_update_whitelist(request: web.Request) -> web.Response:
+    """Update a whitelist by numeric ID (name, squad_group, output_filename, etc.)."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    wl_id = int(request.match_info["id"])
+
+    bot = request.app["bot"]
+    db = bot.db
+
+    wl = await db.get_whitelist_by_id(wl_id)
+    if not wl or wl.get("guild_id") != guild_id:
+        return web.json_response({"error": "Whitelist not found."}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body."}, status=400)
+
+    if not isinstance(body, dict) or not body:
+        return web.json_response({"error": "Body must be a non-empty JSON object."}, status=400)
+
+    allowed_columns = {
+        "name", "slug", "enabled", "panel_channel_id", "log_channel_id",
+        "output_filename", "stack_roles", "default_slot_limit",
+        "squad_group", "panel_message_id",
+    }
+    dropped_fields = {"github_enabled", "input_mode", "github_filename"}
+
+    update_kwargs = {}
+    for key, value in body.items():
+        if key in dropped_fields:
+            continue
+        if key not in allowed_columns:
+            return web.json_response({"error": f"Unknown field: {key}"}, status=400)
+        bool_columns = {"enabled", "stack_roles"}
+        int_columns = {"default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"}
+        if key in bool_columns:
+            value = bool(value) if not isinstance(value, bool) else value
+        elif key in int_columns and value is not None:
+            value = int(value) if str(value).strip() else None
+        else:
+            value = str(value) if value is not None else value
+        update_kwargs[key] = value
+
+    if update_kwargs:
+        await db.update_whitelist(wl_id, **update_kwargs)
+
+    log.info("Guild %s: admin updated whitelist id=%s: %s", guild_id, wl_id, list(update_kwargs.keys()))
+    await _trigger_sync(request, guild_id)
+    return web.json_response({"ok": True, "id": wl_id, "updated": list(update_kwargs.keys())})
+
+
+@require_admin
 async def admin_delete_whitelist(request: web.Request) -> web.Response:
     """Delete a whitelist (cannot delete the default one)."""
     session = await aiohttp_session.get_session(request)
@@ -4693,6 +4746,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/report", admin_report)
     # Admin Whitelist CRUD
     app.router.add_post("/api/admin/whitelists", admin_create_whitelist)
+    app.router.add_put("/api/admin/whitelists/{id}", admin_update_whitelist)
     app.router.add_delete("/api/admin/whitelists/{slug}", admin_delete_whitelist)
     app.router.add_get("/api/admin/whitelist-urls", admin_get_whitelist_urls)
     # Admin Panel CRUD
