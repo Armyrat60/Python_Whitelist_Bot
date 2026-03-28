@@ -16,8 +16,6 @@ import { getFileToken } from "../../services/token.js"
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_SETTINGS = [
-  "output_mode",
-  "combined_filename",
   "duplicate_output_dedupe",
   "mod_role_ids",
   "accent_primary",
@@ -29,8 +27,6 @@ const DEFAULT_SETTINGS = [
 ] as const
 
 const MUTABLE_SETTINGS = new Set<string>([
-  "output_mode",
-  "combined_filename",
   "duplicate_output_dedupe",
   "mod_role_ids",
   "accent_primary",

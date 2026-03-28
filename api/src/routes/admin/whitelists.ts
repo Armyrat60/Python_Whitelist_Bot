@@ -40,51 +40,21 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     const salt = await prisma.botSetting.findUnique({
       where: { guildId_settingKey: { guildId, settingKey: "url_salt" } }
     })
-
-    const settingsRows = await prisma.botSetting.findMany({
-      where: { guildId, settingKey: { in: ["output_mode", "combined_filename"] } },
-      select: { settingKey: true, settingValue: true }
-    })
-    const settings = Object.fromEntries(settingsRows.map(r => [r.settingKey, r.settingValue]))
-    const outputMode       = settings["output_mode"]       ?? "combined"
-    const combinedFilename = settings["combined_filename"] ?? "whitelist.txt"
+    const saltVal = salt?.settingValue ?? null
 
     const whitelists = await prisma.whitelist.findMany({
       where: { guildId },
       orderBy: [{ isDefault: "desc" }, { name: "asc" }]
     })
 
-    const saltVal = salt?.settingValue ?? null
-
-    const urls = whitelists.map(wl => {
-      // In combined mode all whitelists point to the combined file; in separate/hybrid
-      // each whitelist has its own file. Use the whitelist's outputFilename.
-      const filename = (outputMode === "combined")
-        ? combinedFilename
-        : (wl.outputFilename || combinedFilename)
-
-      const entry: Record<string, unknown> = {
-        slug:     wl.slug,
-        name:     wl.name,
-        filename,
-        url:      getFileUrl(guildId, filename, saltVal),
-        enabled:  wl.enabled,
-      }
-      return entry
-    })
-
-    // Also include the combined URL when in hybrid/separate mode so callers
-    // always know the combined endpoint.
-    if (outputMode !== "combined") {
-      const combinedEntry = {
-        slug:     "_combined",
-        name:     "Combined",
-        filename: combinedFilename,
-        url:      getFileUrl(guildId, combinedFilename, saltVal),
-        enabled:  true,
-      }
-      urls.unshift(combinedEntry)
-    }
+    // Each whitelist always gets its own URL using its own output filename.
+    const urls = whitelists.map(wl => ({
+      slug:     wl.slug,
+      name:     wl.name,
+      filename: wl.outputFilename || `${wl.slug}.txt`,
+      url:      getFileUrl(guildId, wl.outputFilename || `${wl.slug}.txt`, saltVal),
+      enabled:  wl.enabled,
+    }))
 
     return reply.send({ urls })
   })
@@ -254,6 +224,13 @@ export default async function whitelistRoutes(app: FastifyInstance) {
         updated++
       }
     }
+
+    // Force separate output mode so each whitelist always gets its own file
+    await prisma.botSetting.upsert({
+      where: { guildId_settingKey: { guildId, settingKey: "output_mode" } },
+      update: { settingValue: "separate" },
+      create: { guildId, settingKey: "output_mode", settingValue: "separate" },
+    })
 
     await triggerSync(app, guildId)
     return reply.send({ ok: true, updated })
