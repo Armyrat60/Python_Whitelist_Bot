@@ -218,6 +218,16 @@ export default async function whitelistRoutes(app: FastifyInstance) {
       }
     }
 
+    // Auto-update outputFilename when name changes but output_filename was not explicitly provided
+    if ("name" in body && !("output_filename" in body)) {
+      const newName = String(body.name)
+      const newSlug = newName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50)
+      if (newSlug) {
+        data.outputFilename = `${newSlug}.txt`
+        updated.push("output_filename")
+      }
+    }
+
     const updated_wl = await prisma.whitelist.update({
       where: { id: wl.id },
       data
@@ -226,6 +236,27 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     await triggerSync(app, guildId)
 
     return reply.send({ ok: true, id: updated_wl.id, updated })
+  })
+
+  // POST /api/admin/whitelists/sync-filenames — bulk-fix all filenames to slug.txt
+  app.post("/whitelists/sync-filenames", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const whitelists = await prisma.whitelist.findMany({ where: { guildId } })
+
+    let updated = 0
+    for (const wl of whitelists) {
+      const autoFilename = `${wl.slug}.txt`
+      if (wl.outputFilename !== autoFilename) {
+        await prisma.whitelist.update({
+          where: { id: wl.id },
+          data: { outputFilename: autoFilename, updatedAt: new Date() },
+        })
+        updated++
+      }
+    }
+
+    await triggerSync(app, guildId)
+    return reply.send({ ok: true, updated })
   })
 
   // POST /api/admin/types/:type — update whitelist config fields

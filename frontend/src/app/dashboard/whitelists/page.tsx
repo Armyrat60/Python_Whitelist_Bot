@@ -73,11 +73,23 @@ export default function WhitelistsPage() {
   const toggleWhitelist = useToggleWhitelist();
   const createWhitelist = useCreateWhitelist();
   const deleteWhitelist = useDeleteWhitelist();
+  const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
-  function slugify(name: string) {
-    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+  async function handleSyncFilenames() {
+    setSyncing(true);
+    try {
+      const res = await api.post<{ ok: boolean; updated: number }>("/api/admin/whitelists/sync-filenames", {});
+      toast.success(res.updated > 0 ? `Fixed ${res.updated} filename${res.updated !== 1 ? "s" : ""}` : "All filenames are already correct");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+    } catch {
+      toast.error("Failed to sync filenames");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   function handleCreate() {
@@ -138,15 +150,16 @@ export default function WhitelistsPage() {
         ))}
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogTrigger
-          render={
-            <Button variant="outline">
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Create Whitelist
-            </Button>
-          }
-        />
+      <div className="flex gap-2">
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger
+            render={
+              <Button variant="outline">
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Create Whitelist
+              </Button>
+            }
+          />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Whitelist</DialogTitle>
@@ -201,7 +214,12 @@ export default function WhitelistsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+        </Dialog>
+        <Button variant="ghost" size="sm" onClick={handleSyncFilenames} disabled={syncing}>
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+          Fix All Filenames
+        </Button>
+      </div>
     </div>
   );
 }
@@ -348,6 +366,10 @@ function WhitelistCard({
   );
 }
 
+function slugify(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+}
+
 function WhitelistConfigSheet({
   whitelist,
   groups,
@@ -358,9 +380,12 @@ function WhitelistConfigSheet({
   const qc = useQueryClient();
   const [name, setName] = useState(whitelist.name);
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
-  const [outputFilename, setOutputFilename] = useState(
-    whitelist.output_filename
-  );
+
+  // Track whether user has manually overridden the filename
+  const autoFilename = `${slugify(name)}.txt`;
+  const [filenameOverride, setFilenameOverride] = useState<string | null>(null);
+  const outputFilename = filenameOverride ?? autoFilename;
+  const isAutoFilename = filenameOverride === null;
 
   const groupOptions: ComboboxOption[] = useMemo(
     () => groups.map((g) => ({ value: g.group_name, label: g.group_name })),
@@ -372,7 +397,9 @@ function WhitelistConfigSheet({
       await api.put(`/api/admin/whitelists/${whitelist.id}`, {
         name,
         squad_group: squadGroup,
-        output_filename: outputFilename,
+        // Only send output_filename if user explicitly overrode it;
+        // otherwise let the backend auto-derive it from the name.
+        ...(filenameOverride !== null ? { output_filename: filenameOverride } : {}),
       });
       toast.success("Whitelist updated");
       qc.invalidateQueries({ queryKey: ["settings"] });
@@ -421,12 +448,29 @@ function WhitelistConfigSheet({
             />
           </div>
           <div className="space-y-2">
-            <Label>Output Filename</Label>
+            <div className="flex items-center justify-between">
+              <Label>Output Filename</Label>
+              {!isAutoFilename && (
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                  onClick={() => setFilenameOverride(null)}
+                >
+                  Reset to auto
+                </button>
+              )}
+            </div>
             <Input
               value={outputFilename}
-              onChange={(e) => setOutputFilename(e.target.value)}
-              placeholder="e.g. whitelist.cfg"
+              onChange={(e) => setFilenameOverride(e.target.value)}
+              placeholder="e.g. whitelist.txt"
+              className={isAutoFilename ? "text-muted-foreground" : ""}
             />
+            {isAutoFilename && (
+              <p className="text-[10px] text-muted-foreground">
+                Auto-derived from name. Edit above to override.
+              </p>
+            )}
           </div>
           <Button onClick={handleSave} className="w-full">
             <Save className="mr-1.5 h-3.5 w-3.5" />
