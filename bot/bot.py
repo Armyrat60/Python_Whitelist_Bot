@@ -109,7 +109,7 @@ class WhitelistBot(commands.Bot):
                     outputs = await self.get_output_contents(guild.id)
                     self.web.update_cache(guild.id, outputs)
                 except Exception:
-                    log.debug("Could not prime web cache on startup for guild %s", guild.id)
+                    log.warning("Could not prime web cache on startup for guild %s", guild.id, exc_info=True)
         await self.log_startup_summary()
         # Refresh all active panels on startup (updates buttons + tier info)
         # Use a semaphore to avoid flooding the Discord API when many panels exist

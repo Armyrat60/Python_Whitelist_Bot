@@ -322,7 +322,16 @@ class WebServer:
         # Look up the guild for this token
         guild_id = self._token_to_guild.get(token)
         if guild_id is None:
-            # Token not recognised — don't reveal whether any guild exists
+            # Token not in memory map — scan all guilds the bot knows about.
+            # This recovers from startup race conditions where on_ready cache
+            # priming failed silently, leaving _token_to_guild empty for the guild.
+            for guild in getattr(self.bot, "guilds", []):
+                candidate_token = self.get_file_token(guild.id)
+                if hmac.compare_digest(token, candidate_token):
+                    guild_id = guild.id
+                    self._token_to_guild[token] = guild_id  # register for future requests
+                    break
+        if guild_id is None:
             raise web.HTTPNotFound(text="Not found")
 
         # Double-check the token is correct (constant-time comparison)
