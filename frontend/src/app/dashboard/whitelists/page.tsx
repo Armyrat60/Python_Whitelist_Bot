@@ -335,7 +335,7 @@ function WhitelistCard({
           </span>
         </div>
         <div className="ml-auto flex gap-2">
-          <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
+          <WhitelistConfigSheet whitelist={whitelist} groups={groups} currentUrl={url} />
           <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -373,13 +373,17 @@ function slugify(name: string) {
 function WhitelistConfigSheet({
   whitelist,
   groups,
+  currentUrl,
 }: {
   whitelist: Whitelist;
   groups: SquadGroup[];
+  currentUrl: string;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(whitelist.name);
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
+  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Track whether user has manually overridden the filename
   const autoFilename = `${slugify(name)}.txt`;
@@ -397,8 +401,6 @@ function WhitelistConfigSheet({
       await api.put(`/api/admin/whitelists/${whitelist.id}`, {
         name,
         squad_group: squadGroup,
-        // Only send output_filename if user explicitly overrode it;
-        // otherwise let the backend auto-derive it from the name.
         ...(filenameOverride !== null ? { output_filename: filenameOverride } : {}),
       });
       toast.success("Whitelist updated");
@@ -412,11 +414,22 @@ function WhitelistConfigSheet({
   async function handleRegenerate() {
     try {
       await api.post("/api/admin/whitelist-url/regenerate", {});
-      toast.success("URL regenerated — update your Squad server config with the new link");
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+      await qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+      // Fetch the updated URL to show in the copy box
+      const res = await api.get<{ urls: { slug: string; url: string }[] }>("/api/admin/whitelist-urls");
+      const newUrl = res.urls.find((u) => u.slug === whitelist.slug)?.url ?? currentUrl;
+      setRegeneratedUrl(newUrl);
+      setCopied(false);
     } catch {
       toast.error("Failed to regenerate URL");
     }
+  }
+
+  function copyNewUrl() {
+    if (!regeneratedUrl) return;
+    navigator.clipboard.writeText(regeneratedUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -477,38 +490,67 @@ function WhitelistConfigSheet({
             Save
           </Button>
 
-          <div className="border-t border-white/[0.06] pt-4 space-y-2">
+          <div className="border-t border-white/[0.06] pt-4 space-y-3">
             <Label>Whitelist URL</Label>
-            <p className="text-[11px] text-muted-foreground">
-              Regenerating the URL invalidates the old link immediately. You will need to
-              update your Squad server&apos;s RemoteAdminListHosts.cfg with the new URL.
-            </p>
-            <AlertDialog>
-              <AlertDialogTrigger
-                render={
-                  <Button variant="outline" size="sm" className="w-full">
-                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                    Regenerate URL
+
+            {regeneratedUrl ? (
+              // Show new URL with copy button after regeneration
+              <div className="space-y-2">
+                <p className="text-[11px] font-medium text-emerald-400">
+                  New URL generated — copy it and update your Squad server config.
+                </p>
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2">
+                  <span className="flex-1 truncate font-mono text-[10px] text-emerald-300">
+                    {regeneratedUrl}
+                  </span>
+                  <Button size="icon-xs" variant="ghost" onClick={copyNewUrl}>
+                    {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                   </Button>
-                }
-              />
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Regenerate whitelist URL?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The current URL will stop working immediately. You must update your
-                    Squad server&apos;s RemoteAdminListHosts.cfg with the new URL or your
-                    whitelist will stop loading on the server.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRegenerate}>
-                    Regenerate
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground"
+                  onClick={() => setRegeneratedUrl(null)}
+                >
+                  Done
+                </Button>
+              </div>
+            ) : (
+              // Show regenerate button before action
+              <>
+                <p className="text-[11px] text-muted-foreground">
+                  The current URL will stop working immediately. Update your Squad
+                  server&apos;s RemoteAdminListHosts.cfg with the new URL.
+                </p>
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    render={
+                      <Button variant="outline" size="sm" className="w-full">
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                        Regenerate URL
+                      </Button>
+                    }
+                  />
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Regenerate whitelist URL?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        The current URL will stop working immediately. You must update your
+                        Squad server&apos;s RemoteAdminListHosts.cfg with the new URL or your
+                        whitelist will stop loading on the server.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleRegenerate}>
+                        Regenerate
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
         </div>
       </SheetContent>
