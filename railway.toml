@@ -3,7 +3,6 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-healthcheckPath = "/healthz"
-healthcheckTimeout = 30
+startCommand = "python -m bot bot"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
