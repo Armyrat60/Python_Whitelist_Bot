@@ -4689,7 +4689,7 @@ async def admin_update_group(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_delete_group(request: web.Request) -> web.Response:
-    """Delete a squad group (cannot delete the default one)."""
+    """Delete a squad group. Blocked if any whitelist is currently using it."""
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
     bot = request.app["bot"]
@@ -4699,38 +4699,21 @@ async def admin_delete_group(request: web.Request) -> web.Response:
     existing = await db.get_squad_group(guild_id, group_name)
     if not existing:
         return web.json_response({"error": "Group not found."}, status=404)
-    if bool(existing[2]):
-        return web.json_response({"error": "Cannot delete the default group."}, status=400)
+
+    # Block deletion if any whitelist references this group
+    whitelists = await db.get_whitelists(guild_id)
+    in_use = [wl["name"] for wl in whitelists if wl.get("squad_group") == group_name]
+    if in_use:
+        names = ", ".join(in_use)
+        return web.json_response(
+            {"error": f"Group is in use by: {names}. Reassign those whitelists first."},
+            status=400,
+        )
 
     await db.delete_squad_group(guild_id, group_name)
     log.info("Guild %s: admin deleted squad group '%s'", guild_id, group_name)
     return web.json_response({"ok": True, "deleted": group_name})
 
-
-@require_admin
-async def admin_set_default_group(request: web.Request) -> web.Response:
-    """Set a squad group as the default for this guild."""
-    session = await aiohttp_session.get_session(request)
-    guild_id = int(session["active_guild_id"])
-    bot = request.app["bot"]
-    db = bot.db
-
-    group_name = request.match_info["group_name"]
-    existing = await db.get_squad_group(guild_id, group_name)
-    if not existing:
-        return web.json_response({"error": "Group not found."}, status=404)
-
-    # Clear is_default on all groups for this guild, then set the chosen one
-    await db.execute(
-        "UPDATE squad_groups SET is_default=%s WHERE guild_id=%s",
-        (False if db.engine == "postgres" else 0, guild_id),
-    )
-    await db.execute(
-        "UPDATE squad_groups SET is_default=%s WHERE guild_id=%s AND group_name=%s",
-        (True if db.engine == "postgres" else 1, guild_id, group_name),
-    )
-    log.info("Guild %s: admin set default squad group to '%s'", guild_id, group_name)
-    return web.json_response({"ok": True, "default": group_name})
 
 
 @require_admin
@@ -5164,7 +5147,6 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/groups", admin_create_group)
     app.router.add_put("/api/admin/groups/{group_name}", admin_update_group)
     app.router.add_delete("/api/admin/groups/{group_name}", admin_delete_group)
-    app.router.add_post("/api/admin/groups/{group_name}/set-default", admin_set_default_group)
     app.router.add_get("/api/admin/permissions", admin_get_permissions)
     # Admin Import / Export
     app.router.add_post("/api/admin/import/headers", admin_import_headers)

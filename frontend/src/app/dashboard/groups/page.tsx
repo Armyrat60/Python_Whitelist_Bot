@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
-import { useGroups, useCreateGroup, useUpdateGroup, useDeleteGroup, useSetDefaultGroup } from "@/hooks/use-settings";
+import { useGroups, useCreateGroup, useUpdateGroup, useDeleteGroup } from "@/hooks/use-settings";
 import type { SquadGroup } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -99,14 +99,7 @@ export default function GroupsPage() {
               onClick={() => setEditGroup(group)}
             >
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  {group.group_name}
-                  {group.is_default && (
-                    <Badge variant="secondary" className="text-[10px]">
-                      Default
-                    </Badge>
-                  )}
-                </CardTitle>
+                <CardTitle>{group.group_name}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-1">
@@ -179,7 +172,6 @@ function EditGroupDialog({
 }) {
   const updateGroup = useUpdateGroup();
   const deleteGroup = useDeleteGroup();
-  const setDefault = useSetDefaultGroup();
   const currentPerms = group.permissions
     ? group.permissions.split(",").filter(Boolean)
     : [];
@@ -266,28 +258,9 @@ function EditGroupDialog({
           ))}
         </div>
         <DialogFooter className="flex justify-between">
-          <div className="flex gap-2">
-            {!group.is_default && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setDefault.mutate(group.group_name, {
-                    onSuccess: () => { toast.success("Default group updated"); onClose(); },
-                    onError: () => toast.error("Failed to set default"),
-                  })
-                }
-                disabled={setDefault.isPending}
-              >
-                Set as Default
-              </Button>
-            )}
-            {!group.is_default && (
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleteGroup.isPending}>
-                Delete Group
-              </Button>
-            )}
-          </div>
+          <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleteGroup.isPending}>
+            Delete Group
+          </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
               Cancel

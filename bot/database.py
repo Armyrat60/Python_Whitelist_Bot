@@ -1616,7 +1616,7 @@ class Database:
 
     async def get_squad_groups(self, guild_id: int) -> List[tuple]:
         return await self.fetchall(
-            "SELECT group_name, permissions, is_default FROM squad_groups WHERE guild_id=%s ORDER BY is_default DESC, group_name",
+            "SELECT group_name, permissions, is_default FROM squad_groups WHERE guild_id=%s ORDER BY group_name",
             (guild_id,),
         )
 
@@ -1674,16 +1674,10 @@ class Database:
             )
 
     async def delete_squad_group(self, guild_id: int, group_name: str):
-        if self.engine == "postgres":
-            await self.execute(
-                "DELETE FROM squad_groups WHERE guild_id=%s AND group_name=%s AND is_default=FALSE",
-                (guild_id, group_name),
-            )
-        else:
-            await self.execute(
-                "DELETE FROM squad_groups WHERE guild_id=%s AND group_name=%s AND is_default=0",
-                (guild_id, group_name),
-            )
+        await self.execute(
+            "DELETE FROM squad_groups WHERE guild_id=%s AND group_name=%s",
+            (guild_id, group_name),
+        )
 
     async def get_squad_permissions(self, active_only: bool = True) -> List[tuple]:
         if active_only:
