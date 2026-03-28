@@ -172,9 +172,10 @@ async def test_disabled_whitelist_excluded_from_output():
             ("Reserve", "reserve", False, ""),
             ("VIP",     "reserve", False, "VIP group"),
         ],
-        # DB filters out disabled whitelists (AND w.enabled=1), so only active rows are returned
+        # DB returns all active rows; output.py filters disabled whitelists in Python
         export_rows=[
-            ("wl-active", "active.cfg", 111, "Player1", "steamid", "76561198000000001"),
+            ("wl-active",   "active.cfg",   111, "Player1", "steamid", "76561198000000001"),
+            ("wl-disabled", "disabled.cfg", 222, "Player2", "steamid", "76561198000000002"),
         ],
     )
     outputs = await generate_output_files(db, guild_id=999)

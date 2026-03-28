@@ -92,9 +92,12 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
     for row in rows:
         wl_slug, output_filename, discord_id, discord_name, id_type, id_value = row
 
-        # Find the squad group for this whitelist
+        # Find the squad group for this whitelist; skip rows from disabled whitelists
+        # (handles both Postgres BOOLEAN True/False and MySQL TINYINT 1/0)
         wl = next((w for w in whitelists if w["slug"] == wl_slug), None)
-        group_name = wl["squad_group"] if wl else "Whitelist"
+        if not wl or not wl.get("enabled"):
+            continue
+        group_name = wl["squad_group"] or "Whitelist"
 
         line = build_line(id_type, id_value, discord_name, group_name)
         dedup_key = f"{id_type}:{id_value}" if dedupe else line

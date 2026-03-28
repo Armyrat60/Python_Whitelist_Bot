@@ -1538,7 +1538,7 @@ class Database:
             JOIN whitelists w ON w.id = u.whitelist_id
             JOIN whitelist_identifiers i
               ON u.guild_id=i.guild_id AND u.discord_id=i.discord_id AND u.whitelist_id=i.whitelist_id
-            WHERE u.guild_id=%s AND u.status='active' AND w.enabled=1
+            WHERE u.guild_id=%s AND u.status='active'
             ORDER BY w.slug, u.discord_name, i.id_type, i.id_value
             """,
             (guild_id,),
