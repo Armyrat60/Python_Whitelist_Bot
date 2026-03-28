@@ -2169,7 +2169,8 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
     """Backfill last_plan_name (tier) for active users based on current Discord roles.
 
     Fetches all guild members, matches their roles against tier_entries,
-    and updates whitelist_users.last_plan_name for rows where it is NULL or empty.
+    and updates whitelist_users.last_plan_name for ALL active users (not just empty ones).
+    Stores in "RoleName:slots" format matching the bot's live calculation.
     Works in both gateway and REST-only mode.
     """
     session = await aiohttp_session.get_session(request)
@@ -2213,9 +2214,9 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
     else:
         return web.json_response({"error": "Cannot fetch Discord members"}, status=503)
 
-    # Load all active users with empty tier
+    # Load ALL active users — update everyone, not just those with empty tier
     user_rows = await db.fetchall(
-        "SELECT discord_id, whitelist_id FROM whitelist_users WHERE guild_id=%s AND status='active' AND (last_plan_name IS NULL OR last_plan_name='')",
+        "SELECT discord_id, whitelist_id FROM whitelist_users WHERE guild_id=%s AND status='active'",
         (guild_id,),
     )
 
@@ -2226,24 +2227,27 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
         roles = member_roles.get(discord_id, [])
         if not roles:
             continue
-        # Pick the tier with highest slot_limit among matched roles
-        best: tuple[str, int] | None = None
+        # Collect all matching tier entries for this user
+        matched: list[tuple[str, int]] = []
         for role_str in roles:
             entry = tier_by_role.get(role_str)
-            if entry and (best is None or entry[1] > best[1]):
-                best = entry
-        if not best:
+            if entry:
+                matched.append(entry)
+        if not matched:
             continue
-        tier_name = best[0]
-        plan_meta = _pack_plan_meta(plan=tier_name)
+        # Sort by slot_limit descending (highest tier first)
+        matched.sort(key=lambda x: x[1], reverse=True)
+        # Build plan string in "Name:slots" or "Name1:slots1 + Name2:slots2" format
+        plan_str = " + ".join(f"{name}:{slots}" for name, slots in matched)
+        total_slots = sum(x[1] for x in matched) if len(matched) > 1 else matched[0][1]
         await db.execute(
-            "UPDATE whitelist_users SET last_plan_name=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s AND (last_plan_name IS NULL OR last_plan_name='')",
-            (plan_meta, guild_id, discord_id, whitelist_id),
+            "UPDATE whitelist_users SET last_plan_name=%s, effective_slot_limit=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+            (plan_str, total_slots, guild_id, discord_id, whitelist_id),
         )
         updated += 1
 
-    log.info("Guild %s: backfilled tiers for %d users", guild_id, updated)
-    return web.json_response({"ok": True, "updated": updated})
+    log.info("Guild %s: backfilled tiers for %d / %d active users", guild_id, updated, len(user_rows or []))
+    return web.json_response({"ok": True, "updated": updated, "total_active": len(user_rows or [])})
 
 
 @require_admin

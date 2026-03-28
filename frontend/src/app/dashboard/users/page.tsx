@@ -1005,6 +1005,7 @@ export default function UsersPage() {
           )}
           Gap Report
         </Button>
+        <SyncTiersButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
       </div>
 
       {/* ---- Member Gap Report ---- */}
@@ -2232,6 +2233,43 @@ function RematchOrphansButton({ onDone }: { onDone: () => void }) {
     <Button variant="outline" size="sm" onClick={handleRematch} disabled={running} title="Re-run name matching against all unlinked entries">
       {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
       Re-match All
+    </Button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sync Tiers Button — backfill last_plan_name from Discord roles     */
+/* ------------------------------------------------------------------ */
+
+function SyncTiersButton({ onDone }: { onDone: () => void }) {
+  const [running, setRunning] = useState(false);
+
+  async function handleSync() {
+    setRunning(true);
+    try {
+      const res = await api.post<{ ok: boolean; updated: number; total_active: number }>(
+        "/api/admin/backfill/tiers",
+        {}
+      );
+      toast.success(`Tier sync complete — updated ${res.updated} of ${res.total_active} active users`);
+      onDone();
+    } catch {
+      toast.error("Tier sync failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleSync}
+      disabled={running}
+      title="Re-sync tier assignments from current Discord roles for all active users"
+    >
+      {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Crown className="mr-1.5 h-3.5 w-3.5" />}
+      Sync Tiers
     </Button>
   );
 }
