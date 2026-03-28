@@ -722,26 +722,6 @@ export default function UsersPage() {
   const [showGapReport, setShowGapReport] = useState(false);
   const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
-  const [backfilling, setBackfilling] = useState(false);
-
-  async function handleBackfill() {
-    setBackfilling(true);
-    try {
-      const [srcRes, tierRes] = await Promise.all([
-        fetch("/api/admin/backfill/sources", { method: "POST", credentials: "include" }).then(r => r.json()),
-        fetch("/api/admin/backfill/tiers",   { method: "POST", credentials: "include" }).then(r => r.json()),
-      ]);
-      const srcCount = srcRes.updated ?? 0;
-      const tierCount = tierRes.updated ?? 0;
-      toast.success(`Backfill complete — ${srcCount} sources, ${tierCount} tiers updated`);
-      queryClient.invalidateQueries({ queryKey: ["users"] });
-    } catch {
-      toast.error("Backfill failed");
-    } finally {
-      setBackfilling(false);
-    }
-  }
-
   async function loadGapReport() {
     setGapLoading(true);
     setShowGapReport(true);
@@ -954,14 +934,6 @@ export default function UsersPage() {
 
         <AddUserDialog whitelists={whitelists ?? []} />
         <AddSteamEntryDialog whitelists={whitelists ?? []} />
-        <Button variant="outline" size="sm" onClick={handleBackfill} disabled={backfilling} title="Backfill Source and Tier columns for existing users">
-          {backfilling ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Backfill Data
-        </Button>
         <Button variant="outline" size="sm" onClick={loadGapReport} disabled={gapLoading}>
           {gapLoading ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
