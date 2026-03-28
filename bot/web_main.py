@@ -325,6 +325,9 @@ async def start_web():
     await site.start()
     log.info("Web server started on http://%s:%s/", WEB_HOST, WEB_PORT)
 
+    # Load per-guild URL salts before priming cache (so token mapping is correct)
+    await web_server.load_guild_salts()
+
     # Prime the output file cache for all guilds on startup
     from bot.output import sync_outputs
     for guild in discord_client.guilds:

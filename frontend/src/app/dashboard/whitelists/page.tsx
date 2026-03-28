@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -10,6 +10,7 @@ import {
   Copy,
   Check,
   X,
+  RefreshCw,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -211,9 +212,11 @@ function WhitelistCard({
   });
   const url = urlsData?.urls?.find((u) => u.slug === whitelist.slug)?.url ?? "Loading...";
 
+  const qc = useQueryClient();
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(whitelist.name);
   const [savingName, setSavingName] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   function copyUrl() {
     navigator.clipboard.writeText(url);
@@ -227,10 +230,25 @@ function WhitelistCard({
       await api.put(`/api/admin/whitelists/${whitelist.id}`, { name: nameValue.trim() });
       toast.success("Renamed");
       setEditingName(false);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
     } catch {
       toast.error("Failed to rename");
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function handleRegenerateUrl() {
+    setRegenerating(true);
+    try {
+      await api.post("/api/admin/whitelist-url/regenerate", {});
+      toast.success("URL regenerated — update your Squad server config with the new link");
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
+    } catch {
+      toast.error("Failed to regenerate URL");
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -286,8 +304,11 @@ function WhitelistCard({
           <span className="flex-1 truncate text-xs text-muted-foreground font-mono">
             {url}
           </span>
-          <Button variant="ghost" size="icon-xs" onClick={copyUrl}>
+          <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">
             <Copy className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="icon-xs" onClick={handleRegenerateUrl} disabled={regenerating} title="Regenerate URL (old URL will stop working)">
+            <RefreshCw className={`h-3 w-3 ${regenerating ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </CardContent>
@@ -342,6 +363,7 @@ function WhitelistConfigSheet({
   whitelist: Whitelist;
   groups: SquadGroup[];
 }) {
+  const qc = useQueryClient();
   const [name, setName] = useState(whitelist.name);
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
   const [outputFilename, setOutputFilename] = useState(
@@ -361,6 +383,8 @@ function WhitelistConfigSheet({
         output_filename: outputFilename,
       });
       toast.success("Whitelist updated");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
     } catch {
       toast.error("Failed to update whitelist");
     }

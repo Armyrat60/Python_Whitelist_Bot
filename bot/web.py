@@ -233,15 +233,42 @@ class WebServer:
         # Reverse mapping: {token: guild_id} for fast lookup in _handle_file
         self._token_to_guild: dict[str, int] = {}
 
+        # Per-guild URL salt (loaded from DB at startup, updated on regeneration)
+        self._guild_salts: dict[int, str] = {}
+
     def get_file_token(self, guild_id: int) -> str:
         """Get the secret token used in whitelist file URLs for a specific guild."""
-        return generate_file_token(str(guild_id), self._file_secret)
+        salt = self._guild_salts.get(guild_id, "")
+        identifier = f"{guild_id}:{salt}" if salt else str(guild_id)
+        return generate_file_token(identifier, self._file_secret)
 
     def get_file_url(self, guild_id: int, filename: str) -> str:
         """Get the full URL for a whitelist file (for display in setup/status)."""
         token = self.get_file_token(guild_id)
         base = WEB_BASE_URL or f"http://{WEB_HOST}:{WEB_PORT}"
         return f"{base}/wl/{token}/{filename}"
+
+    async def regenerate_guild_token(self, guild_id: int) -> str:
+        """Generate a new random URL salt for a guild, invalidating the old URL."""
+        new_salt = secrets.token_hex(8)
+        # Remove old token mapping
+        old_token = self.get_file_token(guild_id)
+        self._token_to_guild.pop(old_token, None)
+        # Save new salt
+        self._guild_salts[guild_id] = new_salt
+        await self.bot.db.set_setting(guild_id, "url_salt", new_salt)
+        # Re-register new token mapping (cache content stays valid)
+        new_token = self.get_file_token(guild_id)
+        self._token_to_guild[new_token] = guild_id
+        log.info("Guild %s: whitelist URL token regenerated", guild_id)
+        return new_token
+
+    async def load_guild_salts(self):
+        """Load per-guild URL salts from DB into memory at startup."""
+        for guild_id in list(self._token_to_guild.values()) + [g.id for g in getattr(self.bot, "guilds", [])]:
+            salt = await self.bot.db.get_setting(guild_id, "url_salt")
+            if salt:
+                self._guild_salts[guild_id] = salt
 
     async def start(self):
         ssl_ctx = None

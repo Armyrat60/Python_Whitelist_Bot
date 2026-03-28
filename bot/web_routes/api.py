@@ -4007,6 +4007,18 @@ async def admin_get_whitelist_urls(request: web.Request) -> web.Response:
     return web.json_response({"urls": urls})
 
 
+@require_admin
+async def admin_regenerate_whitelist_url(request: web.Request) -> web.Response:
+    """Regenerate the guild's whitelist URL token, invalidating the old URL."""
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    web_server = request.app.get("web_server")
+    if not web_server:
+        return web.json_response({"error": "Web server not available."}, status=503)
+    await web_server.regenerate_guild_token(guild_id)
+    return web.json_response({"ok": True})
+
+
 # ── Admin Panel API routes ────────────────────────────────────────────────────
 
 MAX_PANELS_PER_GUILD = 5
@@ -4756,6 +4768,7 @@ def setup_routes(app: web.Application):
     app.router.add_put("/api/admin/whitelists/{id}", admin_update_whitelist)
     app.router.add_delete("/api/admin/whitelists/{slug}", admin_delete_whitelist)
     app.router.add_get("/api/admin/whitelist-urls", admin_get_whitelist_urls)
+    app.router.add_post("/api/admin/whitelist-url/regenerate", admin_regenerate_whitelist_url)
     # Admin Panel CRUD
     app.router.add_get("/api/admin/panels", admin_get_panels)
     app.router.add_post("/api/admin/panels", admin_create_panel)
