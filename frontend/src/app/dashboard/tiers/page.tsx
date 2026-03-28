@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Check, Crown, X, RefreshCw, ChevronDown, ChevronUp, Users } from "lucide-react";
+import { Plus, Trash2, Check, Crown, X, RefreshCw, Users } from "lucide-react";
 import {
   useTierCategories,
   useCreateTierCategory,
@@ -57,93 +57,118 @@ import type { ComboboxOption } from "@/components/ui/combobox";
 
 function RoleStatsSection() {
   const { data: stats, isLoading, error, refetch, isFetching } = useRoleStats();
-  const [expanded, setExpanded] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
 
   const totalDiscord = stats?.reduce((s, r) => s + (r.discord_count ?? 0), 0) ?? 0;
   const totalRegistered = stats?.reduce((s, r) => s + (r.registered_count ?? 0), 0) ?? 0;
   const totalUnregistered = totalDiscord - totalRegistered;
 
+  async function handleResync() {
+    setResyncing(true);
+    try {
+      const res = await fetch("/api/admin/role-sync/check", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((data as { error?: string }).error || "Role sync failed");
+      } else {
+        toast.success("Discord roles resynced");
+        refetch();
+      }
+    } catch {
+      toast.error("Role sync failed");
+    } finally {
+      setResyncing(false);
+    }
+  }
+
   return (
     <Card>
-      <CardHeader
-        className="cursor-pointer select-none"
-        onClick={() => setExpanded((v) => !v)}
-      >
+      <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Users className="h-4 w-4" />
           Role Registration Stats
-          <span className="ml-auto flex items-center gap-3 text-sm font-normal text-muted-foreground">
+          <span className="ml-auto flex items-center gap-3">
             {stats && (
-              <>
+              <span className="text-sm font-normal text-muted-foreground flex items-center gap-3">
                 <span style={{ color: "var(--accent-primary)" }}>{totalRegistered} registered</span>
                 {totalUnregistered > 0 && (
                   <span className="text-amber-400">{totalUnregistered} missing</span>
                 )}
-              </>
+              </span>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleResync}
+              disabled={resyncing || isFetching}
+              title="Re-check Discord role membership and update whitelist status"
+            >
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${resyncing ? "animate-spin" : ""}`} />
+              Resync Roles
+            </Button>
             <button
-              onClick={(e) => { e.stopPropagation(); refetch(); }}
-              className="rounded p-0.5 hover:text-white transition-colors"
-              title="Refresh"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="rounded p-0.5 text-muted-foreground hover:text-white transition-colors"
+              title="Refresh stats"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
             </button>
-            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </span>
         </CardTitle>
         <CardDescription>
           Discord role member count vs. active whitelist registrations per tier role.
         </CardDescription>
       </CardHeader>
-
-      {expanded && (
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
-          ) : error ? (
-            <p className="text-sm text-destructive">
-              Failed to load role stats — bot may not be connected.
-            </p>
-          ) : !stats || stats.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active tier roles found.</p>
-          ) : (
-            <div className="space-y-2">
-              {stats.map((r) => {
-                const pct = r.discord_count > 0
-                  ? Math.round(((r.registered_count ?? 0) / r.discord_count) * 100)
-                  : 100;
-                const missing = r.unregistered_count ?? 0;
-                return (
-                  <div key={r.role_id} className="flex items-center gap-3 text-sm">
-                    <span className="w-36 truncate font-medium" title={r.role_name}>{r.role_name}</span>
-                    <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                      <div
-                        className="absolute inset-y-0 left-0 rounded-full transition-all"
-                        style={{
-                          width: `${pct}%`,
-                          background: missing > 0
-                            ? "linear-gradient(90deg, var(--accent-primary), oklch(0.8 0.18 80))"
-                            : "var(--accent-primary)",
-                        }}
-                      />
-                    </div>
-                    <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
-                      {r.registered_count ?? "?"}/{r.discord_count} registered
-                      {missing > 0 && (
-                        <span className="ml-1 text-amber-400">({missing} missing)</span>
-                      )}
-                    </span>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        ) : error ? (
+          <p className="text-sm text-destructive">
+            Failed to load role stats — bot may not be connected.
+          </p>
+        ) : !stats || stats.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No active tier roles found.</p>
+        ) : (
+          <div className="space-y-2">
+            {stats.map((r) => {
+              const pct = r.discord_count > 0
+                ? Math.round(((r.registered_count ?? 0) / r.discord_count) * 100)
+                : 100;
+              const missing = r.unregistered_count ?? 0;
+              return (
+                <div key={r.role_id} className="flex items-center gap-3 text-sm">
+                  <span className="w-36 truncate font-medium" title={r.role_name}>{r.role_name}</span>
+                  <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        background: missing > 0
+                          ? "linear-gradient(90deg, var(--accent-primary), oklch(0.8 0.18 80))"
+                          : "var(--accent-primary)",
+                      }}
+                    />
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      )}
+                  <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
+                    {r.registered_count ?? "?"}/{r.discord_count} registered
+                    {missing > 0 && (
+                      <span className="ml-1 text-amber-400">({missing} missing)</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }

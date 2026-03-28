@@ -1950,6 +1950,43 @@ async def admin_resync(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_role_sync_check(request: web.Request) -> web.Response:
+    """Trigger an on-demand role sync check for the active guild.
+
+    Scans all Discord role members for every mapped tier role and
+    updates whitelist_users status (activating or disabling) to match
+    current Discord membership.  Requires the bot to be running in
+    gateway mode; no-ops gracefully in REST-only / web-only mode.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app.get("bot")
+
+    if bot is None or getattr(bot, "is_rest_only", False):
+        return web.json_response(
+            {"error": "Role sync check requires the bot to be running in gateway mode."},
+            status=503,
+        )
+
+    guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
+    if guild is None:
+        return web.json_response(
+            {"error": "Guild not found in bot cache — bot may not have started yet."},
+            status=404,
+        )
+
+    try:
+        if hasattr(bot, "_daily_role_sync"):
+            await bot._daily_role_sync(guild)
+        # Also regenerate output files after the sync
+        await _trigger_sync(request, guild_id)
+        return web.json_response({"ok": True, "message": "Role sync complete"})
+    except Exception as exc:
+        log.exception("On-demand role sync failed for guild %s", guild_id)
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@require_admin
 async def admin_report(request: web.Request) -> web.Response:
     """Trigger report generation."""
     bot = request.app["bot"]
@@ -4662,6 +4699,7 @@ def setup_routes(app: web.Application):
     # Admin Health / Resync / Report
     app.router.add_get("/api/admin/health", admin_health)
     app.router.add_post("/api/admin/resync", admin_resync)
+    app.router.add_post("/api/admin/role-sync/check", admin_role_sync_check)
     app.router.add_post("/api/admin/report", admin_report)
     # Admin Whitelist CRUD
     app.router.add_post("/api/admin/whitelists", admin_create_whitelist)
