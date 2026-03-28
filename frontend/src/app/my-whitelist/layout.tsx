@@ -8,6 +8,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GuildSwitcher } from "@/components/layout/guild-switcher";
+import { DashboardFooter } from "@/components/layout/dashboard-footer";
 
 function avatarUrl(userId: string, avatar: string) {
   return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=64`;
@@ -100,6 +101,7 @@ export default function MyWhitelistLayout({
       <main className="mx-auto w-full max-w-3xl flex-1 p-6">
         {children}
       </main>
+      <DashboardFooter />
     </div>
   );
 }

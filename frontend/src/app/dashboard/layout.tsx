@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { DashboardFooter } from "@/components/layout/dashboard-footer";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardLayout({
@@ -74,6 +75,7 @@ export default function DashboardLayout({
       <div className="flex flex-1 flex-col md:pl-60">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <DashboardFooter />
       </div>
     </div>
   );

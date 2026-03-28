@@ -7,6 +7,7 @@ import { MobileSidebar } from "@/components/layout/sidebar";
 import { useSession } from "@/hooks/use-session";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { APP_VERSION } from "@/lib/version";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -46,10 +47,20 @@ export function Topbar() {
         >
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
-        <h1 className="text-lg font-semibold">{title}</h1>
+        {/* Brand shown on mobile (sidebar is hidden) */}
+        <div className="flex items-center gap-2 md:hidden">
+          <img src="/logo.png" alt="" className="h-6 w-6 rounded" />
+          <span className="text-sm font-bold tracking-wide" style={{ color: "var(--accent-primary)" }}>
+            Squad Whitelister
+          </span>
+        </div>
+        <h1 className="hidden text-lg font-semibold md:block">{title}</h1>
       </div>
 
       <div className="flex items-center gap-3">
+        <span className="hidden rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
+          v{APP_VERSION}
+        </span>
         {session && (
           <div className="flex items-center gap-2">
             <Avatar size="sm">
