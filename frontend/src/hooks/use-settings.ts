@@ -342,6 +342,25 @@ export function useRemoveRoleMapping() {
 
 // ─── Tier Categories ───────────────────────────────────────────────────────
 
+export interface RoleStat {
+  role_id: string;
+  role_name: string;
+  discord_count: number;
+  registered_count: number | null;
+  unregistered_count: number | null;
+}
+
+export function useRoleStats() {
+  return useQuery<RoleStat[]>({
+    queryKey: ["role-stats"],
+    queryFn: async () => {
+      const res = await api.get<{ stats: RoleStat[] }>("/api/admin/role-stats");
+      return res.stats;
+    },
+    staleTime: 30_000,
+  });
+}
+
 export function useTierCategories() {
   return useQuery<TierCategory[]>({
     queryKey: ["tier-categories"],

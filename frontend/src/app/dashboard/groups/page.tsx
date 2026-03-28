@@ -239,8 +239,8 @@ function EditGroupDialog({
             ) : (
               <span
                 className="cursor-pointer hover:underline"
-                onClick={() => !group.is_default && setEditingName(true)}
-                title={group.is_default ? "Default group cannot be renamed" : "Click to rename"}
+                onClick={() => setEditingName(true)}
+                title="Click to rename"
               >
                 Edit Group: {nameValue}
               </span>

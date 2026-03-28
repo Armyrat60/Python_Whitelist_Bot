@@ -3577,6 +3577,97 @@ async def admin_members_gap(request: web.Request) -> web.Response:
 
 
 @require_admin
+async def admin_role_stats(request: web.Request) -> web.Response:
+    """Return per-role stats: Discord member count vs. whitelist registrations.
+
+    Returns a list of {role_id, role_name, discord_count, registered_count, unregistered_count}
+    for every active tier entry in the guild.
+    """
+    session = await aiohttp_session.get_session(request)
+    guild_id = int(session["active_guild_id"])
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"error": "Bot not connected."}, status=503)
+    db = bot.db
+
+    # Fetch all active tier entries for this guild
+    is_true = "true" if db.engine == "postgres" else "1"
+    te_rows = await db.fetchall(
+        f"SELECT DISTINCT role_id, role_name FROM tier_entries WHERE guild_id=%s AND is_active={is_true}",
+        (guild_id,),
+    )
+    if not te_rows:
+        return web.json_response({"stats": []})
+
+    # Build role_id -> role_name map (DB values as baseline)
+    role_map: dict[int, str] = {}
+    for r in te_rows:
+        try:
+            role_map[int(r[0])] = r[1] or str(r[0])
+        except (ValueError, TypeError):
+            pass
+
+    # Fetch live member counts per role from Discord
+    discord_counts: dict[int, int] = {}
+    guild = getattr(bot, "get_guild", lambda _: None)(guild_id)
+    if guild and hasattr(guild, "get_role"):
+        for rid in role_map:
+            role = guild.get_role(rid)
+            if role:
+                role_map[rid] = role.name
+                discord_counts[rid] = len(role.members)
+            else:
+                discord_counts[rid] = 0
+    elif hasattr(bot, "get_role_members"):
+        for rid in role_map:
+            try:
+                members = await bot.get_role_members(guild_id, rid)
+                discord_counts[rid] = len(members)
+            except Exception:
+                discord_counts[rid] = -1  # unknown
+    else:
+        return web.json_response({"error": "Bot not connected — cannot fetch Discord members."}, status=503)
+
+    # Count registered whitelist_users per role via their Discord membership
+    # We query all active whitelist_users discord_ids for this guild, then cross-reference
+    # against each role's member list
+    reg_rows = await db.fetchall(
+        "SELECT DISTINCT discord_id FROM whitelist_users WHERE guild_id=%s AND status='active'",
+        (guild_id,),
+    )
+    registered_ids: set[int] = {int(r[0]) for r in (reg_rows or [])}
+
+    stats = []
+    if guild and hasattr(guild, "get_role"):
+        for rid, rname in role_map.items():
+            role = guild.get_role(rid)
+            member_ids = {m.id for m in role.members} if role else set()
+            discord_count = len(member_ids)
+            registered_count = len(member_ids & registered_ids)
+            stats.append({
+                "role_id": str(rid),
+                "role_name": rname,
+                "discord_count": discord_count,
+                "registered_count": registered_count,
+                "unregistered_count": max(0, discord_count - registered_count),
+            })
+    else:
+        # REST fallback — we have counts but not member sets, so estimate
+        for rid, rname in role_map.items():
+            dc = discord_counts.get(rid, 0)
+            stats.append({
+                "role_id": str(rid),
+                "role_name": rname,
+                "discord_count": dc,
+                "registered_count": None,  # can't compute per-role without member list
+                "unregistered_count": None,
+            })
+
+    stats.sort(key=lambda x: x["role_name"].lower())
+    return web.json_response({"stats": stats})
+
+
+@require_admin
 async def admin_verify_roles(request: web.Request) -> web.Response:
     """Verify Discord roles for a list of Discord IDs and suggest plan mappings."""
     session = await aiohttp_session.get_session(request)
@@ -4546,6 +4637,7 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/admin/users/bulk-delete", admin_bulk_delete_users)
     app.router.add_post("/api/admin/users/bulk-move", admin_bulk_move_users)
     app.router.add_get("/api/admin/members/gap", admin_members_gap)
+    app.router.add_get("/api/admin/role-stats", admin_role_stats)
     app.router.add_get("/api/admin/audit", admin_audit)
     # Admin Setup API
     app.router.add_get("/api/admin/settings", admin_get_settings)
