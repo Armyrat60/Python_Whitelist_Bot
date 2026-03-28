@@ -3837,17 +3837,22 @@ async def admin_create_whitelist(request: web.Request) -> web.Response:
 
 @require_admin
 async def admin_update_whitelist(request: web.Request) -> web.Response:
-    """Update a whitelist by numeric ID (name, squad_group, output_filename, etc.)."""
+    """Update a whitelist by numeric ID or slug (name, squad_group, output_filename, etc.)."""
     session = await aiohttp_session.get_session(request)
     guild_id = int(session["active_guild_id"])
-    wl_id = int(request.match_info["id"])
+    id_or_slug = request.match_info["id"]
 
     bot = request.app["bot"]
     db = bot.db
 
-    wl = await db.get_whitelist_by_id(wl_id)
+    # Accept both numeric ID and slug for backwards compatibility
+    if id_or_slug.isdigit():
+        wl = await db.get_whitelist_by_id(int(id_or_slug))
+    else:
+        wl = await db.get_whitelist_by_slug(guild_id, id_or_slug)
     if not wl or wl.get("guild_id") != guild_id:
         return web.json_response({"error": "Whitelist not found."}, status=404)
+    wl_id = wl["id"]
 
     try:
         body = await request.json()
