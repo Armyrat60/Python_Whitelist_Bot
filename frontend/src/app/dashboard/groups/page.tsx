@@ -90,7 +90,12 @@ export default function GroupsPage() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {groups?.map((group) => {
+        {(!groups || groups.length === 0) && !isLoading ? (
+          <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
+            <p className="text-sm font-medium">No groups yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">Create a Squad admin group to get started.</p>
+          </div>
+        ) : groups?.map((group) => {
           const perms = group.permissions
             ? group.permissions.split(",").filter(Boolean)
             : [];

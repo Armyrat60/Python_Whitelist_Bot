@@ -351,7 +351,7 @@ class WebServer:
                     self.update_cache(guild_id, outputs)
                     guild_cache = self._cache.get(guild_id)
             except Exception:
-                pass
+                log.exception("Failed to regenerate whitelist cache for guild %s (file: %s)", guild_id, filename)
         if guild_cache is None:
             raise web.HTTPNotFound(text="Not found")
 

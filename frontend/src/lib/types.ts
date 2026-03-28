@@ -99,6 +99,8 @@ export interface Settings {
   timezone: string;
   bot_status_message: string;
   combined_filename: string;
+  retention_days: string;
+  duplicate_output_dedupe: string;
 }
 
 export interface WhitelistUser {

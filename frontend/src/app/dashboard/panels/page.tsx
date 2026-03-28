@@ -96,7 +96,12 @@ export default function PanelsPage() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {panels?.map((panel) => (
+        {(!panels || panels.length === 0) && !panelsLoading ? (
+          <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
+            <p className="text-sm font-medium">No panels yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">Create a panel to let members apply for the whitelist.</p>
+          </div>
+        ) : panels?.map((panel) => (
           <PanelCard
             key={panel.id}
             panel={panel}

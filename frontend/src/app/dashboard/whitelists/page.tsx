@@ -103,7 +103,12 @@ export default function WhitelistsPage() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {whitelists?.map((wl) => (
+        {(!whitelists || whitelists.length === 0) && !isLoading ? (
+          <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
+            <p className="text-sm font-medium">No whitelists yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">Create your first whitelist to get started.</p>
+          </div>
+        ) : whitelists?.map((wl) => (
           <WhitelistCard
             key={wl.id}
             whitelist={wl}

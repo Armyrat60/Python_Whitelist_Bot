@@ -181,6 +181,8 @@ export default function SettingsPage() {
   const [allowDuplicates, setAllowDuplicates]   = useState("true");
   const [botStatusMsg, setBotStatusMsg]          = useState("");
   const [combinedFilename, setCombinedFilename] = useState("whitelist.txt");
+  const [retentionDays, setRetentionDays] = useState("90");
+  const [dedupe, setDedupe] = useState("true");
 
   /* ── Notifications form state ── */
   const [reportFreq, setReportFreq]       = useState("disabled");
@@ -205,6 +207,8 @@ export default function SettingsPage() {
     setNotifChannelId(botSettings.notification_channel_id ?? "");
     setTimezone(botSettings.timezone ?? "UTC");
     setCombinedFilename(botSettings.combined_filename ?? "whitelist.txt");
+    setRetentionDays(botSettings.retention_days ?? "90");
+    setDedupe(botSettings.duplicate_output_dedupe ?? "true");
     setModRoleIds(
       botSettings.mod_role_id
         ? botSettings.mod_role_id.split(",").filter(Boolean)
@@ -228,9 +232,11 @@ export default function SettingsPage() {
       allow_global_duplicates: allowDuplicates,
       bot_status_message: botStatusMsg,
       combined_filename: combinedFilename.trim() || "whitelist.txt",
+      retention_days: retentionDays,
+      duplicate_output_dedupe: dedupe,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg, combinedFilename]);
+  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg, combinedFilename, retentionDays, dedupe]);
 
   const saveNotifications = useCallback(() => {
     save({
@@ -340,6 +346,34 @@ export default function SettingsPage() {
                   checked={allowDuplicates === "true"}
                   onCheckedChange={(v) => setAllowDuplicates(String(v))}
                 />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label>Deduplicate Output File</Label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Remove duplicate Steam64/EOS IDs from the generated whitelist file.
+                  </p>
+                </div>
+                <Switch
+                  checked={dedupe === "true"}
+                  onCheckedChange={(v) => setDedupe(String(v))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Audit Log Retention (days)</Label>
+                <Input
+                  type="number"
+                  min={7}
+                  max={3650}
+                  value={retentionDays}
+                  onChange={(e) => setRetentionDays(e.target.value)}
+                  className="max-w-[120px]"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  How long audit log entries are kept. Default is 90 days.
+                </p>
               </div>
 
               <div className="flex items-center justify-between gap-4">

@@ -45,7 +45,7 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
 
     # Get all squad groups for this guild
     squad_groups = await db.get_squad_groups(guild_id)
-    group_perms = {name: perms for name, perms, _ in squad_groups}
+    group_perms = {row[0]: row[1] for row in squad_groups}
 
     # Get all active export rows
     # Returns: (whitelist_slug, output_filename, discord_id, discord_name, id_type, id_value)
