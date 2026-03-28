@@ -4,7 +4,6 @@ from typing import Optional, List, Tuple, Dict, Any
 from urllib.parse import urlparse
 
 from bot.config import (
-    DB_ENGINE,
     DB_HOST,
     DB_PORT,
     DB_NAME,
@@ -25,7 +24,7 @@ _PG_PARAM_RE = re.compile(r"%s")
 
 
 def _to_pg_params(query: str) -> str:
-    """Convert MySQL-style %s placeholders to PostgreSQL $1, $2, ... style."""
+    """Convert %s placeholders to PostgreSQL $1, $2, ... style."""
     counter = [0]
 
     def _replace(_match):
@@ -35,67 +34,7 @@ def _to_pg_params(query: str) -> str:
     return _PG_PARAM_RE.sub(_replace, query)
 
 
-# ─── Engine-specific adapters ────────────────────────────────────────────────
-
-class _MySQLAdapter:
-    """Adapter for aiomysql (MySQL/MariaDB)."""
-
-    def __init__(self):
-        self.pool = None
-
-    async def connect(self):
-        import aiomysql
-        self.pool = await aiomysql.create_pool(
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            db=DB_NAME,
-            autocommit=True,
-            minsize=2,
-            maxsize=25,
-            charset="utf8mb4",
-            connect_timeout=10,
-        )
-
-    async def execute(self, query: str, params: tuple = ()) -> int:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                return cur.rowcount
-
-    async def execute_returning(self, query: str, params: tuple = ()) -> Optional[tuple]:
-        """Execute an INSERT and return the last inserted row id."""
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                last_id = cur.lastrowid
-                return (last_id,) if last_id else None
-
-    async def fetchone(self, query: str, params: tuple = ()) -> Optional[tuple]:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                return await cur.fetchone()
-
-    async def fetchall(self, query: str, params: tuple = ()) -> List[tuple]:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                return await cur.fetchall()
-
-    async def execute_transaction(self, queries: List[Tuple[str, tuple]]):
-        async with self.pool.acquire() as conn:
-            await conn.begin()
-            try:
-                async with conn.cursor() as cur:
-                    for query, params in queries:
-                        await cur.execute(query, params)
-                await conn.commit()
-            except Exception:
-                await conn.rollback()
-                raise
-
+# ─── Database adapter ────────────────────────────────────────────────────────
 
 class _PostgresAdapter:
     """Adapter for asyncpg (PostgreSQL)."""
@@ -165,198 +104,7 @@ class _PostgresAdapter:
                     await conn.execute(pg_query, *params)
 
 
-# ─── Schema definitions per engine ───────────────────────────────────────────
-
-MYSQL_SCHEMA = [
-    """
-    CREATE TABLE IF NOT EXISTS bot_settings (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        setting_key VARCHAR(100) NOT NULL,
-        setting_value TEXT NOT NULL,
-        PRIMARY KEY (guild_id, setting_key)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelists (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        slug VARCHAR(50) NOT NULL,
-        enabled TINYINT(1) NOT NULL DEFAULT 0,
-        panel_channel_id BIGINT NULL,
-        panel_message_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        squad_group VARCHAR(100) NOT NULL DEFAULT 'Whitelist',
-        output_filename VARCHAR(255) NOT NULL DEFAULT 'whitelist.txt',
-        default_slot_limit INT NOT NULL DEFAULT 1,
-        stack_roles TINYINT(1) NOT NULL DEFAULT 0,
-        is_default TINYINT(1) NOT NULL DEFAULT 0,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        UNIQUE KEY uq_guild_slug (guild_id, slug)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    # Legacy table kept for migration; new code uses whitelists
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_types (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NOT NULL,
-        enabled TINYINT(1) NOT NULL DEFAULT 0,
-        panel_channel_id BIGINT NULL,
-        panel_message_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        github_enabled TINYINT(1) NOT NULL DEFAULT 1,
-        github_filename VARCHAR(255) NOT NULL,
-        input_mode VARCHAR(20) NOT NULL DEFAULT 'modal',
-        stack_roles TINYINT(1) NOT NULL DEFAULT 1,
-        default_slot_limit INT NOT NULL DEFAULT 1,
-        squad_group VARCHAR(100) NOT NULL DEFAULT 'Whitelist',
-        updated_at DATETIME NOT NULL,
-        PRIMARY KEY (guild_id, whitelist_type)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS role_mappings (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        role_id BIGINT NOT NULL,
-        role_name VARCHAR(255) NOT NULL,
-        slot_limit INT NOT NULL,
-        is_active TINYINT(1) NOT NULL DEFAULT 1,
-        created_at DATETIME NOT NULL,
-        UNIQUE KEY uq_guild_wl_role (guild_id, whitelist_id, role_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_users (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        discord_id BIGINT NOT NULL,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        discord_name VARCHAR(255) NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'active',
-        slot_limit_override INT NULL,
-        effective_slot_limit INT NOT NULL DEFAULT 0,
-        last_plan_name VARCHAR(255) NULL,
-        updated_at DATETIME NOT NULL,
-        created_at DATETIME NOT NULL,
-        PRIMARY KEY (guild_id, discord_id, whitelist_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_identifiers (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        discord_id BIGINT NOT NULL,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        id_type VARCHAR(20) NOT NULL,
-        id_value VARCHAR(255) NOT NULL,
-        is_verified TINYINT(1) NOT NULL DEFAULT 0,
-        verification_source VARCHAR(100) NULL,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        UNIQUE KEY uq_guild_user_wl_identifier (guild_id, discord_id, whitelist_id, id_type, id_value)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS audit_log (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        action_type VARCHAR(100) NOT NULL,
-        actor_discord_id BIGINT NULL,
-        target_discord_id BIGINT NULL,
-        details LONGTEXT NULL,
-        created_at DATETIME NOT NULL,
-        INDEX idx_guild_created (guild_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS squad_permissions (
-        permission VARCHAR(50) PRIMARY KEY,
-        description VARCHAR(255) NOT NULL,
-        is_active TINYINT(1) NOT NULL DEFAULT 1
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS squad_groups (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        group_name VARCHAR(100) NOT NULL,
-        permissions TEXT NOT NULL,
-        description VARCHAR(255) NOT NULL DEFAULT '',
-        is_default TINYINT(1) NOT NULL DEFAULT 0,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        PRIMARY KEY (guild_id, group_name)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS panels (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        name VARCHAR(100) NOT NULL,
-        channel_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        whitelist_id INT NULL,
-        panel_message_id BIGINT NULL,
-        is_default TINYINT(1) NOT NULL DEFAULT 0,
-        enabled TINYINT(1) NOT NULL DEFAULT 1,
-        tier_category_id INT NULL,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS tier_categories (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        description VARCHAR(500) NULL,
-        is_default TINYINT(1) NOT NULL DEFAULT 0,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        UNIQUE KEY uq_guild_tier_name (guild_id, name)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS tier_entries (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        category_id INT NOT NULL,
-        role_id BIGINT NOT NULL,
-        role_name VARCHAR(255) NOT NULL,
-        slot_limit INT NOT NULL DEFAULT 1,
-        display_name VARCHAR(100) NULL,
-        sort_order INT NOT NULL DEFAULT 0,
-        is_active TINYINT(1) NOT NULL DEFAULT 1,
-        is_stackable TINYINT(1) NOT NULL DEFAULT 0,
-        created_at DATETIME NOT NULL,
-        UNIQUE KEY uq_guild_cat_role (guild_id, category_id, role_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS panel_refresh_queue (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        panel_id INT NOT NULL,
-        reason VARCHAR(200) NOT NULL DEFAULT 'settings_changed',
-        created_at DATETIME NOT NULL,
-        processed TINYINT(1) NOT NULL DEFAULT 0
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS notification_routing (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        event_type VARCHAR(50) NOT NULL,
-        channel_id VARCHAR(20) NOT NULL DEFAULT '',
-        PRIMARY KEY (guild_id, event_type)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-]
+# ─── Schema ──────────────────────────────────────────────────────────────────
 
 POSTGRES_SCHEMA = [
     """
@@ -556,106 +304,6 @@ POSTGRES_SCHEMA = [
 # whitelists table.  They add whitelist_id columns to existing tables and
 # migrate data from whitelist_type -> whitelists -> whitelist_id.
 
-MYSQL_MIGRATIONS = [
-    # --- Legacy guild_id migrations (from previous multi-guild update) ---
-    "ALTER TABLE bot_settings ADD COLUMN guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE bot_settings DROP PRIMARY KEY, ADD PRIMARY KEY (guild_id, setting_key)",
-    "ALTER TABLE whitelist_types ADD COLUMN guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE whitelist_types DROP PRIMARY KEY, ADD PRIMARY KEY (guild_id, whitelist_type)",
-    "ALTER TABLE squad_groups ADD COLUMN guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE squad_groups DROP PRIMARY KEY, ADD PRIMARY KEY (guild_id, group_name)",
-
-    # --- New whitelists migration: add whitelist_id columns ---
-    "ALTER TABLE role_mappings ADD COLUMN whitelist_id INT NULL",
-    "ALTER TABLE whitelist_users ADD COLUMN whitelist_id INT NULL",
-    "ALTER TABLE whitelist_identifiers ADD COLUMN whitelist_id INT NULL",
-    "ALTER TABLE audit_log ADD COLUMN whitelist_id INT NULL",
-
-    # --- Migrate data from whitelist_types into whitelists table ---
-    # Insert existing whitelist_types as whitelists rows
-    """
-    INSERT IGNORE INTO whitelists (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
-        log_channel_id, squad_group, output_filename, default_slot_limit, stack_roles, is_default, created_at, updated_at)
-    SELECT guild_id, whitelist_type, whitelist_type, enabled, panel_channel_id, panel_message_id,
-        log_channel_id, squad_group, github_filename, default_slot_limit, stack_roles, 0, updated_at, updated_at
-    FROM whitelist_types
-    """,
-
-    # Populate whitelist_id from the old whitelist_type values
-    """
-    UPDATE role_mappings rm
-    JOIN whitelists w ON w.guild_id = rm.guild_id AND w.slug = rm.whitelist_type
-    SET rm.whitelist_id = w.id
-    WHERE rm.whitelist_id IS NULL AND rm.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE whitelist_users wu
-    JOIN whitelists w ON w.guild_id = wu.guild_id AND w.slug = wu.whitelist_type
-    SET wu.whitelist_id = w.id
-    WHERE wu.whitelist_id IS NULL AND wu.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE whitelist_identifiers wi
-    JOIN whitelists w ON w.guild_id = wi.guild_id AND w.slug = wi.whitelist_type
-    SET wi.whitelist_id = w.id
-    WHERE wi.whitelist_id IS NULL AND wi.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE audit_log al
-    JOIN whitelists w ON w.guild_id = al.guild_id AND w.slug = al.whitelist_type
-    SET al.whitelist_id = w.id
-    WHERE al.whitelist_id IS NULL AND al.whitelist_type IS NOT NULL
-    """,
-
-    # --- Tier categories migration ---
-    "ALTER TABLE panels ADD COLUMN tier_category_id INT NULL",
-
-    # --- Panel enabled column ---
-    "ALTER TABLE panels ADD COLUMN enabled TINYINT(1) NOT NULL DEFAULT 1",
-
-    # --- Timed whitelist: optional expiration ---
-    "ALTER TABLE whitelist_users ADD COLUMN expires_at DATETIME NULL",
-
-    # --- Tier entry per-role stackable flag ---
-    "ALTER TABLE tier_entries ADD COLUMN is_stackable TINYINT(1) NOT NULL DEFAULT 0",
-
-    # --- Fix duplicate is_default flags on squad_groups ---
-    # Keep only the alphabetically-first group per guild as default; clear the rest.
-    """
-    UPDATE squad_groups sg
-    JOIN (
-        SELECT guild_id, MIN(group_name) AS keep_name
-        FROM squad_groups
-        WHERE is_default = 1
-        GROUP BY guild_id
-    ) t ON t.guild_id = sg.guild_id
-    SET sg.is_default = 0
-    WHERE sg.is_default = 1
-      AND sg.group_name != t.keep_name
-    """,
-
-    # --- Steam name cache ---
-    """
-    CREATE TABLE IF NOT EXISTS steam_name_cache (
-        steam_id VARCHAR(20) PRIMARY KEY,
-        persona_name VARCHAR(255) NOT NULL,
-        cached_at DATETIME NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-
-    # --- Performance indexes (MySQL 8.0+) ---
-    # These mirror the PostgreSQL indexes already defined above.
-    # CREATE INDEX IF NOT EXISTS requires MySQL 8.0.1+.
-    "CREATE INDEX IF NOT EXISTS idx_wu_guild_wl ON whitelist_users (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_wu_status ON whitelist_users (guild_id, whitelist_id, status)",
-
-    # --- Squad group description column ---
-    "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS description VARCHAR(255) NOT NULL DEFAULT ''",
-]
-
 POSTGRES_MIGRATIONS = [
     # --- Legacy guild_id migrations (from previous multi-guild update) ---
     "ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS guild_id BIGINT NOT NULL DEFAULT 0",
@@ -790,16 +438,11 @@ POSTGRES_MIGRATIONS = [
 
 class Database:
     def __init__(self):
-        engine = DATABASE_URL.split("://")[0] if DATABASE_URL else DB_ENGINE
-        # Normalize: "postgresql" -> "postgres"
-        if engine in ("postgresql", "postgresql+asyncpg"):
-            engine = "postgres"
-        self.engine = engine
-        self._adapter = _PostgresAdapter() if engine == "postgres" else _MySQLAdapter()
+        self._adapter = _PostgresAdapter()
 
     async def connect(self):
         await self._adapter.connect()
-        log.info("DB connected (engine=%s)", self.engine)
+        log.info("DB connected (engine=postgres)")
 
     async def execute(self, query: str, params: tuple = ()) -> int:
         return await self._adapter.execute(query, params)
@@ -818,13 +461,11 @@ class Database:
         return await self._adapter.fetchall(query, params)
 
     async def init_schema(self):
-        schema = POSTGRES_SCHEMA if self.engine == "postgres" else MYSQL_SCHEMA
-        for stmt in schema:
+        for stmt in POSTGRES_SCHEMA:
             await self.execute(stmt)
 
         # Run migrations (idempotent)
-        migrations = POSTGRES_MIGRATIONS if self.engine == "postgres" else MYSQL_MIGRATIONS
-        for stmt in migrations:
+        for stmt in POSTGRES_MIGRATIONS:
             try:
                 await self.execute(stmt)
             except Exception as exc:
@@ -833,24 +474,14 @@ class Database:
 
         # Seed Squad permissions (global, no guild_id)
         for perm, desc in SQUAD_PERMISSIONS.items():
-            if self.engine == "postgres":
-                await self.execute(
-                    """
-                    INSERT INTO squad_permissions (permission, description, is_active)
-                    VALUES (%s, %s, TRUE)
-                    ON CONFLICT (permission) DO UPDATE SET description=EXCLUDED.description
-                    """,
-                    (perm, desc),
-                )
-            else:
-                await self.execute(
-                    """
-                    INSERT INTO squad_permissions (permission, description, is_active)
-                    VALUES (%s, %s, 1)
-                    ON DUPLICATE KEY UPDATE description=VALUES(description)
-                    """,
-                    (perm, desc),
-                )
+            await self.execute(
+                """
+                INSERT INTO squad_permissions (permission, description, is_active)
+                VALUES (%s, %s, TRUE)
+                ON CONFLICT (permission) DO UPDATE SET description=EXCLUDED.description
+                """,
+                (perm, desc),
+            )
 
         # Note: guild defaults are seeded per-guild in bot on_ready / web startup
         # No longer seed for guild_id=0 (legacy artifact)
@@ -860,45 +491,25 @@ class Database:
         now = utcnow()
 
         # Seed default Whitelist squad group
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, TRUE, %s, %s)
-                ON CONFLICT (guild_id, group_name) DO NOTHING
-                """,
-                (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, 1, %s, %s)
-                ON DUPLICATE KEY UPDATE updated_at=updated_at
-                """,
-                (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
-            )
+        await self.execute(
+            """
+            INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, TRUE, %s, %s)
+            ON CONFLICT (guild_id, group_name) DO NOTHING
+            """,
+            (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
+        )
 
         # Seed default settings
         for key, value in DEFAULT_SETTINGS.items():
-            if self.engine == "postgres":
-                await self.execute(
-                    """
-                    INSERT INTO bot_settings (guild_id, setting_key, setting_value)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (guild_id, setting_key) DO NOTHING
-                    """,
-                    (guild_id, key, value),
-                )
-            else:
-                await self.execute(
-                    """
-                    INSERT INTO bot_settings (guild_id, setting_key, setting_value)
-                    VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE setting_value = setting_value
-                    """,
-                    (guild_id, key, value),
-                )
+            await self.execute(
+                """
+                INSERT INTO bot_settings (guild_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, setting_key) DO NOTHING
+                """,
+                (guild_id, key, value),
+            )
 
         # Seed one default whitelist ("Default Whitelist", slug "default") if none exists
         existing = await self.fetchone(
@@ -929,10 +540,9 @@ class Database:
             wl_id = existing[0]
 
         # Seed one default tier category if none exists, and migrate role_mappings
-        is_def_val = True if self.engine == "postgres" else 1
         existing_tier_cat = await self.fetchone(
-            "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=%s LIMIT 1",
-            (guild_id, is_def_val),
+            "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
+            (guild_id,),
         )
         if not existing_tier_cat:
             try:
@@ -944,8 +554,8 @@ class Database:
                 )
             except Exception:
                 row = await self.fetchone(
-                    "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=%s LIMIT 1",
-                    (guild_id, is_def_val),
+                    "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
+                    (guild_id,),
                 )
                 tier_cat_id = row[0] if row else None
 
@@ -968,8 +578,8 @@ class Database:
         # Seed one default panel linked to the default whitelist if none exists
         if wl_id:
             existing_panel = await self.fetchone(
-                "SELECT id FROM panels WHERE guild_id=%s AND is_default=%s LIMIT 1",
-                (guild_id, is_def_val),
+                "SELECT id FROM panels WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
+                (guild_id,),
             )
             if not existing_panel:
                 try:
@@ -999,24 +609,14 @@ class Database:
         return row[0] if row else default
 
     async def set_setting(self, guild_id: int, key: str, value: str):
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO bot_settings (guild_id, setting_key, setting_value)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value
-                """,
-                (guild_id, key, str(value)),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO bot_settings (guild_id, setting_key, setting_value)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-                """,
-                (guild_id, key, str(value)),
-            )
+        await self.execute(
+            """
+            INSERT INTO bot_settings (guild_id, setting_key, setting_value)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value
+            """,
+            (guild_id, key, str(value)),
+        )
 
     # ── Whitelists (replaces whitelist_types) ──
 
@@ -1048,35 +648,20 @@ class Database:
         stack_roles = kwargs.get("stack_roles", False)
         is_default = kwargs.get("is_default", False)
 
-        if self.engine == "postgres":
-            row = await self.execute_returning(
-                """
-                INSERT INTO whitelists
-                (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
-                 log_channel_id, squad_group, output_filename, default_slot_limit,
-                 stack_roles, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
-                 log_channel_id, squad_group, output_filename, int(default_slot_limit),
-                 stack_roles, is_default, now, now),
-            )
-            return row[0]
-        else:
-            row = await self.execute_returning(
-                """
-                INSERT INTO whitelists
-                (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
-                 log_channel_id, squad_group, output_filename, default_slot_limit,
-                 stack_roles, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (guild_id, name, slug, 1 if enabled else 0, panel_channel_id, panel_message_id,
-                 log_channel_id, squad_group, output_filename, int(default_slot_limit),
-                 1 if stack_roles else 0, 1 if is_default else 0, now, now),
-            )
-            return row[0]
+        row = await self.execute_returning(
+            """
+            INSERT INTO whitelists
+            (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
+             log_channel_id, squad_group, output_filename, default_slot_limit,
+             stack_roles, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
+             log_channel_id, squad_group, output_filename, int(default_slot_limit),
+             stack_roles, is_default, now, now),
+        )
+        return row[0]
 
     async def get_whitelist(self, whitelist_id: int) -> Optional[Dict[str, Any]]:
         row = await self.fetchone(
@@ -1128,15 +713,14 @@ class Database:
         return self._row_to_whitelist(row) if row else None
 
     async def get_default_whitelist(self, guild_id: int) -> Optional[Dict[str, Any]]:
-        is_def = True if self.engine == "postgres" else 1
         row = await self.fetchone(
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
                    stack_roles, is_default, created_at, updated_at
-            FROM whitelists WHERE guild_id=%s AND is_default=%s LIMIT 1
+            FROM whitelists WHERE guild_id=%s AND is_default=TRUE LIMIT 1
             """,
-            (guild_id, is_def),
+            (guild_id,),
         )
         return self._row_to_whitelist(row) if row else None
 
@@ -1151,9 +735,8 @@ class Database:
         params = []
         for key, value in kwargs.items():
             if key in allowed:
-                # Coerce boolean columns to the right type per engine
                 if key in bool_cols:
-                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                    value = bool(value)
                 parts.append(f"{key}=%s")
                 params.append(value)
         if not parts:
@@ -1216,31 +799,18 @@ class Database:
         is_default = kwargs.get("is_default", False)
         tier_category_id = kwargs.get("tier_category_id", None)
 
-        if self.engine == "postgres":
-            row = await self.execute_returning(
-                """
-                INSERT INTO panels
-                (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, tier_category_id, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, tier_category_id, now, now),
-            )
-            return row[0]
-        else:
-            row = await self.execute_returning(
-                """
-                INSERT INTO panels
-                (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, is_default, tier_category_id, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (guild_id, name, channel_id, log_channel_id, whitelist_id,
-                 panel_message_id, 1 if is_default else 0, tier_category_id, now, now),
-            )
-            return row[0]
+        row = await self.execute_returning(
+            """
+            INSERT INTO panels
+            (guild_id, name, channel_id, log_channel_id, whitelist_id,
+             panel_message_id, is_default, tier_category_id, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (guild_id, name, channel_id, log_channel_id, whitelist_id,
+             panel_message_id, is_default, tier_category_id, now, now),
+        )
+        return row[0]
 
     async def update_panel(self, panel_id: int, **kwargs):
         allowed = {
@@ -1253,7 +823,7 @@ class Database:
         for key, value in kwargs.items():
             if key in allowed:
                 if key in bool_cols:
-                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                    value = bool(value)
                 parts.append(f"{key}=%s")
                 params.append(value)
         if not parts:
@@ -1289,17 +859,15 @@ class Database:
 
     async def get_pending_refreshes(self) -> List[tuple]:
         """Get unprocessed panel refreshes. Returns (id, guild_id, panel_id, reason)."""
-        is_false = False if self.engine == "postgres" else 0
         return await self.fetchall(
-            "SELECT id, guild_id, panel_id, reason FROM panel_refresh_queue WHERE processed=%s ORDER BY created_at LIMIT 50",
-            (is_false,),
+            "SELECT id, guild_id, panel_id, reason FROM panel_refresh_queue WHERE processed=FALSE ORDER BY created_at LIMIT 50",
+            (),
         )
 
     async def mark_refresh_processed(self, refresh_id: int):
-        is_true = True if self.engine == "postgres" else 1
         await self.execute(
-            "UPDATE panel_refresh_queue SET processed=%s WHERE id=%s",
-            (is_true, refresh_id),
+            "UPDATE panel_refresh_queue SET processed=TRUE WHERE id=%s",
+            (refresh_id,),
         )
 
     # ── Legacy type config (backward compatibility shim) ──
@@ -1363,25 +931,15 @@ class Database:
         )
 
     async def add_role_mapping(self, guild_id: int, whitelist_id: int, role_id: int, role_name: str, slot_limit: int):
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at)
-                VALUES (%s, %s, %s, %s, %s, TRUE, %s)
-                ON CONFLICT (guild_id, whitelist_id, role_id) DO UPDATE
-                    SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit, is_active=TRUE
-                """,
-                (guild_id, whitelist_id, role_id, role_name, slot_limit, utcnow()),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at)
-                VALUES (%s, %s, %s, %s, %s, 1, %s)
-                ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), slot_limit=VALUES(slot_limit), is_active=1
-                """,
-                (guild_id, whitelist_id, role_id, role_name, slot_limit, utcnow()),
-            )
+        await self.execute(
+            """
+            INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at)
+            VALUES (%s, %s, %s, %s, %s, TRUE, %s)
+            ON CONFLICT (guild_id, whitelist_id, role_id) DO UPDATE
+                SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit, is_active=TRUE
+            """,
+            (guild_id, whitelist_id, role_id, role_name, slot_limit, utcnow()),
+        )
 
     async def remove_role_mapping(self, guild_id: int, whitelist_id: int, role_id: int):
         await self.execute(
@@ -1407,24 +965,14 @@ class Database:
                 (guild_id, event_type),
             )
             return
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO notification_routing (guild_id, event_type, channel_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, event_type) DO UPDATE SET channel_id=EXCLUDED.channel_id
-                """,
-                (guild_id, event_type, channel_id),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO notification_routing (guild_id, event_type, channel_id)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE channel_id=VALUES(channel_id)
-                """,
-                (guild_id, event_type, channel_id),
-            )
+        await self.execute(
+            """
+            INSERT INTO notification_routing (guild_id, event_type, channel_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, event_type) DO UPDATE SET channel_id=EXCLUDED.channel_id
+            """,
+            (guild_id, event_type, channel_id),
+        )
 
     # ── Audit log ──
 
@@ -1451,42 +999,23 @@ class Database:
 
     async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None):
         now = utcnow()
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
-                    discord_name=EXCLUDED.discord_name,
-                    status=EXCLUDED.status,
-                    slot_limit_override=EXCLUDED.slot_limit_override,
-                    effective_slot_limit=EXCLUDED.effective_slot_limit,
-                    last_plan_name=EXCLUDED.last_plan_name,
-                    expires_at=EXCLUDED.expires_at,
-                    updated_at=EXCLUDED.updated_at,
-                    created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via)
-                """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO whitelist_users
-                (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                    discord_name=VALUES(discord_name),
-                    status=VALUES(status),
-                    slot_limit_override=VALUES(slot_limit_override),
-                    effective_slot_limit=VALUES(effective_slot_limit),
-                    last_plan_name=VALUES(last_plan_name),
-                    expires_at=VALUES(expires_at),
-                    updated_at=VALUES(updated_at),
-                    created_via=COALESCE(created_via, VALUES(created_via))
-                """,
-                (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
-            )
+        await self.execute(
+            """
+            INSERT INTO whitelist_users
+            (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
+                discord_name=EXCLUDED.discord_name,
+                status=EXCLUDED.status,
+                slot_limit_override=EXCLUDED.slot_limit_override,
+                effective_slot_limit=EXCLUDED.effective_slot_limit,
+                last_plan_name=EXCLUDED.last_plan_name,
+                expires_at=EXCLUDED.expires_at,
+                updated_at=EXCLUDED.updated_at,
+                created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via)
+            """,
+            (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
+        )
 
     async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):
         await self.execute(
@@ -1508,14 +1037,13 @@ class Database:
             ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s", (guild_id, discord_id, whitelist_id)),
         ]
         for id_type, id_value, is_verified, verification_source in identifiers:
-            verified = is_verified if self.engine == "postgres" else (1 if is_verified else 0)
             queries.append((
                 """
                 INSERT INTO whitelist_identifiers
                 (guild_id, discord_id, whitelist_type, whitelist_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                (guild_id, discord_id, '', whitelist_id, id_type, id_value, verified, verification_source, now, now),
+                (guild_id, discord_id, '', whitelist_id, id_type, id_value, is_verified, verification_source, now, now),
             ))
         await self._adapter.execute_transaction(queries)
 
@@ -1607,18 +1135,11 @@ class Database:
         """Cache Steam names. names = {steam_id: persona_name}."""
         now = utcnow()
         for steam_id, name in names.items():
-            if self.engine == "postgres":
-                await self.execute(
-                    "INSERT INTO steam_name_cache (steam_id, persona_name, cached_at) "
-                    "VALUES (%s, %s, %s) ON CONFLICT (steam_id) DO UPDATE SET persona_name=EXCLUDED.persona_name, cached_at=EXCLUDED.cached_at",
-                    (steam_id, name, now),
-                )
-            else:
-                await self.execute(
-                    "INSERT INTO steam_name_cache (steam_id, persona_name, cached_at) "
-                    "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE persona_name=VALUES(persona_name), cached_at=VALUES(cached_at)",
-                    (steam_id, name, now),
-                )
+            await self.execute(
+                "INSERT INTO steam_name_cache (steam_id, persona_name, cached_at) "
+                "VALUES (%s, %s, %s) ON CONFLICT (steam_id) DO UPDATE SET persona_name=EXCLUDED.persona_name, cached_at=EXCLUDED.cached_at",
+                (steam_id, name, now),
+            )
 
     # ── Squad Groups & Permissions ──
 
@@ -1636,22 +1157,13 @@ class Database:
 
     async def create_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False, description: str = ""):
         now = utcnow()
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (guild_id, group_name, permissions, description, is_default, now, now),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (guild_id, group_name, permissions, description, 1 if is_default else 0, now, now),
-            )
+        await self.execute(
+            """
+            INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (guild_id, group_name, permissions, description, is_default, now, now),
+        )
 
     async def update_squad_group(self, guild_id: int, group_name: str, permissions: str, description: str = ""):
         await self.execute(
@@ -1661,25 +1173,15 @@ class Database:
 
     async def upsert_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False, description: str = ""):
         now = utcnow()
-        if self.engine == "postgres":
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (guild_id, group_name) DO UPDATE SET
-                    permissions=EXCLUDED.permissions, description=EXCLUDED.description, is_default=EXCLUDED.is_default, updated_at=EXCLUDED.updated_at
-                """,
-                (guild_id, group_name, permissions, description, is_default, now, now),
-            )
-        else:
-            await self.execute(
-                """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE permissions=VALUES(permissions), description=VALUES(description), is_default=VALUES(is_default), updated_at=VALUES(updated_at)
-                """,
-                (guild_id, group_name, permissions, description, 1 if is_default else 0, now, now),
-            )
+        await self.execute(
+            """
+            INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (guild_id, group_name) DO UPDATE SET
+                permissions=EXCLUDED.permissions, description=EXCLUDED.description, is_default=EXCLUDED.is_default, updated_at=EXCLUDED.updated_at
+            """,
+            (guild_id, group_name, permissions, description, is_default, now, now),
+        )
 
     async def delete_squad_group(self, guild_id: int, group_name: str):
         await self.execute(
@@ -1689,9 +1191,7 @@ class Database:
 
     async def get_squad_permissions(self, active_only: bool = True) -> List[tuple]:
         if active_only:
-            if self.engine == "postgres":
-                return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=TRUE ORDER BY permission")
-            return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=1 ORDER BY permission")
+            return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=TRUE ORDER BY permission")
         return await self.fetchall("SELECT permission, description, is_active FROM squad_permissions ORDER BY permission")
 
     # ── Tier Categories ──
@@ -1740,25 +1240,15 @@ class Database:
 
     async def create_tier_category(self, guild_id: int, name: str, description: str = "", is_default: bool = False) -> int:
         now = utcnow()
-        if self.engine == "postgres":
-            row = await self.execute_returning(
-                """
-                INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (guild_id, name, description, is_default, now, now),
-            )
-            return row[0]
-        else:
-            row = await self.execute_returning(
-                """
-                INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (guild_id, name, description, 1 if is_default else 0, now, now),
-            )
-            return row[0]
+        row = await self.execute_returning(
+            """
+            INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (guild_id, name, description, is_default, now, now),
+        )
+        return row[0]
 
     async def update_tier_category(self, category_id: int, **kwargs):
         allowed = {"name", "description", "is_default"}
@@ -1768,7 +1258,7 @@ class Database:
         for key, value in kwargs.items():
             if key in allowed:
                 if key in bool_cols:
-                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                    value = bool(value)
                 parts.append(f"{key}=%s")
                 params.append(value)
         if not parts:
@@ -1801,33 +1291,19 @@ class Database:
 
     async def add_tier_entry(self, guild_id: int, category_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
         now = utcnow()
-        stackable_val = is_stackable if self.engine == "postgres" else int(is_stackable)
-        if self.engine == "postgres":
-            row = await self.execute_returning(
-                """
-                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
-                ON CONFLICT (guild_id, category_id, role_id) DO UPDATE
-                    SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
-                        display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order,
-                        is_active=TRUE, is_stackable=EXCLUDED.is_stackable
-                RETURNING id
-                """,
-                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, stackable_val, now),
-            )
-            return row[0]
-        else:
-            row = await self.execute_returning(
-                """
-                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
-                ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), slot_limit=VALUES(slot_limit),
-                    display_name=VALUES(display_name), sort_order=VALUES(sort_order),
-                    is_active=1, is_stackable=VALUES(is_stackable)
-                """,
-                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, stackable_val, now),
-            )
-            return row[0]
+        row = await self.execute_returning(
+            """
+            INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+            ON CONFLICT (guild_id, category_id, role_id) DO UPDATE
+                SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
+                    display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE, is_stackable=EXCLUDED.is_stackable
+            RETURNING id
+            """,
+            (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_stackable, now),
+        )
+        return row[0]
 
     async def update_tier_entry(self, entry_id: int, **kwargs):
         allowed = {"role_name", "slot_limit", "display_name", "sort_order", "is_active", "is_stackable"}
@@ -1837,7 +1313,7 @@ class Database:
         for key, value in kwargs.items():
             if key in allowed:
                 if key in bool_cols:
-                    value = bool(value) if self.engine == "postgres" else int(bool(value))
+                    value = bool(value)
                 parts.append(f"{key}=%s")
                 params.append(value)
         if not parts:

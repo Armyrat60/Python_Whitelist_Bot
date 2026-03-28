@@ -20,11 +20,11 @@ try:
 except ValueError:
     GUILD_ID = 0  # Multi-guild mode (no single-guild override)
 
-DB_ENGINE = os.getenv("DB_ENGINE", "mysql").strip().lower()  # "mysql" or "postgres"
+DB_ENGINE = os.getenv("DB_ENGINE", "postgres").strip().lower()
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", "5432" if DB_ENGINE == "postgres" else "3306"))
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "whitelist_bot")
-DB_USER = os.getenv("DB_USER", "root" if DB_ENGINE == "mysql" else "postgres")
+DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")  # Railway-style connection string
 

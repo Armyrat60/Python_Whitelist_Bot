@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile bot/config.py)",
+      "Bash(python -m py_compile bot/web_routes/__init__.py)",
+      "Bash(python -m py_compile bot/web_routes/auth.py)",
+      "Bash(python -m py_compile bot/web_routes/dashboard.py)",
+      "Bash(python -m py_compile bot/web_routes/api.py)",
+      "Bash(python -m py_compile bot/cogs/notifications.py)",
+      "Bash(python -m py_compile bot/cogs/search.py)",
+      "Bash(python -m py_compile bot/cogs/audit.py)",
+      "Bash(python -m py_compile bot/cogs/importexport.py)",
+      "Bash(python -m py_compile bot/__main__.py)",
+      "Bash(python -m py_compile bot/bot_main.py)",
+      "Bash(python -m py_compile bot/web_main.py)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add card badge tabs dialog sheet select command input label textarea separator skeleton tooltip dropdown-menu alert-dialog toggle switch avatar scroll-area table checkbox popover)",
+      "Bash(npx tsc:*)",
+      "Bash(npx next:*)",
+      "Bash(railway service:*)",
+      "Bash(railway variables:*)",
+      "Bash(railway variable:*)",
+      "Bash(python -m py_compile bot/web.py)",
+      "Bash(railway logs:*)",
+      "Bash(railway redeploy:*)",
+      "Bash(railway status:*)",
+      "Bash(python -m py_compile bot/cogs/whitelist.py)",
+      "Bash(curl -s https://squadwhitelister.com/healthz)",
+      "Bash(curl -s https://squadwhitelister.com/api/auth/session)",
+      "Bash(grep -v '^\\\\.$')",
+      "Bash(npm run:*)"
+    ]
+  }
+}
