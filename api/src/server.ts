@@ -6,6 +6,21 @@ import prismaPlugin from "./plugins/prisma.js"
 import authPlugin from "./plugins/auth.js"
 import { fileRoutes } from "./routes/files.js"
 import { internalRoutes } from "./routes/internal.js"
+import { authRoutes } from "./routes/auth.js"
+import { guildRoutes } from "./routes/guilds.js"
+import { userRoutes as myWhitelistRoutes } from "./routes/user.js"
+import { steamRoutes } from "./routes/steam.js"
+import importExportRoutes from "./routes/admin/importexport.js"
+import roleSyncRoutes from "./routes/admin/rolesync.js"
+import reconcileRoutes from "./routes/admin/reconcile.js"
+import { adminSettingsRoutes } from "./routes/admin/settings.js"
+import whitelistRoutes from "./routes/admin/whitelists.js"
+import groupRoutes from "./routes/admin/groups.js"
+import panelRoutes from "./routes/admin/panels.js"
+import tierRoutes from "./routes/admin/tiers.js"
+import userRoutes from "./routes/admin/users.js"
+import auditRoutes from "./routes/admin/audit.js"
+import notificationRoutes from "./routes/admin/notifications.js"
 import { cache } from "./services/cache.js"
 import { DiscordRESTClient } from "./lib/discord.js"
 import { syncOutputs } from "./services/output.js"
@@ -40,6 +55,21 @@ async function build() {
 
   await app.register(fileRoutes)
   await app.register(internalRoutes, { prefix: "/internal" })
+  await app.register(authRoutes, { prefix: "/auth" })
+  await app.register(guildRoutes, { prefix: "/api" })
+  await app.register(adminSettingsRoutes, { prefix: "/api/admin" })
+  await app.register(whitelistRoutes, { prefix: "/api/admin" })
+  await app.register(groupRoutes, { prefix: "/api/admin" })
+  await app.register(panelRoutes, { prefix: "/api/admin" })
+  await app.register(tierRoutes, { prefix: "/api/admin" })
+  await app.register(userRoutes, { prefix: "/api/admin" })
+  await app.register(auditRoutes, { prefix: "/api/admin" })
+  await app.register(notificationRoutes, { prefix: "/api/admin" })
+  await app.register(importExportRoutes, { prefix: "/api/admin" })
+  await app.register(roleSyncRoutes, { prefix: "/api/admin" })
+  await app.register(reconcileRoutes, { prefix: "/api/admin" })
+  await app.register(myWhitelistRoutes, { prefix: "/api" })
+  await app.register(steamRoutes, { prefix: "/api" })
 
   // Health check
   app.get("/healthz", async () => ({
