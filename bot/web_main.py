@@ -224,6 +224,8 @@ class _LightAsset:
 class WebOnlyApp:
     """Mimics the bot interface that web routes expect, using REST API instead."""
 
+    is_rest_only = True  # Signal to web routes that we have no gateway member cache
+
     def __init__(self, db: Database, discord_client: DiscordRESTClient):
         self.db = db
         self._discord = discord_client

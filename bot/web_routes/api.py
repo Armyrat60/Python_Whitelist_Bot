@@ -193,11 +193,14 @@ async def _reverify_is_mod(request: web.Request, session, active_guild_id: str) 
     """Re-check mod status using the bot's guild cache + DB, without OAuth token.
 
     Returns the current is_mod value and updates the session guilds in-place.
-    Falls back to the cached session value if the bot is unavailable.
+    Falls back to the cached session value if the bot is unavailable or running
+    in REST-only mode (standalone web service without a gateway bot).
     """
     bot = request.app.get("bot")
-    if bot is None:
-        # Web-only mode with no bot cache — keep existing value
+    # In REST-only mode (WebOnlyApp / no bot), get_member() always returns None
+    # and owner_id is 0, so we cannot reliably check permissions. Fall back to
+    # the OAuth-verified session value instead.
+    if bot is None or getattr(bot, "is_rest_only", False):
         guilds = session.get("guilds", [])
         g = _find_guild_in_session(guilds, active_guild_id)
         return bool(g and g.get("is_mod"))
