@@ -411,7 +411,7 @@ export function useDeleteTierCategory() {
 export function useAddTierEntry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ categoryId, ...data }: { categoryId: number; role_id: string; role_name: string; slot_limit: number; display_name?: string }) =>
+    mutationFn: ({ categoryId, ...data }: { categoryId: number; role_id: string; role_name: string; slot_limit: number; display_name?: string; is_stackable?: boolean }) =>
       api.post(`/api/admin/tier-categories/${categoryId}/entries`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });
@@ -423,7 +423,7 @@ export function useAddTierEntry() {
 export function useUpdateTierEntry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number; is_active?: boolean }) =>
+    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number; is_active?: boolean; is_stackable?: boolean }) =>
       api.put(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });

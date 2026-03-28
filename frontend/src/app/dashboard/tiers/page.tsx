@@ -17,6 +17,7 @@ import {
 } from "@/hooks/use-settings";
 import type { TierCategory, TierEntry } from "@/lib/types";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -425,6 +426,16 @@ function CategoryCard({
     );
   }
 
+  function handleToggleStackable(entry: TierEntry) {
+    updateEntry.mutate(
+      { categoryId: category.id, entryId: entry.id, is_stackable: !entry.is_stackable },
+      {
+        onSuccess: () => toast.success(entry.is_stackable ? "Set to exclusive (highest wins)" : "Set to stackable (adds with other tiers)"),
+        onError: () => toast.error("Failed to update tier"),
+      }
+    );
+  }
+
   function handleUpdateSlots(entry: TierEntry) {
     const newLimit = Number(editingSlots[entry.id]);
     if (!newLimit || newLimit < 1) return;
@@ -668,6 +679,21 @@ function CategoryCard({
                     className="scale-75"
                     title={entry.is_active ? "Deactivate tier" : "Activate tier"}
                   />
+
+                  {/* Stackable toggle */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleToggleStackable(entry); }}
+                    title={entry.is_stackable ? "Stackable: adds with other tiers — click to make exclusive" : "Exclusive: highest wins — click to make stackable"}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
+                      entry.is_stackable
+                        ? "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                        : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
+                    )}
+                  >
+                    {entry.is_stackable ? "＋ Stack" : "↑ Best"}
+                  </button>
 
                   {/* Remove entry */}
                   <Button

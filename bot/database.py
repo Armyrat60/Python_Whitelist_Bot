@@ -332,6 +332,7 @@ MYSQL_SCHEMA = [
         display_name VARCHAR(100) NULL,
         sort_order INT NOT NULL DEFAULT 0,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
+        is_stackable TINYINT(1) NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL,
         UNIQUE KEY uq_guild_cat_role (guild_id, category_id, role_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -523,6 +524,7 @@ POSTGRES_SCHEMA = [
         display_name VARCHAR(100) NULL,
         sort_order INT NOT NULL DEFAULT 0,
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        is_stackable BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP NOT NULL,
         UNIQUE (guild_id, category_id, role_id)
     )
@@ -611,6 +613,9 @@ MYSQL_MIGRATIONS = [
 
     # --- Timed whitelist: optional expiration ---
     "ALTER TABLE whitelist_users ADD COLUMN expires_at DATETIME NULL",
+
+    # --- Tier entry per-role stackable flag ---
+    "ALTER TABLE tier_entries ADD COLUMN is_stackable TINYINT(1) NOT NULL DEFAULT 0",
 
     # --- Steam name cache ---
     """
@@ -730,6 +735,9 @@ POSTGRES_MIGRATIONS = [
 
     # --- Registration source tracking ---
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS created_via VARCHAR(50) NULL",
+
+    # --- Tier entry per-role stackable flag ---
+    "ALTER TABLE tier_entries ADD COLUMN IF NOT EXISTS is_stackable BOOLEAN NOT NULL DEFAULT FALSE",
 
     # --- Steam name cache ---
     """
@@ -1753,7 +1761,7 @@ class Database:
     async def get_tier_entries(self, guild_id: int, category_id: int) -> List[tuple]:
         return await self.fetchall(
             """
-            SELECT id, role_id, role_name, slot_limit, display_name, sort_order, is_active
+            SELECT id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable
             FROM tier_entries
             WHERE guild_id=%s AND category_id=%s
             ORDER BY sort_order ASC, role_name ASC
@@ -1761,36 +1769,39 @@ class Database:
             (guild_id, category_id),
         )
 
-    async def add_tier_entry(self, guild_id: int, category_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0) -> int:
+    async def add_tier_entry(self, guild_id: int, category_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
         now = utcnow()
+        stackable_val = is_stackable if self.engine == "postgres" else int(is_stackable)
         if self.engine == "postgres":
             row = await self.execute_returning(
                 """
-                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
                 ON CONFLICT (guild_id, category_id, role_id) DO UPDATE
                     SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
-                        display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order, is_active=TRUE
+                        display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order,
+                        is_active=TRUE, is_stackable=EXCLUDED.is_stackable
                 RETURNING id
                 """,
-                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, now),
+                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, stackable_val, now),
             )
             return row[0]
         else:
             row = await self.execute_returning(
                 """
-                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s)
+                INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
                 ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), slot_limit=VALUES(slot_limit),
-                    display_name=VALUES(display_name), sort_order=VALUES(sort_order), is_active=1
+                    display_name=VALUES(display_name), sort_order=VALUES(sort_order),
+                    is_active=1, is_stackable=VALUES(is_stackable)
                 """,
-                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, now),
+                (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, stackable_val, now),
             )
             return row[0]
 
     async def update_tier_entry(self, entry_id: int, **kwargs):
-        allowed = {"role_name", "slot_limit", "display_name", "sort_order", "is_active"}
-        bool_cols = {"is_active"}
+        allowed = {"role_name", "slot_limit", "display_name", "sort_order", "is_active", "is_stackable"}
+        bool_cols = {"is_active", "is_stackable"}
         parts = []
         params = []
         for key, value in kwargs.items():

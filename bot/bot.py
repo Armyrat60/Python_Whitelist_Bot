@@ -333,18 +333,34 @@ class WhitelistBot(commands.Bot):
 
         if tier_category_id:
             # Use tier_entries from the category
-            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
+            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
             tier_entries = await self.db.get_tier_entries(guild_id, tier_category_id)
-            matched = []
+            stackable_matched = []
+            non_stackable_matched = []
             for te in tier_entries:
                 te_role_id = int(te[1])
                 te_active = bool(te[6])
+                te_stackable = bool(te[7]) if len(te) > 7 else False
                 te_slots = te[3]
                 te_name = te[4] or te[2]
                 if te_active and te_role_id in member_role_ids:
-                    matched.append((te_name, te_slots))
-                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED tier '%s' (role_id=%s) = %d slots",
-                             guild_id, member.id, member.display_name, te_name, te_role_id, te_slots)
+                    if te_stackable:
+                        stackable_matched.append((te_name, te_slots))
+                        log.info("Slot calc: guild=%s user=%s (%s) → MATCHED stackable tier '%s' = %d slots",
+                                 guild_id, member.id, member.display_name, te_name, te_slots)
+                    else:
+                        non_stackable_matched.append((te_name, te_slots))
+                        log.info("Slot calc: guild=%s user=%s (%s) → MATCHED exclusive tier '%s' = %d slots",
+                                 guild_id, member.id, member.display_name, te_name, te_slots)
+
+            # Combine: all stackable entries + only the highest exclusive (non-stackable) entry
+            matched = list(stackable_matched)
+            if non_stackable_matched:
+                best_exclusive = max(non_stackable_matched, key=lambda x: x[1])
+                matched.append(best_exclusive)
+                if len(non_stackable_matched) > 1:
+                    log.info("Slot calc: guild=%s user=%s (%s) → multiple exclusive tiers, using highest '%s'",
+                             guild_id, member.id, member.display_name, best_exclusive[0])
 
             if not matched:
                 log.info("Slot calc: guild=%s user=%s (%s) → NO MATCH in category %s (%d entries). "
@@ -365,16 +381,27 @@ class WhitelistBot(commands.Bot):
                              guild_id, member.id, member.display_name, role_name, slot_limit)
 
         if matched:
-            if wl.get("stack_roles"):
+            if tier_category_id:
+                # Per-tier stacking already resolved above:
+                # matched = all stackable entries + best exclusive entry
+                # Always sum the final matched list
+                total = sum(x[1] for x in matched)
+                plan = " + ".join(f"{n}:{s}" for n, s in matched) if len(matched) > 1 else f"{matched[0][0]}:{matched[0][1]}"
+                log.info("Slot calc: guild=%s user=%s (%s) → TIER RESULT %d slots (%s)",
+                         guild_id, member.id, member.display_name, total, plan)
+                return total, plan
+            elif wl.get("stack_roles"):
+                # Legacy role_mappings with whitelist-level stack setting
                 total = sum(x[1] for x in matched)
                 plan = " + ".join(f"{n}:{s}" for n, s in matched)
                 log.info("Slot calc: guild=%s user=%s (%s) → STACKED %d total slots (%s)",
                          guild_id, member.id, member.display_name, total, plan)
                 return total, plan
-            winner = max(matched, key=lambda x: x[1])
-            log.info("Slot calc: guild=%s user=%s (%s) → BEST MATCH '%s' = %d slots",
-                     guild_id, member.id, member.display_name, winner[0], winner[1])
-            return winner[1], f"{winner[0]}:{winner[1]}"
+            else:
+                winner = max(matched, key=lambda x: x[1])
+                log.info("Slot calc: guild=%s user=%s (%s) → BEST MATCH '%s' = %d slots",
+                         guild_id, member.id, member.display_name, winner[0], winner[1])
+                return winner[1], f"{winner[0]}:{winner[1]}"
 
         default = int(wl.get("default_slot_limit", 1))
         log.info("Slot calc: guild=%s user=%s (%s) → DEFAULT %d slots (no tier match)",

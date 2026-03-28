@@ -2181,17 +2181,17 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
     # Load tier entries: role_id -> (display_name or role_name, slot_limit)
     is_true = "true" if db.engine == "postgres" else "1"
     te_rows = await db.fetchall(
-        f"SELECT role_id, COALESCE(display_name, role_name), slot_limit FROM tier_entries WHERE guild_id=%s AND is_active={is_true}",
+        f"SELECT role_id, COALESCE(display_name, role_name), slot_limit, is_stackable FROM tier_entries WHERE guild_id=%s AND is_active={is_true}",
         (guild_id,),
     )
     if not te_rows:
         return web.json_response({"ok": True, "updated": 0, "message": "No active tier entries found"})
 
-    # role_id_str -> (tier_name, slot_limit)
-    tier_by_role: dict[str, tuple[str, int]] = {}
+    # role_id_str -> (tier_name, slot_limit, is_stackable)
+    tier_by_role: dict[str, tuple[str, int, bool]] = {}
     for r in te_rows:
         try:
-            tier_by_role[str(int(r[0]))] = (r[1] or str(r[0]), int(r[2] or 1))
+            tier_by_role[str(int(r[0]))] = (r[1] or str(r[0]), int(r[2] or 1), bool(r[3]))
         except (ValueError, TypeError):
             pass
 
@@ -2227,19 +2227,26 @@ async def admin_backfill_tiers(request: web.Request) -> web.Response:
         roles = member_roles.get(discord_id, [])
         if not roles:
             continue
-        # Collect all matching tier entries for this user
-        matched: list[tuple[str, int]] = []
+        # Collect all matching tier entries for this user, respecting per-tier stackable flag
+        stackable: list[tuple[str, int]] = []
+        non_stackable: list[tuple[str, int]] = []
         for role_str in roles:
             entry = tier_by_role.get(role_str)
             if entry:
-                matched.append(entry)
+                name, slots, _stackable = entry
+                if _stackable:
+                    stackable.append((name, slots))
+                else:
+                    non_stackable.append((name, slots))
+        matched: list[tuple[str, int]] = list(stackable)
+        if non_stackable:
+            best = max(non_stackable, key=lambda x: x[1])
+            matched.append(best)
         if not matched:
             continue
-        # Sort by slot_limit descending (highest tier first)
-        matched.sort(key=lambda x: x[1], reverse=True)
         # Build plan string in "Name:slots" or "Name1:slots1 + Name2:slots2" format
-        plan_str = " + ".join(f"{name}:{slots}" for name, slots in matched)
-        total_slots = sum(x[1] for x in matched) if len(matched) > 1 else matched[0][1]
+        plan_str = " + ".join(f"{name}:{slots}" for name, slots in matched) if len(matched) > 1 else f"{matched[0][0]}:{matched[0][1]}"
+        total_slots = sum(x[1] for x in matched)
         await db.execute(
             "UPDATE whitelist_users SET last_plan_name=%s, effective_slot_limit=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
             (plan_str, total_slots, guild_id, discord_id, whitelist_id),
@@ -3599,16 +3606,16 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
         f"SELECT tier_category_id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND tier_category_id IS NOT NULL AND enabled={is_true} LIMIT 1",
         (guild_id, wl["id"]),
     )
-    tier_by_role: dict[int, tuple[str, int]] = {}
+    tier_by_role: dict[int, tuple[str, int, bool]] = {}
     if panels_for_wl:
         cat_id = panels_for_wl[0][0]
         te_rows = await db.fetchall(
-            f"SELECT role_id, COALESCE(display_name, role_name), slot_limit FROM tier_entries WHERE guild_id=%s AND category_id=%s AND is_active={is_true}",
+            f"SELECT role_id, COALESCE(display_name, role_name), slot_limit, is_stackable FROM tier_entries WHERE guild_id=%s AND category_id=%s AND is_active={is_true}",
             (guild_id, cat_id),
         )
         for te in te_rows:
             try:
-                tier_by_role[int(te[0])] = (te[1] or str(te[0]), int(te[2] or 1))
+                tier_by_role[int(te[0])] = (te[1] or str(te[0]), int(te[2] or 1), bool(te[3]))
             except (ValueError, TypeError):
                 pass
 
@@ -3626,15 +3633,22 @@ async def admin_role_sync_pull(request: web.Request) -> web.Response:
         if tier_by_role and guild and hasattr(guild, "get_member"):
             discord_member = guild.get_member(mid)
             if discord_member:
-                matched = [
-                    tier_by_role[r.id]
-                    for r in discord_member.roles
-                    if r.id in tier_by_role
-                ]
-                if matched:
-                    matched.sort(key=lambda x: x[1], reverse=True)
-                    plan_str = " + ".join(f"{n}:{s}" for n, s in matched)
-                    effective_slots = sum(x[1] for x in matched) if len(matched) > 1 else matched[0][1]
+                stackable_m = []
+                non_stackable_m = []
+                for r in discord_member.roles:
+                    entry = tier_by_role.get(r.id)
+                    if entry:
+                        name, slots, _stackable = entry
+                        if _stackable:
+                            stackable_m.append((name, slots))
+                        else:
+                            non_stackable_m.append((name, slots))
+                matched_m = list(stackable_m)
+                if non_stackable_m:
+                    matched_m.append(max(non_stackable_m, key=lambda x: x[1]))
+                if matched_m:
+                    plan_str = " + ".join(f"{n}:{s}" for n, s in matched_m) if len(matched_m) > 1 else f"{matched_m[0][0]}:{matched_m[0][1]}"
+                    effective_slots = sum(x[1] for x in matched_m)
 
         # Pack username for orphan matching; preserve tier plan if calculated
         if not plan_str:
@@ -4798,6 +4812,7 @@ async def admin_get_tier_categories(request: web.Request) -> web.Response:
                 "display_name": e[4],
                 "sort_order": e[5],
                 "is_active": bool(e[6]),
+                "is_stackable": bool(e[7]) if len(e) > 7 else False,
             })
         result.append({
             "id": cat["id"],
@@ -4946,6 +4961,7 @@ async def admin_add_tier_entry(request: web.Request) -> web.Response:
     role_name = body.get("role_name", "")
     slot_limit = body.get("slot_limit", 1)
     display_name = body.get("display_name")
+    is_stackable = bool(body.get("is_stackable", False))
 
     if not role_id:
         return web.json_response({"error": "role_id is required."}, status=400)
@@ -4967,7 +4983,7 @@ async def admin_add_tier_entry(request: web.Request) -> web.Response:
     try:
         entry_id = await db.add_tier_entry(
             guild_id, category_id, role_id, role_name, slot_limit,
-            display_name=display_name, sort_order=sort_order,
+            display_name=display_name, sort_order=sort_order, is_stackable=is_stackable,
         )
     except Exception:
         return web.json_response({"error": "Failed to add tier entry."}, status=500)
@@ -4984,6 +5000,7 @@ async def admin_add_tier_entry(request: web.Request) -> web.Response:
         "slot_limit": slot_limit,
         "display_name": display_name,
         "sort_order": sort_order,
+        "is_stackable": is_stackable,
     }, status=201)
 
 
@@ -5025,6 +5042,8 @@ async def admin_update_tier_entry(request: web.Request) -> web.Response:
             return web.json_response({"error": "sort_order must be an integer."}, status=400)
     if "is_active" in body:
         update_kwargs["is_active"] = bool(body["is_active"])
+    if "is_stackable" in body:
+        update_kwargs["is_stackable"] = bool(body["is_stackable"])
 
     if update_kwargs:
         await db.update_tier_entry(entry_id, **update_kwargs)

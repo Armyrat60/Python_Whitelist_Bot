@@ -56,6 +56,7 @@ export interface TierEntry {
   display_name: string | null;
   sort_order: number;
   is_active: boolean;
+  is_stackable: boolean;
 }
 
 export interface RoleMapping {
