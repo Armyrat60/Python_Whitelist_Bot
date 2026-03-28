@@ -34,8 +34,10 @@ export function GuildProvider({ children }: { children: ReactNode }) {
   const switchGuild = useCallback(
     async (guildId: string) => {
       await api.post("/api/guilds/switch", { guild_id: guildId });
-      // Invalidate ALL queries — guild switch changes every data endpoint
-      await queryClient.invalidateQueries();
+      // Clear the entire cache — every endpoint is guild-scoped so stale data
+      // from the old guild must not bleed through. clear() removes all entries
+      // and React Query will re-fetch active queries immediately on next render.
+      queryClient.clear();
     },
     [queryClient]
   );

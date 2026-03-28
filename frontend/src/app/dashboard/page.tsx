@@ -86,13 +86,6 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Setup Guide */}
-      <SetupGuide
-        hasWhitelistEnabled={hasWhitelistEnabled}
-        hasRoleMappings={hasRoleMappings}
-        hasPanelChannel={hasPanelChannel}
-      />
-
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={handleResync}>
@@ -289,6 +282,13 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Setup guide — fixed bottom popup, shown until dismissed or fully configured */}
+      <SetupGuide
+        hasWhitelistEnabled={hasWhitelistEnabled}
+        hasRoleMappings={hasRoleMappings}
+        hasPanelChannel={hasPanelChannel}
+      />
     </div>
   );
 }

@@ -1,12 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, ChevronUp, ChevronDown, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+
+const DISMISS_KEY = "setup_guide_dismissed_v1";
 
 interface SetupGuideProps {
   hasRoleMappings: boolean;
@@ -19,101 +18,170 @@ export function SetupGuide({
   hasPanelChannel,
   hasWhitelistEnabled,
 }: SetupGuideProps) {
-  // Don't show if everything is configured
-  if (hasRoleMappings && hasPanelChannel && hasWhitelistEnabled) {
-    return null;
-  }
+  const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(true); // start hidden until hydrated
+
+  // Hydrate from localStorage after mount
+  useEffect(() => {
+    const saved = localStorage.getItem(DISMISS_KEY);
+    setDismissed(saved === "true");
+  }, []);
 
   const steps = [
     {
       done: hasWhitelistEnabled,
       label: "Enable a whitelist",
-      description: "Go to Setup → Whitelists and toggle one on",
+      description: "Go to Whitelists and toggle one on",
+      href: "/dashboard/whitelists",
     },
     {
       done: hasRoleMappings,
-      label: "Add role mappings",
-      description: "Go to Setup → Panels → Manage Roles to link Discord roles to slot counts",
+      label: "Add role mappings or tier categories",
+      description: "Link Discord roles to slot counts under Tiers",
+      href: "/dashboard/tiers",
     },
     {
       done: hasPanelChannel,
-      label: "Set a panel channel",
-      description: "Go to Setup → Panels and assign a Discord channel, then push the panel",
+      label: "Set a panel channel and push to Discord",
+      description: "Go to Panels, assign a channel and click Push",
+      href: "/dashboard/panels",
     },
   ];
 
   const completed = steps.filter((s) => s.done).length;
+  const allDone = completed === steps.length;
+
+  // Don't show if everything is configured or user dismissed
+  if (allDone || dismissed) return null;
+
+  function handleDismiss() {
+    localStorage.setItem(DISMISS_KEY, "true");
+    setDismissed(true);
+  }
 
   return (
-    <Card
-      style={{
-        borderColor: "color-mix(in srgb, var(--accent-primary) 25%, transparent)",
-        background: "color-mix(in srgb, var(--accent-primary) 5%, oklch(0.265 0 0))",
-      }}
+    <div
+      className="fixed bottom-4 left-1/2 z-50 w-full max-w-md -translate-x-1/2 px-4 sm:px-0"
+      role="complementary"
+      aria-label="Setup guide"
     >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+      <div
+        className="rounded-xl border shadow-2xl overflow-hidden"
+        style={{
+          borderColor: "color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+          background: "color-mix(in srgb, var(--accent-primary) 6%, oklch(0.20 0 0))",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px color-mix(in srgb, var(--accent-primary) 15%, transparent)",
+        }}
+      >
+        {/* Header bar — always visible */}
+        <div
+          className="flex cursor-pointer items-center gap-2.5 px-4 py-3"
+          onClick={() => setExpanded((v) => !v)}
+        >
           <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-            style={{ background: "color-mix(in srgb, var(--accent-primary) 18%, transparent)" }}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "color-mix(in srgb, var(--accent-primary) 20%, transparent)" }}
           >
-            <Sparkles className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+            <Sparkles className="h-3.5 w-3.5" style={{ color: "var(--accent-primary)" }} />
           </div>
-          <div className="flex-1 space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">
-                Get Started — {completed}/{steps.length} complete
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Complete these steps to start managing your whitelist.
-              </p>
-            </div>
-            <div className="space-y-2">
-              {steps.map((step, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <div
-                    className="h-5 w-5 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0"
-                    style={
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-foreground">
+              Get Started
+            </span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {completed}/{steps.length} steps complete
+            </span>
+          </div>
+          {/* Progress dots */}
+          <div className="flex items-center gap-1 shrink-0">
+            {steps.map((s, i) => (
+              <span
+                key={i}
+                className="h-1.5 w-1.5 rounded-full transition-colors"
+                style={{
+                  background: s.done
+                    ? "var(--accent-primary)"
+                    : "rgba(255,255,255,0.15)",
+                }}
+              />
+            ))}
+          </div>
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <button
+            className="ml-1 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            onClick={(e) => { e.stopPropagation(); handleDismiss(); }}
+            title="Dismiss"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Expanded steps */}
+        {expanded && (
+          <div
+            className="border-t px-4 pb-4 pt-3 space-y-2"
+            style={{ borderColor: "color-mix(in srgb, var(--accent-primary) 15%, transparent)" }}
+          >
+            {steps.map((step, i) => (
+              <div key={i} className="flex items-start gap-2.5 text-sm">
+                <div
+                  className="mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center shrink-0"
+                  style={
+                    step.done
+                      ? {
+                          borderColor: "var(--accent-primary)",
+                          background: "color-mix(in srgb, var(--accent-primary) 20%, transparent)",
+                        }
+                      : { borderColor: "rgba(255,255,255,0.15)" }
+                  }
+                >
+                  {step.done && (
+                    <Check className="h-2.5 w-2.5" style={{ color: "var(--accent-primary)" }} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={step.href}
+                    className={
                       step.done
-                        ? {
-                            borderColor: "var(--accent-primary)",
-                            background: "color-mix(in srgb, var(--accent-primary) 20%, transparent)",
-                            color: "var(--accent-primary)",
-                          }
-                        : {
-                            borderColor: "rgba(255,255,255,0.15)",
-                            color: "rgba(255,255,255,0.35)",
-                          }
+                        ? "text-muted-foreground line-through"
+                        : "font-medium text-foreground hover:underline"
                     }
                   >
-                    {step.done ? "✓" : i + 1}
-                  </div>
-                  <div>
-                    <span className={step.done ? "text-muted-foreground line-through" : "text-foreground"}>
-                      {step.label}
-                    </span>
-                    {!step.done && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        — {step.description}
-                      </span>
-                    )}
-                  </div>
+                    {step.label}
+                  </Link>
+                  {!step.done && (
+                    <p className="text-xs text-muted-foreground">{step.description}</p>
+                  )}
                 </div>
-              ))}
-            </div>
-            <Link href="/dashboard/panels">
-              <Button
-                size="sm"
-                className="text-black font-semibold"
-                style={{ background: "var(--accent-primary)" }}
-              >
-                <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
-                Go to Setup
-              </Button>
-            </Link>
+              </div>
+            ))}
+
+            {/* Find first incomplete step and link to it */}
+            {(() => {
+              const next = steps.find((s) => !s.done);
+              return next ? (
+                <div className="pt-1">
+                  <Link href={next.href}>
+                    <Button
+                      size="sm"
+                      className="w-full text-black font-semibold"
+                      style={{ background: "var(--accent-primary)" }}
+                    >
+                      <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
+                      Continue Setup
+                    </Button>
+                  </Link>
+                </div>
+              ) : null;
+            })()}
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        )}
+      </div>
+    </div>
   );
 }

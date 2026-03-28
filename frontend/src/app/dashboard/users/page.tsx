@@ -2092,6 +2092,38 @@ function UserDetailSheet({
             Expiry Date{" "}
             <span className="text-muted-foreground/60">(optional — leave blank for no expiry)</span>
           </Label>
+          {/* Quick-set presets */}
+          <div className="flex gap-1.5 flex-wrap">
+            {[
+              { label: "30d", days: 30 },
+              { label: "60d", days: 60 },
+              { label: "90d", days: 90 },
+              { label: "1yr", days: 365 },
+              { label: "Clear", days: -1 },
+            ].map(({ label, days }) => {
+              const val = days === -1 ? "" : (() => {
+                const d = new Date();
+                d.setDate(d.getDate() + days);
+                return d.toISOString().split("T")[0];
+              })();
+              const current = expiresAt ? expiresAt.split("T")[0] : "";
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setExpiresAt(val)}
+                  className="rounded border px-2 py-0.5 text-[11px] transition-colors hover:text-foreground"
+                  style={{
+                    borderColor: current === val && val !== "" ? "var(--accent-primary)" : "rgba(255,255,255,0.12)",
+                    color: current === val && val !== "" ? "var(--accent-primary)" : days === -1 ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.45)",
+                    background: current === val && val !== "" ? "color-mix(in srgb, var(--accent-primary) 10%, transparent)" : "transparent",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <Input
             type="date"
             className="h-8 text-xs"
@@ -2396,8 +2428,14 @@ function AddUserDialog({
   }, [discordId, whitelistSlug]);
 
   async function handleAdd() {
-    if (verifyState.step !== "verified") {
-      toast.error("Role verification must pass before adding a user");
+    const canAdd = verifyState.step === "verified" || verifyState.step === "no_role";
+    if (!canAdd) {
+      toast.error("Verify the Discord user first");
+      return;
+    }
+    // No-role users must have an expiry date to prevent indefinite access
+    if (verifyState.step === "no_role" && !expiresAt) {
+      toast.error("Expiry date is required for users without a Discord role");
       return;
     }
 
@@ -2424,10 +2462,13 @@ function AddUserDialog({
 
     setSubmitting(true);
     try {
+      const discordName =
+        verifyState.step === "verified"
+          ? (verifyState.result.name || `User ${discordId}`)
+          : (verifyState.name || `User ${discordId}`);
       await api.post("/api/admin/users", {
         discord_id: discordId,
-        discord_name:
-          verifyState.result.name || `User ${discordId}`,
+        discord_name: discordName,
         whitelist_slug: whitelistSlug,
         steam_ids: steamList,
         eos_ids: eosList,
@@ -2569,10 +2610,8 @@ function AddUserDialog({
               <div className="space-y-1 text-sm">
                 <p className="font-medium">No whitelist role found</p>
                 <p className="text-muted-foreground">
-                  {verifyState.name ? `${verifyState.name} doesn't` : "This user doesn't"} have a
-                  whitelist role assigned in Discord. They need one of the
-                  mapped roles (e.g. @Spooky Whitelist, @Ghost Whitelist).
-                  Assign the role first, then add them here.
+                  {verifyState.name ? `${verifyState.name} has` : "This user has"} no mapped Discord role.
+                  You can still add them manually — but an <span className="text-yellow-400 font-medium">expiry date is required</span> so access doesn&apos;t last indefinitely.
                 </p>
               </div>
             </div>
@@ -2587,8 +2626,8 @@ function AddUserDialog({
             </div>
           )}
 
-          {/* Step 2: IDs — only shown once verified */}
-          {verifyState.step === "verified" && (
+          {/* Step 2: IDs — shown once verified or when no role (manual override) */}
+          {(verifyState.step === "verified" || verifyState.step === "no_role") && (
             <>
               <div className="space-y-2">
                 <Label>
@@ -2618,12 +2657,42 @@ function AddUserDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label>
+                <Label className="flex items-center gap-1.5">
                   Expiry Date{" "}
-                  <span className="text-xs text-muted-foreground">
-                    (optional)
-                  </span>
+                  {verifyState.step === "no_role" ? (
+                    <span className="text-xs text-yellow-400 font-medium">required</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">(optional)</span>
+                  )}
                 </Label>
+                {/* Quick-set presets for convenience */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {[
+                    { label: "30d", days: 30 },
+                    { label: "60d", days: 60 },
+                    { label: "90d", days: 90 },
+                    { label: "1yr", days: 365 },
+                  ].map(({ label, days }) => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + days);
+                    const val = d.toISOString().split("T")[0];
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setExpiresAt(val)}
+                        className="rounded border px-2 py-0.5 text-[11px] transition-colors hover:text-foreground"
+                        style={{
+                          borderColor: expiresAt === val ? "var(--accent-primary)" : "rgba(255,255,255,0.12)",
+                          color: expiresAt === val ? "var(--accent-primary)" : "rgba(255,255,255,0.45)",
+                          background: expiresAt === val ? "color-mix(in srgb, var(--accent-primary) 10%, transparent)" : "transparent",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <Input
                   type="date"
                   value={expiresAt}
