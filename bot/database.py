@@ -287,6 +287,7 @@ MYSQL_SCHEMA = [
         guild_id BIGINT NOT NULL DEFAULT 0,
         group_name VARCHAR(100) NOT NULL,
         permissions TEXT NOT NULL,
+        description VARCHAR(255) NOT NULL DEFAULT '',
         is_default TINYINT(1) NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
@@ -479,6 +480,7 @@ POSTGRES_SCHEMA = [
         guild_id BIGINT NOT NULL DEFAULT 0,
         group_name VARCHAR(100) NOT NULL,
         permissions TEXT NOT NULL,
+        description VARCHAR(255) NOT NULL DEFAULT '',
         is_default BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL,
@@ -649,6 +651,9 @@ MYSQL_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
     "CREATE INDEX IF NOT EXISTS idx_wu_status ON whitelist_users (guild_id, whitelist_id, status)",
+
+    # --- Squad group description column ---
+    "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS description VARCHAR(255) NOT NULL DEFAULT ''",
 ]
 
 POSTGRES_MIGRATIONS = [
@@ -775,6 +780,9 @@ POSTGRES_MIGRATIONS = [
         cached_at TIMESTAMP NOT NULL
     )
     """,
+
+    # --- Squad group description column ---
+    "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS description VARCHAR(255) NOT NULL DEFAULT ''",
 ]
 
 
@@ -855,20 +863,20 @@ class Database:
         if self.engine == "postgres":
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, TRUE, %s, %s)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, TRUE, %s, %s)
                 ON CONFLICT (guild_id, group_name) DO NOTHING
                 """,
-                (guild_id, "Whitelist", "reserve", now, now),
+                (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
             )
         else:
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, 1, %s, %s)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, 1, %s, %s)
                 ON DUPLICATE KEY UPDATE updated_at=updated_at
                 """,
-                (guild_id, "Whitelist", "reserve", now, now),
+                (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
             )
 
         # Seed default settings
@@ -901,7 +909,7 @@ class Database:
             try:
                 wl_id = await self.create_whitelist(
                     guild_id,
-                    name="Default Whitelist",
+                    name="Whitelist 1",
                     slug="default",
                     enabled=False,
                     squad_group="Whitelist",
@@ -930,7 +938,7 @@ class Database:
             try:
                 tier_cat_id = await self.create_tier_category(
                     guild_id,
-                    name="Default",
+                    name="Tier 1",
                     description="Default tier category",
                     is_default=True,
                 )
@@ -967,7 +975,7 @@ class Database:
                 try:
                     await self.create_panel(
                         guild_id,
-                        name="Default Panel",
+                        name="Panel 1",
                         whitelist_id=wl_id,
                         is_default=True,
                         tier_category_id=tier_cat_id,
@@ -1616,61 +1624,61 @@ class Database:
 
     async def get_squad_groups(self, guild_id: int) -> List[tuple]:
         return await self.fetchall(
-            "SELECT group_name, permissions, is_default FROM squad_groups WHERE guild_id=%s ORDER BY group_name",
+            "SELECT group_name, permissions, is_default, description FROM squad_groups WHERE guild_id=%s ORDER BY group_name",
             (guild_id,),
         )
 
     async def get_squad_group(self, guild_id: int, group_name: str) -> Optional[tuple]:
         return await self.fetchone(
-            "SELECT group_name, permissions, is_default FROM squad_groups WHERE guild_id=%s AND group_name=%s",
+            "SELECT group_name, permissions, is_default, description FROM squad_groups WHERE guild_id=%s AND group_name=%s",
             (guild_id, group_name),
         )
 
-    async def create_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False):
+    async def create_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False, description: str = ""):
         now = utcnow()
         if self.engine == "postgres":
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (guild_id, group_name, permissions, is_default, now, now),
+                (guild_id, group_name, permissions, description, is_default, now, now),
             )
         else:
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (guild_id, group_name, permissions, 1 if is_default else 0, now, now),
+                (guild_id, group_name, permissions, description, 1 if is_default else 0, now, now),
             )
 
-    async def update_squad_group(self, guild_id: int, group_name: str, permissions: str):
+    async def update_squad_group(self, guild_id: int, group_name: str, permissions: str, description: str = ""):
         await self.execute(
-            "UPDATE squad_groups SET permissions=%s, updated_at=%s WHERE guild_id=%s AND group_name=%s",
-            (permissions, utcnow(), guild_id, group_name),
+            "UPDATE squad_groups SET permissions=%s, description=%s, updated_at=%s WHERE guild_id=%s AND group_name=%s",
+            (permissions, description, utcnow(), guild_id, group_name),
         )
 
-    async def upsert_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False):
+    async def upsert_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False, description: str = ""):
         now = utcnow()
         if self.engine == "postgres":
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (guild_id, group_name) DO UPDATE SET
-                    permissions=EXCLUDED.permissions, is_default=EXCLUDED.is_default, updated_at=EXCLUDED.updated_at
+                    permissions=EXCLUDED.permissions, description=EXCLUDED.description, is_default=EXCLUDED.is_default, updated_at=EXCLUDED.updated_at
                 """,
-                (guild_id, group_name, permissions, is_default, now, now),
+                (guild_id, group_name, permissions, description, is_default, now, now),
             )
         else:
             await self.execute(
                 """
-                INSERT INTO squad_groups (guild_id, group_name, permissions, is_default, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE permissions=VALUES(permissions), is_default=VALUES(is_default), updated_at=VALUES(updated_at)
+                INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE permissions=VALUES(permissions), description=VALUES(description), is_default=VALUES(is_default), updated_at=VALUES(updated_at)
                 """,
-                (guild_id, group_name, permissions, 1 if is_default else 0, now, now),
+                (guild_id, group_name, permissions, description, 1 if is_default else 0, now, now),
             )
 
     async def delete_squad_group(self, guild_id: int, group_name: str):

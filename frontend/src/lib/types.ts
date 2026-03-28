@@ -71,6 +71,7 @@ export interface SquadGroup {
   group_name: string;
   permissions: string;
   is_default: boolean;
+  description: string;
 }
 
 export interface DiscordRole {

@@ -58,16 +58,18 @@ export default function GroupsPage() {
   const createGroup = useCreateGroup();
   const [createOpen, setCreateOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
   const [editGroup, setEditGroup] = useState<SquadGroup | null>(null);
 
   function handleCreateGroup() {
     if (!newGroupName.trim()) return;
     createGroup.mutate(
-      { group_name: newGroupName.trim(), permissions: "" },
+      { group_name: newGroupName.trim(), permissions: "", description: newGroupDesc.trim() },
       {
         onSuccess: () => {
           toast.success("Group created");
           setNewGroupName("");
+          setNewGroupDesc("");
           setCreateOpen(false);
         },
         onError: () => toast.error("Failed to create group"),
@@ -115,6 +117,9 @@ export default function GroupsPage() {
                     </span>
                   )}
                 </div>
+                {group.description && (
+                  <p className="mt-2 text-xs text-muted-foreground">{group.description}</p>
+                )}
               </CardContent>
             </Card>
           );
@@ -154,6 +159,18 @@ export default function GroupsPage() {
               placeholder="e.g. Moderator"
             />
           </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Input
+              value={newGroupDesc}
+              onChange={(e) => setNewGroupDesc(e.target.value)}
+              placeholder="e.g. Regular whitelisted players with reserve slot"
+              className="text-sm"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Optional note for your team about what this group is for.
+            </p>
+          </div>
           <DialogFooter>
             <Button onClick={handleCreateGroup}>Create</Button>
           </DialogFooter>
@@ -178,6 +195,7 @@ function EditGroupDialog({
   const [selected, setSelected] = useState<string[]>(currentPerms);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(group.group_name);
+  const [description, setDescription] = useState(group.description ?? "");
 
   function togglePerm(perm: string) {
     setSelected((prev) =>
@@ -186,9 +204,10 @@ function EditGroupDialog({
   }
 
   function handleSave() {
-    const payload: { group_name: string; permissions?: string; new_name?: string } = {
+    const payload: { group_name: string; permissions?: string; new_name?: string; description?: string } = {
       group_name: group.group_name,
       permissions: selected.join(","),
+      description,
     };
     if (nameValue.trim() && nameValue.trim() !== group.group_name) {
       payload.new_name = nameValue.trim();
@@ -256,6 +275,18 @@ function EditGroupDialog({
               <span>{perm}</span>
             </label>
           ))}
+        </div>
+        <div className="space-y-2">
+          <Label>Description</Label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g. Regular whitelisted players with reserve slot"
+            className="text-sm"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Optional note for your team about what this group is for.
+          </p>
         </div>
         <DialogFooter className="flex justify-between">
           <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleteGroup.isPending}>

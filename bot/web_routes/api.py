@@ -4605,6 +4605,7 @@ async def admin_get_groups(request: web.Request) -> web.Response:
             "group_name": row[0],
             "permissions": row[1] or "",
             "is_default": bool(row[2]),
+            "description": row[3] if len(row) > 3 else "",
         })
     return web.json_response({"groups": groups})
 
@@ -4640,7 +4641,8 @@ async def admin_create_group(request: web.Request) -> web.Response:
         )
 
     permissions = (body.get("permissions") or "").strip()
-    await db.create_squad_group(guild_id, group_name, permissions, is_default=False)
+    description = (body.get("description") or "").strip()
+    await db.create_squad_group(guild_id, group_name, permissions, is_default=False, description=description)
 
     log.info("Guild %s: admin created squad group '%s'", guild_id, group_name)
     return web.json_response({"ok": True, "group_name": group_name})
@@ -4666,6 +4668,7 @@ async def admin_update_group(request: web.Request) -> web.Response:
 
     new_name = (body.get("group_name") or "").strip()
     permissions = (body.get("permissions") or "").strip()
+    description_raw = body.get("description")
 
     # If renaming, delete old and create new
     if new_name and new_name != group_name:
@@ -4675,8 +4678,10 @@ async def admin_update_group(request: web.Request) -> web.Response:
         if dup:
             return web.json_response({"error": f"Group '{new_name}' already exists."}, status=409)
         is_default = bool(existing[2])
+        existing_description = existing[3] if len(existing) > 3 else ""
+        description = description_raw.strip() if description_raw is not None else existing_description
         await db.delete_squad_group(guild_id, group_name)
-        await db.create_squad_group(guild_id, new_name, permissions, is_default=is_default)
+        await db.create_squad_group(guild_id, new_name, permissions, is_default=is_default, description=description)
         # Update whitelists referencing the old group name
         whitelists = await db.get_whitelists(guild_id)
         for wl in whitelists:
@@ -4684,7 +4689,9 @@ async def admin_update_group(request: web.Request) -> web.Response:
                 await db.update_whitelist(wl["id"], squad_group=new_name)
         log.info("Guild %s: admin renamed squad group '%s' -> '%s'", guild_id, group_name, new_name)
     else:
-        await db.update_squad_group(guild_id, group_name, permissions)
+        existing_description = existing[3] if len(existing) > 3 else ""
+        description = description_raw.strip() if description_raw is not None else existing_description
+        await db.update_squad_group(guild_id, group_name, permissions, description=description)
         log.info("Guild %s: admin updated squad group '%s'", guild_id, group_name)
 
     return web.json_response({"ok": True})

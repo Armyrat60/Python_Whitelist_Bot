@@ -109,7 +109,7 @@ export function useGroups() {
 export function useCreateGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { group_name: string; permissions: string }) =>
+    mutationFn: (data: { group_name: string; permissions: string; description?: string }) =>
       api.post("/api/admin/groups", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
   });
@@ -118,11 +118,12 @@ export function useCreateGroup() {
 export function useUpdateGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { group_name: string; permissions?: string; new_name?: string }) => {
+    mutationFn: (data: { group_name: string; permissions?: string; new_name?: string; description?: string }) => {
       // Backend uses group_name field for rename, not new_name
       const payload: Record<string, string> = {};
       if (data.permissions !== undefined) payload.permissions = data.permissions;
       if (data.new_name) payload.group_name = data.new_name;
+      if (data.description !== undefined) payload.description = data.description;
       return api.put(`/api/admin/groups/${encodeURIComponent(data.group_name)}`, payload);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["groups"] }),
