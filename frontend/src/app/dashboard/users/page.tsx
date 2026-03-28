@@ -91,29 +91,32 @@ type ViewMode = "list" | "cards";
 /*  Tactical UI Components                                             */
 /* ------------------------------------------------------------------ */
 
-/** Status badge — green/gray/red dot with glow */
+const STATUS_META: Record<string, { label: string; dot: string; text: string; bg: string; border: string }> = {
+  active: {
+    label: "active",
+    dot: "#22C55E", text: "#4ADE80",
+    bg: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.28)",
+  },
+  inactive: {
+    label: "inactive",
+    dot: "#64748B", text: "#94A3B8",
+    bg: "rgba(100,116,139,0.10)", border: "rgba(100,116,139,0.22)",
+  },
+  expired: {
+    label: "expired",
+    dot: "#EF4444", text: "#F87171",
+    bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.28)",
+  },
+  disabled_role_lost: {
+    label: "Role Lost",
+    dot: "#F59E0B", text: "#FCD34D",
+    bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.28)",
+  },
+};
+
+/** Status badge — green/gray/red/amber dot with glow */
 function StatusBadge({ status }: { status: string }) {
-  const cfgs: Record<string, { dot: string; text: string; bg: string; border: string }> = {
-    active: {
-      dot: "#22C55E",
-      text: "#4ADE80",
-      bg: "rgba(34,197,94,0.10)",
-      border: "rgba(34,197,94,0.28)",
-    },
-    inactive: {
-      dot: "#64748B",
-      text: "#94A3B8",
-      bg: "rgba(100,116,139,0.10)",
-      border: "rgba(100,116,139,0.22)",
-    },
-    expired: {
-      dot: "#EF4444",
-      text: "#F87171",
-      bg: "rgba(239,68,68,0.10)",
-      border: "rgba(239,68,68,0.28)",
-    },
-  };
-  const c = cfgs[status] ?? cfgs.inactive;
+  const c = STATUS_META[status] ?? STATUS_META.inactive;
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
@@ -126,7 +129,7 @@ function StatusBadge({ status }: { status: string }) {
           boxShadow: status === "active" ? `0 0 5px ${c.dot}` : "none",
         }}
       />
-      {status}
+      {c.label}
     </span>
   );
 }
@@ -1312,6 +1315,16 @@ function ListRowDetail({
           )}
         </div>
       </div>
+
+      {/* Role Lost explanation */}
+      {user.status === "disabled_role_lost" && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <span>
+            <span className="font-semibold">Role Lost</span> — this user no longer holds the Discord role that granted them whitelist access. They were automatically disabled by the bot. Their Steam IDs are excluded from the whitelist file. You can re-enable them via Edit, or remove the record entirely.
+          </span>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="mt-3 flex gap-2">
