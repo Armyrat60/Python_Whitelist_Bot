@@ -29,7 +29,7 @@ async function requireLoginAndGuild(req: FastifyRequest, reply: FastifyReply): P
 export const guildRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /api/guilds ─────────────────────────────────────────────────────────
 
-  app.get("/api/guilds", { preHandler: requireLogin }, async (req, reply) => {
+  app.get("/guilds", { preHandler: requireLogin }, async (req, reply) => {
     return reply.send({
       guilds:          req.session.guilds ?? [],
       active_guild_id: req.session.activeGuildId ?? null,
@@ -39,7 +39,7 @@ export const guildRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /api/guilds/switch ─────────────────────────────────────────────────
 
   app.post<{ Body: { guild_id: string } }>(
-    "/api/guilds/switch",
+    "/guilds/switch",
     { preHandler: requireLogin },
     async (req, reply) => {
       const { guild_id } = req.body
@@ -56,7 +56,7 @@ export const guildRoutes: FastifyPluginAsync = async (app) => {
 
   // ── GET /api/guild/theme ────────────────────────────────────────────────────
 
-  app.get("/api/guild/theme", { preHandler: requireLoginAndGuild }, async (req, reply) => {
+  app.get("/guild/theme", { preHandler: requireLoginAndGuild }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
     const [primaryRow, secondaryRow] = await Promise.all([
