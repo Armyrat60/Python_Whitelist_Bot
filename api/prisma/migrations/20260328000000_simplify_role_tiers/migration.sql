@@ -2,8 +2,8 @@
 -- Merges role_mappings + tier_categories + tier_entries into whitelist_roles
 -- Removes tierCategoryId from panels
 
--- 1. Create whitelist_roles table
-CREATE TABLE "whitelist_roles" (
+-- 1. Create whitelist_roles table (IF NOT EXISTS: bot may have pre-created it)
+CREATE TABLE IF NOT EXISTS "whitelist_roles" (
     "id" SERIAL PRIMARY KEY,
     "guild_id" BIGINT NOT NULL,
     "whitelist_id" INTEGER NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE "whitelist_roles" (
         FOREIGN KEY ("whitelist_id") REFERENCES "whitelists"("id") ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX "whitelist_roles_guild_id_whitelist_id_role_id_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "whitelist_roles_guild_id_whitelist_id_role_id_key"
     ON "whitelist_roles"("guild_id", "whitelist_id", "role_id");
 
 -- 2. Remove tier_category_id from panels
