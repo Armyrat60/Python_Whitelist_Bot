@@ -169,8 +169,8 @@ export async function buildTestApp(
 
   // ── Decorate with mocked services ─────────────────────────────────────────
   await app.register(fp(async (instance) => {
-    instance.decorate('prisma',  mockPrisma)
-    instance.decorate('discord', mockDiscord)
+    instance.decorate('prisma',  mockPrisma  as unknown as import('@prisma/client').PrismaClient)
+    instance.decorate('discord', mockDiscord as unknown as import('../lib/discord.js').DiscordRESTClient)
 
     // Expose requireAdmin / requireAuth as instance decorators (used by rolesync.ts)
     instance.decorate('requireAdmin', async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
