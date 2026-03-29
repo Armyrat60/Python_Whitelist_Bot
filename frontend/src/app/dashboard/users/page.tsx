@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useUsers, useWhitelists, useSteamNames, useCategories } from "@/hooks/use-settings";
+import { useIsAdmin } from "@/hooks/use-session";
 import type { WhitelistUser } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -1704,6 +1705,7 @@ function UserDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdmin();
   const isOrphan = parseInt(user.discord_id) < 0;
 
   // Combine all IDs into unified slots
@@ -1852,8 +1854,7 @@ function UserDetailSheet({
           plan_slot_limit: planSlotLimit,
           steam_ids: steamIds,
           eos_ids: eosIds,
-          expires_at: expiresAt || null,
-          notes: notes || null,
+          ...(isAdmin ? { expires_at: expiresAt || null, notes: notes || null } : {}),
         }
       );
       toast.success("User updated");
@@ -2102,62 +2103,64 @@ function UserDetailSheet({
         </p>
       </div>
 
-      {/* Expiry & Notes */}
-      <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">
-            Expiry Date{" "}
-            <span className="text-muted-foreground/60">(optional — leave blank for no expiry)</span>
-          </Label>
-          {/* Quick-set presets */}
-          <div className="flex gap-1.5 flex-wrap">
-            {[
-              { label: "30d", days: 30 },
-              { label: "60d", days: 60 },
-              { label: "90d", days: 90 },
-              { label: "1yr", days: 365 },
-              { label: "Clear", days: -1 },
-            ].map(({ label, days }) => {
-              const val = days === -1 ? "" : (() => {
-                const d = new Date();
-                d.setDate(d.getDate() + days);
-                return d.toISOString().split("T")[0];
-              })();
-              const current = expiresAt ? expiresAt.split("T")[0] : "";
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => setExpiresAt(val)}
-                  className="rounded border px-2 py-0.5 text-[11px] transition-colors hover:text-foreground"
-                  style={{
-                    borderColor: current === val && val !== "" ? "var(--accent-primary)" : "rgba(255,255,255,0.12)",
-                    color: current === val && val !== "" ? "var(--accent-primary)" : days === -1 ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.45)",
-                    background: current === val && val !== "" ? "color-mix(in srgb, var(--accent-primary) 10%, transparent)" : "transparent",
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
+      {/* Expiry & Notes (admin only) */}
+      {isAdmin && (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Expiry Date{" "}
+              <span className="text-muted-foreground/60">(optional — leave blank for no expiry)</span>
+            </Label>
+            {/* Quick-set presets */}
+            <div className="flex gap-1.5 flex-wrap">
+              {[
+                { label: "30d", days: 30 },
+                { label: "60d", days: 60 },
+                { label: "90d", days: 90 },
+                { label: "1yr", days: 365 },
+                { label: "Clear", days: -1 },
+              ].map(({ label, days }) => {
+                const val = days === -1 ? "" : (() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + days);
+                  return d.toISOString().split("T")[0];
+                })();
+                const current = expiresAt ? expiresAt.split("T")[0] : "";
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setExpiresAt(val)}
+                    className="rounded border px-2 py-0.5 text-[11px] transition-colors hover:text-foreground"
+                    style={{
+                      borderColor: current === val && val !== "" ? "var(--accent-primary)" : "rgba(255,255,255,0.12)",
+                      color: current === val && val !== "" ? "var(--accent-primary)" : days === -1 ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.45)",
+                      background: current === val && val !== "" ? "color-mix(in srgb, var(--accent-primary) 10%, transparent)" : "transparent",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <Input
+              type="date"
+              className="h-8 text-xs"
+              value={expiresAt ? expiresAt.split("T")[0] : ""}
+              onChange={(e) => setExpiresAt(e.target.value)}
+            />
           </div>
-          <Input
-            type="date"
-            className="h-8 text-xs"
-            value={expiresAt ? expiresAt.split("T")[0] : ""}
-            onChange={(e) => setExpiresAt(e.target.value)}
-          />
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+            <Input
+              className="h-8 text-xs"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Internal admin note..."
+            />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
-          <Input
-            className="h-8 text-xs"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Internal admin note..."
-          />
-        </div>
-      </div>
+      )}
 
       {/* Timestamps */}
       <div className="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
