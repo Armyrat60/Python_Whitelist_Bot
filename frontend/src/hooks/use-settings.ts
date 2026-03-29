@@ -36,6 +36,7 @@ interface SettingsResponse {
     stack_roles: boolean;
     squad_group: string;
     is_default: boolean;
+    url: string;
   }>;
   role_mappings: Record<string, RoleMapping[]>;
   squad_groups: string[];
@@ -65,6 +66,7 @@ export function useWhitelists() {
         squad_group: tc.squad_group,
         output_filename: tc.output_filename,
         is_default: tc.is_default,
+        url: tc.url,
       }))
     : [];
   return { data: whitelists, ...rest };
@@ -273,7 +275,6 @@ export function useDeleteWhitelist() {
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
       qc.invalidateQueries({ queryKey: ["health"] });
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
       qc.invalidateQueries({ queryKey: ["panels"] });
     },
   });

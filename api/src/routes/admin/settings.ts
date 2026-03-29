@@ -11,7 +11,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
-import { getFileToken } from "../../services/token.js"
+import { getFileToken, getFileUrl } from "../../services/token.js"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -85,18 +85,24 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (app) => {
       where: { guildId },
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     })
+
+    // Fetch salt once for URL generation
+    const urlSalt = settingsMap["url_salt"] ?? null
+
     const typeConfigs: Record<string, unknown> = {}
     for (const wl of whitelists) {
+      const filename = wl.outputFilename || `${wl.slug}.txt`
       typeConfigs[wl.slug] = {
         id:               wl.id,
         name:             wl.name,
         slug:             wl.slug,
         enabled:          wl.enabled,
         squad_group:      wl.squadGroup,
-        output_filename:  wl.outputFilename,
+        output_filename:  filename,
         default_slot_limit: wl.defaultSlotLimit,
         stack_roles:      wl.stackRoles,
         is_default:       wl.isDefault,
+        url:              getFileUrl(guildId, filename, urlSalt),
       }
     }
 

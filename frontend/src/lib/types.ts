@@ -26,6 +26,7 @@ export interface Whitelist {
   squad_group: string;
   output_filename: string;
   is_default: boolean;
+  url: string;
 }
 
 export interface Panel {
@@ -98,7 +99,6 @@ export interface Settings {
   allow_global_duplicates: string;
   timezone: string;
   bot_status_message: string;
-  combined_filename: string;
   retention_days: string;
   duplicate_output_dedupe: string;
 }

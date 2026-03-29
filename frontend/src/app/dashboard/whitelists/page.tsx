@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -19,7 +19,6 @@ import {
   useCreateWhitelist,
   useDeleteWhitelist,
 } from "@/hooks/use-settings";
-import { useGuild } from "@/hooks/use-guild";
 import { api } from "@/lib/api";
 import type { Whitelist, SquadGroup } from "@/lib/types";
 
@@ -84,7 +83,6 @@ export default function WhitelistsPage() {
       const res = await api.post<{ ok: boolean; updated: number }>("/api/admin/whitelists/sync-filenames", {});
       toast.success(res.updated > 0 ? `Fixed ${res.updated} filename${res.updated !== 1 ? "s" : ""}` : "All filenames are already correct");
       qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
     } catch {
       toast.error("Failed to sync filenames");
     } finally {
@@ -235,13 +233,7 @@ function WhitelistCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
-  const { activeGuild } = useGuild();
-  const { data: urlsData } = useQuery<{ urls: { slug: string; url: string }[] }>({
-    queryKey: ["whitelist-urls", activeGuild?.id ?? null],
-    queryFn: () => api.get("/api/admin/whitelist-urls"),
-    enabled: !!activeGuild?.id,
-  });
-  const url = urlsData?.urls?.find((u) => u.slug === whitelist.slug)?.url ?? "Loading...";
+  const url = whitelist.url ?? "";
 
   const qc = useQueryClient();
   const [editingName, setEditingName] = useState(false);
@@ -261,7 +253,6 @@ function WhitelistCard({
       toast.success("Renamed");
       setEditingName(false);
       qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
     } catch {
       toast.error("Failed to rename");
     } finally {
@@ -335,7 +326,7 @@ function WhitelistCard({
           </span>
         </div>
         <div className="ml-auto flex gap-2">
-          <WhitelistConfigSheet whitelist={whitelist} groups={groups} currentUrl={url} />
+          <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
           <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -373,16 +364,14 @@ function slugify(name: string) {
 function WhitelistConfigSheet({
   whitelist,
   groups,
-  currentUrl,
 }: {
   whitelist: Whitelist;
   groups: SquadGroup[];
-  currentUrl: string;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(whitelist.name);
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
-  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
+  const [showNewUrl, setShowNewUrl] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Track whether user has manually overridden the filename
@@ -390,6 +379,9 @@ function WhitelistConfigSheet({
   const [filenameOverride, setFilenameOverride] = useState<string | null>(null);
   const outputFilename = filenameOverride ?? autoFilename;
   const isAutoFilename = filenameOverride === null;
+
+  // whitelist.url is always current (comes from settings query)
+  const displayUrl = whitelist.url ?? "";
 
   const groupOptions: ComboboxOption[] = useMemo(
     () => groups.map((g) => ({ value: g.group_name, label: g.group_name })),
@@ -405,7 +397,6 @@ function WhitelistConfigSheet({
       });
       toast.success("Whitelist updated");
       qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
     } catch {
       toast.error("Failed to update whitelist");
     }
@@ -414,20 +405,17 @@ function WhitelistConfigSheet({
   async function handleRegenerate() {
     try {
       await api.post("/api/admin/whitelist-url/regenerate", {});
-      await qc.invalidateQueries({ queryKey: ["whitelist-urls"] });
-      // Fetch the updated URL to show in the copy box
-      const res = await api.get<{ urls: { slug: string; url: string }[] }>("/api/admin/whitelist-urls");
-      const newUrl = res.urls.find((u) => u.slug === whitelist.slug)?.url ?? currentUrl;
-      setRegeneratedUrl(newUrl);
+      // Refetch settings — whitelist.url (from parent) will auto-update with new salt
+      await qc.refetchQueries({ queryKey: ["settings"] });
+      setShowNewUrl(true);
       setCopied(false);
     } catch {
       toast.error("Failed to regenerate URL");
     }
   }
 
-  function copyNewUrl() {
-    if (!regeneratedUrl) return;
-    navigator.clipboard.writeText(regeneratedUrl);
+  function copyUrl() {
+    navigator.clipboard.writeText(displayUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -493,17 +481,17 @@ function WhitelistConfigSheet({
           <div className="border-t border-white/[0.06] pt-4 space-y-3">
             <Label>Whitelist URL</Label>
 
-            {regeneratedUrl ? (
-              // Show new URL with copy button after regeneration
+            {showNewUrl ? (
+              // After regeneration — show new URL (auto-updated from settings)
               <div className="space-y-2">
                 <p className="text-[11px] font-medium text-emerald-400">
                   New URL generated — copy it and update your Squad server config.
                 </p>
                 <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2">
                   <span className="flex-1 truncate font-mono text-[10px] text-emerald-300">
-                    {regeneratedUrl}
+                    {displayUrl}
                   </span>
-                  <Button size="icon-xs" variant="ghost" onClick={copyNewUrl}>
+                  <Button size="icon-xs" variant="ghost" onClick={copyUrl}>
                     {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                   </Button>
                 </div>
@@ -511,13 +499,12 @@ function WhitelistConfigSheet({
                   variant="ghost"
                   size="sm"
                   className="w-full text-muted-foreground"
-                  onClick={() => setRegeneratedUrl(null)}
+                  onClick={() => setShowNewUrl(false)}
                 >
                   Done
                 </Button>
               </div>
             ) : (
-              // Show regenerate button before action
               <>
                 <p className="text-[11px] text-muted-foreground">
                   The current URL will stop working immediately. Update your Squad
