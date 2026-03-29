@@ -124,7 +124,12 @@ export interface WhitelistUser {
   created_at: string;
   /** How this user was first added: self_register | role_sync | import | web_dashboard | admin_web | admin | orphan */
   registration_source?: string;
+  category_id?: number | null;
+  category_name?: string | null;
+  created_via?: string | null;
 }
+
+export type CategoryEntry = WhitelistUser;
 
 export interface AuditEntry {
   id: number;

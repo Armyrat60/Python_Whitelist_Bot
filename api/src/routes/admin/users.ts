@@ -47,11 +47,12 @@ export default async function userRoutes(app: FastifyInstance) {
   app.get("/users", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const query   = req.query as {
-      page?:     string
-      per_page?: string
-      search?:   string
-      whitelist?: string
-      status?:   string
+      page?:        string
+      per_page?:    string
+      search?:      string
+      whitelist?:   string
+      status?:      string
+      category_id?: string
     }
 
     const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
@@ -75,6 +76,10 @@ export default async function userRoutes(app: FastifyInstance) {
     if (whitelistId !== undefined) where.whitelistId = whitelistId
     if (search) {
       where.discordName = { contains: search, mode: "insensitive" }
+    }
+    if (query.category_id) {
+      const catId = parseInt(query.category_id, 10)
+      if (!isNaN(catId)) where.categoryId = catId
     }
 
     const [total, users] = await Promise.all([

@@ -15,6 +15,7 @@ import type {
   Stats,
   HealthStatus,
   WhitelistUser,
+  CategoryEntry,
   AuditEntry,
   WhitelistCategory,
   CategoryManager,
@@ -359,6 +360,70 @@ export function useRemoveCategoryManager(whitelistId: number, categoryId: number
       ),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["category-managers", whitelistId, categoryId] }),
+  });
+}
+
+// ─── Category entry hooks ─────────────────────────────────────────────────
+
+interface PaginatedCategoryEntries {
+  entries: CategoryEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export function useCategoryEntries(
+  whitelistId: number,
+  categoryId: number | null,
+  page: number,
+  search?: string
+) {
+  const params = new URLSearchParams({ page: String(page), per_page: "20" });
+  if (search) params.set("search", search);
+  return useQuery<PaginatedCategoryEntries>({
+    queryKey: ["category-entries", whitelistId, categoryId, page, search],
+    queryFn: async () =>
+      api.get<PaginatedCategoryEntries>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries?${params}`
+      ),
+    enabled: categoryId !== null,
+  });
+}
+
+export function useAddCategoryEntry(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      steam_id: string;
+      discord_id?: string;
+      discord_name?: string;
+      notes?: string;
+      expires_at?: string | null;
+    }) =>
+      api.post(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries`,
+        data
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-entries", whitelistId, categoryId] });
+      qc.invalidateQueries({ queryKey: ["categories", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
+export function useRemoveCategoryEntry(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (discordId: string) =>
+      api.delete(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries/${discordId}`
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-entries", whitelistId, categoryId] });
+      qc.invalidateQueries({ queryKey: ["categories", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
   });
 }
 

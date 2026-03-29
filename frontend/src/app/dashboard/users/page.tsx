@@ -25,7 +25,7 @@ import {
   Crown,
   RefreshCw,
 } from "lucide-react";
-import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
+import { useUsers, useWhitelists, useSteamNames, useCategories } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -767,6 +767,8 @@ export default function UsersPage() {
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading, isError } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+  const selectedWl = whitelists?.find(wl => wl.slug === filters.whitelist);
+  const { data: categories } = useCategories(selectedWl?.id ?? null);
   const allTierOptions: { label: string; value: string }[] = [];
   const [showGapReport, setShowGapReport] = useState(false);
   const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
@@ -874,6 +876,7 @@ export default function UsersPage() {
             setFilters((prev) => ({
               ...prev,
               whitelist: v === "__all__" ? "" : (v ?? ""),
+              category_id: "",
             }));
             setPage(1);
           }}
@@ -910,6 +913,23 @@ export default function UsersPage() {
             <SelectItem value="expired">Expired</SelectItem>
           </SelectContent>
         </Select>
+
+        {selectedWl?.is_manual && categories && categories.length > 0 && (
+          <Select value={filters.category_id ?? ""} onValueChange={(v) => {
+            setFilters(prev => ({ ...prev, category_id: v === "__all__" ? "" : (v ?? "") }));
+            setPage(1);
+          }}>
+            <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectValue placeholder="All categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All categories</SelectItem>
+              {categories.map(cat => (
+                <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         {allTierOptions.length > 0 && (
           <Select

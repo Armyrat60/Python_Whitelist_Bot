@@ -298,4 +298,253 @@ export default async function categoryRoutes(app: FastifyInstance) {
       return reply.send({ ok: true })
     }
   )
+
+  // ── GET /api/admin/whitelists/:whitelistId/categories/:categoryId/entries
+
+  app.get<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const query = req.query as { page?: string; per_page?: string; search?: string }
+      const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
+      const perPage = Math.min(200, Math.max(1, parseInt(query.per_page ?? "20", 10)))
+      const search  = query.search?.trim() ?? ""
+
+      // Cross-guild leak prevention: verify category belongs to this guild's whitelist
+      const category = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+      })
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+
+      const where: Record<string, unknown> = { guildId, whitelistId, categoryId }
+      if (search) {
+        where.discordName = { contains: search, mode: "insensitive" }
+      }
+
+      const [total, users] = await Promise.all([
+        prisma.whitelistUser.count({ where }),
+        prisma.whitelistUser.findMany({
+          where,
+          include: {
+            whitelist: { select: { slug: true, name: true } },
+            category:  { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          take:    perPage,
+          skip:    (page - 1) * perPage,
+        }),
+      ])
+
+      // Fetch identifiers for all returned users in one query
+      const discordIds = users.map(u => u.discordId)
+      const identifiers = discordIds.length > 0
+        ? await prisma.whitelistIdentifier.findMany({
+            where: { guildId, discordId: { in: discordIds } },
+            select: { discordId: true, whitelistId: true, idType: true, idValue: true },
+          })
+        : []
+
+      // Group identifiers by discordId + whitelistId
+      const identMap = new Map<string, { steam_ids: string[]; eos_ids: string[] }>()
+      for (const ident of identifiers) {
+        const key = `${ident.discordId}:${ident.whitelistId}`
+        if (!identMap.has(key)) identMap.set(key, { steam_ids: [], eos_ids: [] })
+        const entry = identMap.get(key)!
+        if (ident.idType === "steamid") entry.steam_ids.push(ident.idValue)
+        if (ident.idType === "eosid")   entry.eos_ids.push(ident.idValue)
+      }
+
+      const entries = users.map(u => {
+        const idents = identMap.get(`${u.discordId}:${u.whitelistId}`) ?? { steam_ids: [], eos_ids: [] }
+        return {
+          discord_id:           u.discordId.toString(),
+          discord_name:         u.discordName,
+          whitelist_slug:       u.whitelist.slug,
+          whitelist_name:       u.whitelist.name,
+          status:               u.status,
+          slot_limit_override:  u.slotLimitOverride,
+          effective_slot_limit: u.effectiveSlotLimit,
+          last_plan_name:       u.lastPlanName,
+          created_at:           u.createdAt,
+          updated_at:           u.updatedAt,
+          expires_at:           u.expiresAt,
+          created_via:          u.createdVia,
+          notes:                u.notes,
+          category_id:          u.categoryId ?? null,
+          category_name:        u.category?.name ?? null,
+          steam_ids:            idents.steam_ids,
+          eos_ids:              idents.eos_ids,
+        }
+      })
+
+      return reply.send(safeJson({ entries, total, page, per_page: perPage }))
+    }
+  )
+
+  // ── POST /api/admin/whitelists/:whitelistId/categories/:categoryId/entries
+
+  app.post<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const category = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+        include: { _count: { select: { users: true } } },
+      })
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+
+      const body = req.body as {
+        steam_id:     string
+        discord_id?:  string
+        discord_name?: string
+        notes?:       string
+        expires_at?:  string | null
+      }
+
+      if (!body.steam_id?.trim()) {
+        return reply.code(400).send({ error: "steam_id is required" })
+      }
+
+      // Check slot limit
+      if (category.slotLimit !== null && category._count.users >= category.slotLimit) {
+        return reply.code(409).send({ error: "Category is full" })
+      }
+
+      const steamId    = body.steam_id.trim()
+      const discordName = body.discord_name?.trim() || "[No Discord]"
+
+      // If no discord_id provided, generate synthetic one from steam_id
+      let discordId: bigint
+      if (body.discord_id?.trim()) {
+        try {
+          discordId = BigInt(body.discord_id.trim())
+        } catch {
+          return reply.code(400).send({ error: "Invalid discord_id" })
+        }
+      } else {
+        discordId = BigInt("1" + steamId.slice(-16).padStart(16, "0"))
+      }
+
+      const createdVia = body.discord_id?.trim() ? "admin" : "manual_steam_only"
+      const now        = new Date()
+
+      // Verify whitelist exists for this guild
+      const wl = await prisma.whitelist.findFirst({ where: { id: whitelistId, guildId } })
+      if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
+
+      await prisma.$transaction(async (tx) => {
+        await tx.whitelistUser.upsert({
+          where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+          update: {
+            discordName,
+            categoryId,
+            notes:     body.notes ?? null,
+            expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+            updatedAt: now,
+          },
+          create: {
+            guildId,
+            discordId,
+            whitelistId,
+            discordName,
+            categoryId,
+            status:             "active",
+            effectiveSlotLimit: wl.defaultSlotLimit,
+            notes:              body.notes ?? null,
+            expiresAt:          body.expires_at ? new Date(body.expires_at) : null,
+            createdVia,
+            createdAt:          now,
+            updatedAt:          now,
+          },
+        })
+
+        await tx.whitelistIdentifier.upsert({
+          where: {
+            guildId_discordId_whitelistId_idType_idValue: {
+              guildId, discordId, whitelistId, idType: "steamid", idValue: steamId,
+            },
+          },
+          update: { updatedAt: now },
+          create: {
+            guildId, discordId, whitelistId,
+            idType: "steamid", idValue: steamId,
+            isVerified: false, createdAt: now, updatedAt: now,
+          },
+        })
+      })
+
+      return reply.code(201).send(safeJson({
+        ok:           true,
+        discord_id:   discordId.toString(),
+        discord_name: discordName,
+        steam_id:     steamId,
+      }))
+    }
+  )
+
+  // ── DELETE /api/admin/whitelists/:whitelistId/categories/:categoryId/entries/:discordId
+
+  app.delete<{ Params: { whitelistId: string; categoryId: string; discordId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries/:discordId",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const discordId = (() => { try { return BigInt(req.params.discordId) } catch { return null } })()
+      if (!discordId) return reply.code(400).send({ error: "Invalid discordId" })
+
+      // Cross-guild leak prevention
+      const category = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+      })
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+
+      const user = await prisma.whitelistUser.findUnique({
+        where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+      })
+      if (!user) return reply.code(404).send({ error: "Entry not found" })
+
+      // Confirm the user is actually in this category
+      if (user.categoryId !== categoryId) {
+        return reply.code(409).send({ error: "Entry does not belong to this category" })
+      }
+
+      if (user.createdVia === "admin" || user.createdVia === "manual_steam_only") {
+        // Fully delete the user and their identifiers
+        await prisma.$transaction([
+          prisma.whitelistIdentifier.deleteMany({ where: { guildId, discordId, whitelistId } }),
+          prisma.whitelistUser.delete({
+            where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+          }),
+        ])
+      } else {
+        // Role-based user assigned to category: just unassign from category
+        await prisma.whitelistUser.update({
+          where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+          data: { categoryId: null, updatedAt: new Date() },
+        })
+      }
+
+      return reply.send({ ok: true })
+    }
+  )
 }
