@@ -253,6 +253,26 @@ model SteamNameCache {
   @@map("steam_name_cache")
 }
 
+model BridgeConfig {
+  id                  Int       @id @default(autoincrement())
+  guildId             BigInt    @unique @map("guild_id")
+  mysqlHost           String    @map("mysql_host") @db.VarChar(255)
+  mysqlPort           Int       @default(3306) @map("mysql_port")
+  mysqlDatabase       String    @map("mysql_database") @db.VarChar(255)
+  mysqlUser           String    @map("mysql_user") @db.VarChar(255)
+  mysqlPassword       String    @map("mysql_password") @db.VarChar(500)
+  serverName          String    @default("Game Server") @map("server_name") @db.VarChar(255)
+  syncIntervalMinutes Int       @default(15) @map("sync_interval_minutes")
+  enabled             Boolean   @default(true)
+  lastSyncAt          DateTime? @map("last_sync_at")
+  lastSyncStatus      String?   @map("last_sync_status") @db.VarChar(20)
+  lastSyncMessage     String?   @map("last_sync_message")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("bridge_configs")
+}
+
 model SquadPlayer {
   id           Int      @id @default(autoincrement())
   guildId      BigInt   @map("guild_id")

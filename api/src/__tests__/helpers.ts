@@ -104,6 +104,11 @@ export function makeMockPrisma() {
       update:     mockFn(),
       delete:     mockFn(),
     },
+    bridgeConfig: {
+      findUnique: mockFn(),
+      upsert:     mockFn(),
+      delete:     mockFn(),
+    },
     squadPlayer: {
       findMany:   mockList(),
       findFirst:  mockFn(),

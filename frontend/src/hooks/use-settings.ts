@@ -22,6 +22,7 @@ import type {
   DashboardPermission,
   DashboardRolePermission,
   PermissionLevel,
+  BridgeConfig,
 } from "@/lib/types";
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
@@ -748,5 +749,44 @@ export function useRevokeRolePermission() {
   return useMutation({
     mutationFn: (roleId: string) => api.delete(`/api/admin/dashboard-role-permissions/${roleId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
+  });
+}
+
+// ── Bridge config hooks ──────────────────────────────────────────────────────
+
+export function useBridgeConfig() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{ config: BridgeConfig | null }>({
+    queryKey: ["bridge-config", guildId],
+    queryFn: () => api.get("/api/admin/bridge-config"),
+    enabled: !!guildId,
+  });
+}
+
+export function useSaveBridgeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<BridgeConfig>) =>
+      api.put<{ config: BridgeConfig }>("/api/admin/bridge-config", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bridge-config"] }),
+  });
+}
+
+export function useDeleteBridgeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete("/api/admin/bridge-config"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bridge-config"] }),
+  });
+}
+
+export function useTestBridgeConnection() {
+  return useMutation({
+    mutationFn: (data: Partial<BridgeConfig>) =>
+      api.post<{ ok: boolean; message: string; player_count?: number }>(
+        "/api/admin/bridge-config/test",
+        data,
+      ),
   });
 }

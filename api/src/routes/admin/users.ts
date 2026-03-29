@@ -8,13 +8,28 @@ import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
 import { getFileToken } from "../../services/token.js"
 
-// ─── Admin preHandler ─────────────────────────────────────────────────────────
+// ─── Auth preHandlers ─────────────────────────────────────────────────────────
 
 const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
   if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   if (!guild?.isAdmin) return reply.code(403).send({ error: "Admin access required" })
+}
+
+// Allows admins AND roster_managers (roster managers get scoped to their categories)
+const rosterOrAdminHook = async (req: FastifyRequest, reply: FastifyReply) => {
+  if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
+  if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
+  const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
+  if (!guild) return reply.code(403).send({ error: "Not a member of this guild" })
+  const ok = guild.isAdmin || guild.permissionLevel === "roster_manager"
+  if (!ok) return reply.code(403).send({ error: "Access denied" })
+}
+
+function isRosterManager(req: FastifyRequest) {
+  const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
+  return guild?.permissionLevel === "roster_manager" && !guild?.isAdmin
 }
 
 // ─── BigInt JSON helpers ──────────────────────────────────────────────────────
@@ -44,9 +59,10 @@ export default async function userRoutes(app: FastifyInstance) {
 
   // ── GET /api/admin/users ─────────────────────────────────────────────────────
 
-  app.get("/users", { preHandler: adminHook }, async (req, reply) => {
-    const guildId = BigInt(req.session.activeGuildId!)
-    const query   = req.query as {
+  app.get("/users", { preHandler: rosterOrAdminHook }, async (req, reply) => {
+    const guildId      = BigInt(req.session.activeGuildId!)
+    const rosterMgr    = isRosterManager(req)
+    const query        = req.query as {
       page?:        string
       per_page?:    string
       search?:      string
@@ -59,6 +75,20 @@ export default async function userRoutes(app: FastifyInstance) {
     const perPage = Math.min(200, Math.max(1, parseInt(query.per_page ?? "50", 10)))
     const search  = query.search?.trim() ?? ""
     const status  = query.status ?? "all"
+
+    // For roster managers, find categories they manage and restrict scope
+    let allowedCategoryIds: number[] | undefined
+    if (rosterMgr) {
+      const managed = await prisma.categoryManager.findMany({
+        where: { discordId: BigInt(req.session.userId!) },
+        select: { categoryId: true },
+      })
+      allowedCategoryIds = managed.map(m => m.categoryId)
+      if (allowedCategoryIds.length === 0) {
+        // Manager with no assigned categories sees nothing
+        return reply.send({ users: [], total: 0, page, per_page: perPage, pages: 0 })
+      }
+    }
 
     // Resolve whitelist_id from slug if provided
     let whitelistId: number | undefined
@@ -77,7 +107,15 @@ export default async function userRoutes(app: FastifyInstance) {
     if (search) {
       where.discordName = { contains: search, mode: "insensitive" }
     }
-    if (query.category_id) {
+    if (allowedCategoryIds !== undefined) {
+      // Roster manager: restrict to their assigned categories
+      const catId = query.category_id ? parseInt(query.category_id, 10) : NaN
+      if (!isNaN(catId) && allowedCategoryIds.includes(catId)) {
+        where.categoryId = catId
+      } else {
+        where.categoryId = { in: allowedCategoryIds }
+      }
+    } else if (query.category_id) {
       const catId = parseInt(query.category_id, 10)
       if (!isNaN(catId)) where.categoryId = catId
     }
@@ -130,7 +168,7 @@ export default async function userRoutes(app: FastifyInstance) {
         updated_at:           u.updatedAt,
         expires_at:           u.expiresAt,
         created_via:          u.createdVia,
-        notes:                u.notes,
+        notes:                rosterMgr ? undefined : u.notes,  // hidden from roster managers
         category_id:          u.categoryId ?? null,
         category_name:        u.category?.name ?? null,
         steam_ids:            idents.steam_ids,
@@ -264,8 +302,9 @@ export default async function userRoutes(app: FastifyInstance) {
   // ── PATCH /api/admin/users/:discordId/:type ──────────────────────────────────
   // :type is the whitelist slug
 
-  app.patch("/users/:discordId/:type", { preHandler: adminHook }, async (req, reply) => {
+  app.patch("/users/:discordId/:type", { preHandler: rosterOrAdminHook }, async (req, reply) => {
     const guildId    = BigInt(req.session.activeGuildId!)
+    const rosterMgr  = isRosterManager(req)
     const params     = req.params as { discordId: string; type: string }
     const discordId  = BigInt(params.discordId)
     const body       = req.body as {
@@ -274,6 +313,12 @@ export default async function userRoutes(app: FastifyInstance) {
       expires_at?:          string | null
       notes?:               string | null
       category_id?:         number | null
+    }
+
+    // Roster managers cannot change expiry dates or admin notes
+    if (rosterMgr) {
+      if (body.expires_at !== undefined) return reply.code(403).send({ error: "Roster managers cannot change expiry dates" })
+      if (body.notes      !== undefined) return reply.code(403).send({ error: "Roster managers cannot edit admin notes" })
     }
 
     const wl = await prisma.whitelist.findUnique({
@@ -285,6 +330,16 @@ export default async function userRoutes(app: FastifyInstance) {
       where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
     })
     if (!user) return reply.code(404).send({ error: "User not found" })
+
+    // Roster managers can only modify users in their assigned categories
+    if (rosterMgr && user.categoryId !== null) {
+      const managed = await prisma.categoryManager.findFirst({
+        where: { categoryId: user.categoryId, discordId: BigInt(req.session.userId!) },
+      })
+      if (!managed) return reply.code(403).send({ error: "Not a manager of this category" })
+    } else if (rosterMgr && user.categoryId === null) {
+      return reply.code(403).send({ error: "Cannot edit users without an assigned category" })
+    }
 
     const data: Record<string, unknown> = { updatedAt: new Date() }
     if (body.status              !== undefined) data.status            = body.status

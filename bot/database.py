@@ -478,6 +478,26 @@ POSTGRES_MIGRATIONS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_drp_guild ON dashboard_role_permissions (guild_id)",
+    # --- SquadJS bridge configs: per-guild MySQL connection settings ---
+    """
+    CREATE TABLE IF NOT EXISTS bridge_configs (
+        id                    SERIAL PRIMARY KEY,
+        guild_id              BIGINT       NOT NULL UNIQUE,
+        mysql_host            VARCHAR(255) NOT NULL,
+        mysql_port            INT          NOT NULL DEFAULT 3306,
+        mysql_database        VARCHAR(255) NOT NULL,
+        mysql_user            VARCHAR(255) NOT NULL,
+        mysql_password        VARCHAR(500) NOT NULL,
+        server_name           VARCHAR(255) NOT NULL DEFAULT 'Game Server',
+        sync_interval_minutes INT          NOT NULL DEFAULT 15,
+        enabled               BOOLEAN      NOT NULL DEFAULT TRUE,
+        last_sync_at          TIMESTAMP    NULL,
+        last_sync_status      VARCHAR(20)  NULL,
+        last_sync_message     TEXT         NULL,
+        created_at            TIMESTAMP    NOT NULL DEFAULT NOW(),
+        updated_at            TIMESTAMP    NOT NULL DEFAULT NOW()
+    )
+    """,
     # --- SquadJS bridge: in-game player records synced from SquadJS MySQL ---
     """
     CREATE TABLE IF NOT EXISTS squad_players (

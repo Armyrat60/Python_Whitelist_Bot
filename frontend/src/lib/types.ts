@@ -172,6 +172,23 @@ export interface Stats {
   orphan_count: number;
 }
 
+export interface BridgeConfig {
+  id: number;
+  mysql_host: string;
+  mysql_port: number;
+  mysql_database: string;
+  mysql_user: string;
+  mysql_password: string;
+  server_name: string;
+  sync_interval_minutes: number;
+  enabled: boolean;
+  last_sync_at: string | null;
+  last_sync_status: "ok" | "error" | null;
+  last_sync_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface HealthAlert {
   level: "warning" | "info" | "error";
   message: string;

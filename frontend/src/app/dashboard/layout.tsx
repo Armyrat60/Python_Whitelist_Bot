@@ -18,16 +18,19 @@ export default function DashboardLayout({
 
   const hasGuilds = session?.guilds && session.guilds.length > 0;
 
+  const permissionLevel = session?.permission_level;
+  const canAccessDashboard = session?.is_mod || permissionLevel === "roster_manager";
+
   useEffect(() => {
     if (isLoading) return;
     if (!session?.logged_in) {
       router.replace("/");
       return;
     }
-    if (hasGuilds && !session.is_mod) {
+    if (hasGuilds && !canAccessDashboard) {
       router.replace("/my-whitelist");
     }
-  }, [session, isLoading, router, hasGuilds]);
+  }, [session, isLoading, router, hasGuilds, canAccessDashboard]);
 
   if (isLoading) {
     return (
@@ -65,7 +68,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (!session.is_mod) {
+  if (!canAccessDashboard) {
     return null;
   }
 

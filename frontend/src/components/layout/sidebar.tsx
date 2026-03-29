@@ -18,6 +18,7 @@ import {
   BookUser,
   UserRound,
   Search,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -36,6 +37,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { useGuild } from "@/hooks/use-guild";
+import { useSession } from "@/hooks/use-session";
 
 const dashboardLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -62,6 +64,7 @@ const settingsLinks = [
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
   { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
+  { href: "/dashboard/bridge", label: "SquadJS Bridge", icon: Database },
 ];
 
 const userLinks = [
@@ -159,6 +162,8 @@ function SidebarGuildCard() {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isRosterManager = session?.permission_level === "roster_manager" && !session?.is_mod;
 
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
@@ -203,7 +208,7 @@ export function Sidebar() {
           <div className="h-px bg-white/[0.06]" />
         </div>
 
-        {dashboardLinks.map((link) => (
+        {!isRosterManager && dashboardLinks.map((link) => (
           <NavLink
             key={link.href}
             href={link.href}
@@ -215,6 +220,7 @@ export function Sidebar() {
 
         <SectionLabel>Rosters</SectionLabel>
 
+        {/* Roster managers only see roster links */}
         {rosterLinks.map((link) => (
           <NavLink
             key={link.href}
@@ -225,41 +231,45 @@ export function Sidebar() {
           />
         ))}
 
-        <SectionLabel>Players</SectionLabel>
+        {!isRosterManager && (
+          <>
+            <SectionLabel>Players</SectionLabel>
 
-        {playerLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
-        ))}
+            {playerLinks.map((link) => (
+              <NavLink
+                key={link.href}
+                href={link.href}
+                label={link.label}
+                icon={link.icon}
+                active={isActive(link.href)}
+              />
+            ))}
 
-        <SectionLabel>Manage</SectionLabel>
+            <SectionLabel>Manage</SectionLabel>
 
-        {manageLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
-        ))}
+            {manageLinks.map((link) => (
+              <NavLink
+                key={link.href}
+                href={link.href}
+                label={link.label}
+                icon={link.icon}
+                active={isActive(link.href)}
+              />
+            ))}
 
-        <SectionLabel>Settings</SectionLabel>
+            <SectionLabel>Settings</SectionLabel>
 
-        {settingsLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
-        ))}
+            {settingsLinks.map((link) => (
+              <NavLink
+                key={link.href}
+                href={link.href}
+                label={link.label}
+                icon={link.icon}
+                active={isActive(link.href)}
+              />
+            ))}
+          </>
+        )}
 
         <div className="py-2">
           <Separator className="bg-white/[0.06]" />
@@ -338,6 +348,9 @@ function NavLink({
 
 export function MobileSidebar({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isRosterManager = session?.permission_level === "roster_manager" && !session?.is_mod;
+
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
     if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
@@ -345,14 +358,9 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
     return false;
   };
 
-  const allLinks = [
-    ...dashboardLinks,
-    ...rosterLinks,
-    ...playerLinks,
-    ...manageLinks,
-    ...settingsLinks,
-    ...userLinks,
-  ];
+  const allLinks = isRosterManager
+    ? [...rosterLinks, ...userLinks]
+    : [...dashboardLinks, ...rosterLinks, ...playerLinks, ...manageLinks, ...settingsLinks, ...userLinks];
 
   return (
     <>
