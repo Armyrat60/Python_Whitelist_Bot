@@ -65,7 +65,7 @@ export default function MyWhitelistLayout({
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">My Whitelist</h1>
           <GuildSwitcher />
-          {session.is_mod && (
+          {(session.is_mod || session.permission_level === "roster_manager") && (
             <a href="/dashboard">
               <Button variant="outline" size="sm">
                 <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" />
