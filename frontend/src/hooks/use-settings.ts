@@ -685,7 +685,7 @@ export function useTriggerReport() {
 export function usePermissions() {
   return useQuery<DashboardPermission[]>({
     queryKey: ["permissions"],
-    queryFn: () => api.get<DashboardPermission[]>("/api/admin/permissions"),
+    queryFn: () => api.get<DashboardPermission[]>("/api/admin/dashboard-permissions"),
   });
 }
 
@@ -693,7 +693,7 @@ export function useGrantPermission() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { discord_id: string; discord_name?: string; permission_level: PermissionLevel }) =>
-      api.post<DashboardPermission>("/api/admin/permissions", data),
+      api.post<DashboardPermission>("/api/admin/dashboard-permissions", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
 }
@@ -702,7 +702,7 @@ export function useUpdatePermission() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ discordId, permission_level }: { discordId: string; permission_level: PermissionLevel }) =>
-      api.put(`/api/admin/permissions/${discordId}`, { permission_level }),
+      api.put(`/api/admin/dashboard-permissions/${discordId}`, { permission_level }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
 }
@@ -710,7 +710,7 @@ export function useUpdatePermission() {
 export function useRevokePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (discordId: string) => api.delete(`/api/admin/permissions/${discordId}`),
+    mutationFn: (discordId: string) => api.delete(`/api/admin/dashboard-permissions/${discordId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
 }

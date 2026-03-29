@@ -2,16 +2,14 @@
  * Dashboard permissions routes.
  * Manages who has dashboard access beyond the auto-detected admin/owner level.
  *
- * GET    /api/admin/permissions           — list all explicit grants for this guild
- * POST   /api/admin/permissions           — grant access to a Discord user
- * PUT    /api/admin/permissions/:discordId — change a user's permission level
- * DELETE /api/admin/permissions/:discordId — revoke a user's dashboard access
+ * GET    /api/admin/dashboard-permissions           — list all explicit grants for this guild
+ * POST   /api/admin/dashboard-permissions           — grant access to a Discord user
+ * PUT    /api/admin/dashboard-permissions/:discordId — change a user's permission level
+ * DELETE /api/admin/dashboard-permissions/:discordId — revoke a user's dashboard access
  *
- * Permission levels:
- *   owner          — guild owner (cannot be granted/revoked, read-only display)
- *   admin          — MANAGE_GUILD / mod role (auto-detected, not stored here)
- *   roster_manager — can manage Manual Roster categories (stored in this table)
- *   viewer         — read-only dashboard access (stored in this table)
+ * NOTE: Route prefix is /dashboard-permissions (not /permissions) to avoid
+ * conflict with groups.ts which already owns GET /api/admin/permissions
+ * for the Squad hardcoded permissions list.
  */
 import type { FastifyPluginAsync } from "fastify"
 
@@ -19,9 +17,9 @@ const VALID_LEVELS = ["roster_manager", "viewer"] as const
 type GrantableLevel = typeof VALID_LEVELS[number]
 
 const permissionsRoutes: FastifyPluginAsync = async (app) => {
-  // ── GET /permissions ────────────────────────────────────────────────────────
+  // ── GET /dashboard-permissions ─────────────────────────────────────────────
 
-  app.get("/permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+  app.get("/dashboard-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
     const rows = await app.prisma.dashboardPermission.findMany({
@@ -39,11 +37,11 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
     })))
   })
 
-  // ── POST /permissions ───────────────────────────────────────────────────────
+  // ── POST /dashboard-permissions ────────────────────────────────────────────
 
   app.post<{
     Body: { discord_id: string; discord_name?: string; permission_level: string }
-  }>("/permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+  }>("/dashboard-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const { discord_id, discord_name, permission_level } = req.body
 
@@ -81,12 +79,12 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
     })
   })
 
-  // ── PUT /permissions/:discordId ─────────────────────────────────────────────
+  // ── PUT /dashboard-permissions/:discordId ──────────────────────────────────
 
   app.put<{
     Params: { discordId: string }
     Body:   { permission_level: string }
-  }>("/permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
+  }>("/dashboard-permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId   = BigInt(req.session.activeGuildId!)
     const discordId = req.params.discordId
     const { permission_level } = req.body
@@ -108,11 +106,11 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ ok: true, permission_level: updated.permissionLevel })
   })
 
-  // ── DELETE /permissions/:discordId ──────────────────────────────────────────
+  // ── DELETE /dashboard-permissions/:discordId ───────────────────────────────
 
   app.delete<{
     Params: { discordId: string }
-  }>("/permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
+  }>("/dashboard-permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId   = BigInt(req.session.activeGuildId!)
     const discordId = req.params.discordId
 
