@@ -163,9 +163,24 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
 
     // Fetch all guild members to count per-role Discord membership
     let allMembers: Array<{ id: bigint; roles: string[] }> = []
+    let discordAvailable = false
     try {
       allMembers = await app.discord.fetchAllMembers(guildId)
-    } catch { /* non-fatal; discord_count will be 0 */ }
+      discordAvailable = true
+    } catch { /* non-fatal; fall back to DB-only data */ }
+
+    if (!discordAvailable) {
+      // Discord unavailable — return role list from DB with null counts so the
+      // frontend can still show role names with a degraded-mode warning.
+      const stats = [...roleNames.keys()].map(roleId => ({
+        role_id:            roleId,
+        role_name:          roleNames.get(roleId) ?? roleId,
+        discord_count:      null,
+        registered_count:   null,
+        unregistered_count: null,
+      }))
+      return reply.send({ stats, gateway_mode: false, discord_available: false })
+    }
 
     // Count Discord members per role
     const discordCounts = new Map<string, number>()
@@ -212,7 +227,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
 
     stats.sort((a, b) => b.discord_count - a.discord_count)
 
-    return reply.send(toJSON({ stats, gateway_mode: false }))
+    return reply.send(toJSON({ stats, gateway_mode: false, discord_available: true }))
   })
 
   // ── GET /members/gap ─────────────────────────────────────────────────────

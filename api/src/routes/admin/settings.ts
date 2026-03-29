@@ -38,6 +38,56 @@ const MUTABLE_SETTINGS = new Set<string>([
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Write-through cache: whenever we have fresh role names from Discord,
+ * update any stale stored names in roleMapping and tierEntry tables.
+ * This ensures the DB fallback stays accurate even after role renames.
+ */
+async function refreshStoredRoleNames(
+  app: FastifyInstance,
+  guildId: bigint,
+  liveRoles: Map<string, string>,
+): Promise<void> {
+  if (!liveRoles.size) return
+
+  const [roleMappings, tierEntries] = await Promise.all([
+    app.prisma.roleMapping.findMany({
+      where: { guildId },
+      select: { id: true, roleId: true, roleName: true },
+    }),
+    app.prisma.tierEntry.findMany({
+      where: { guildId },
+      select: { id: true, roleId: true, roleName: true },
+    }),
+  ])
+
+  const rmUpdates = roleMappings
+    .filter(rm => {
+      const live = liveRoles.get(String(rm.roleId))
+      return live !== undefined && live !== rm.roleName
+    })
+    .map(rm => app.prisma.roleMapping.update({
+      where: { id: rm.id },
+      data:  { roleName: liveRoles.get(String(rm.roleId))! },
+    }))
+
+  const teUpdates = tierEntries
+    .filter(te => {
+      const live = liveRoles.get(String(te.roleId))
+      return live !== undefined && live !== te.roleName
+    })
+    .map(te => app.prisma.tierEntry.update({
+      where: { id: te.id },
+      data:  { roleName: liveRoles.get(String(te.roleId))! },
+    }))
+
+  if (rmUpdates.length || teUpdates.length) {
+    await Promise.all([...rmUpdates, ...teUpdates])
+    app.log.info({ guildId, roleMappings: rmUpdates.length, tierEntries: teUpdates.length },
+      "Refreshed stale stored role names")
+  }
+}
+
 async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!req.session.userId) {
     return reply.code(401).send({ error: "Not authenticated" })
@@ -112,11 +162,14 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (app) => {
       orderBy: { id: "asc" },
     })
 
-    // Fetch live role names once
+    // Fetch live role names once, then write-through any stale stored names
     let liveRoles: Map<string, string> = new Map()
     try {
       const roles = await app.discord.fetchRoles(guildId)
       liveRoles = new Map(roles.map((r) => [r.id, r.name]))
+
+      // Refresh stale stored names — fire and forget (don't block the response)
+      refreshStoredRoleNames(app, guildId, liveRoles).catch(() => {})
     } catch {
       // non-fatal; fall back to stored names
     }

@@ -62,10 +62,11 @@ function RoleStatsSection() {
 
   const stats = data?.stats ?? [];
   const gatewayMode = data?.gateway_mode ?? false;
+  const discordAvailable = data?.discord_available !== false;
 
-  const totalDiscord = stats.reduce((s, r) => s + r.discord_count, 0);
-  const totalRegistered = stats.reduce((s, r) => s + r.registered_count, 0);
-  const totalUnregistered = totalDiscord - totalRegistered;
+  const totalDiscord = discordAvailable ? stats.reduce((s, r) => s + (r.discord_count ?? 0), 0) : null;
+  const totalRegistered = discordAvailable ? stats.reduce((s, r) => s + (r.registered_count ?? 0), 0) : null;
+  const totalUnregistered = totalDiscord != null && totalRegistered != null ? totalDiscord - totalRegistered : null;
 
   async function handleResync() {
     setResyncing(true);
@@ -95,10 +96,10 @@ function RoleStatsSection() {
           <Users className="h-4 w-4" />
           Role Registration Stats
           <span className="ml-auto flex items-center gap-3">
-            {data && (
+            {data && discordAvailable && totalRegistered != null && (
               <span className="text-sm font-normal text-muted-foreground flex items-center gap-3">
                 <span style={{ color: "var(--accent-primary)" }}>{totalRegistered} registered</span>
-                {totalUnregistered > 0 && (
+                {totalUnregistered != null && totalUnregistered > 0 && (
                   <span className="text-amber-400">{totalUnregistered} missing</span>
                 )}
               </span>
@@ -130,6 +131,11 @@ function RoleStatsSection() {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {!discordAvailable && stats.length > 0 && (
+          <p className="mb-3 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded px-3 py-2">
+            Discord bot is unreachable — showing role names from cache. Counts unavailable until reconnected.
+          </p>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -145,28 +151,37 @@ function RoleStatsSection() {
         ) : (
           <div className="space-y-2">
             {stats.map((r) => {
-              const pct = r.discord_count > 0
-                ? Math.round((r.registered_count / r.discord_count) * 100)
-                : 100;
+              const hasData = r.discord_count != null && r.registered_count != null;
+              const pct = hasData && r.discord_count! > 0
+                ? Math.round((r.registered_count! / r.discord_count!) * 100)
+                : hasData ? 100 : 0;
               const missing = r.unregistered_count;
               return (
                 <div key={r.role_id} className="flex items-center gap-3 text-sm">
                   <span className="w-36 truncate font-medium" title={r.role_name}>{r.role_name}</span>
                   <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full transition-all"
-                      style={{
-                        width: `${pct}%`,
-                        background: missing > 0
-                          ? "linear-gradient(90deg, var(--accent-primary), oklch(0.8 0.18 80))"
-                          : "var(--accent-primary)",
-                      }}
-                    />
+                    {hasData && (
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full transition-all"
+                        style={{
+                          width: `${pct}%`,
+                          background: missing != null && missing > 0
+                            ? "linear-gradient(90deg, var(--accent-primary), oklch(0.8 0.18 80))"
+                            : "var(--accent-primary)",
+                        }}
+                      />
+                    )}
                   </div>
                   <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
-                    {r.registered_count}/{r.discord_count} registered
-                    {missing > 0 && (
-                      <span className="ml-1 text-amber-400">({missing} missing)</span>
+                    {hasData ? (
+                      <>
+                        {r.registered_count}/{r.discord_count} registered
+                        {missing != null && missing > 0 && (
+                          <span className="ml-1 text-amber-400">({missing} missing)</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground/50">— unavailable</span>
                     )}
                   </span>
                 </div>

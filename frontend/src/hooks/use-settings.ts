@@ -352,14 +352,15 @@ export function useRemoveRoleMapping() {
 export interface RoleStat {
   role_id: string;
   role_name: string;
-  discord_count: number;
-  registered_count: number;
-  unregistered_count: number;
+  discord_count: number | null;
+  registered_count: number | null;
+  unregistered_count: number | null;
 }
 
 export interface RoleStatsResult {
   stats: RoleStat[];
   gateway_mode: boolean;
+  discord_available?: boolean;
 }
 
 export function useRoleStats() {
