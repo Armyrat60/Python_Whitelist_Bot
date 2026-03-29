@@ -62,7 +62,7 @@ export function makeMockPrisma() {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count:      mockCount(),
     },
-    whitelistRole: {
+    panelRole: {
       findMany:   mockList(),
       findFirst:  mockFn(),
       findUnique: mockFn(),

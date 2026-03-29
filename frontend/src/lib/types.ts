@@ -41,7 +41,7 @@ export interface Panel {
   show_role_mentions: boolean;
 }
 
-export interface WhitelistRole {
+export interface PanelRole {
   id: number;
   role_id: string;
   role_name: string;

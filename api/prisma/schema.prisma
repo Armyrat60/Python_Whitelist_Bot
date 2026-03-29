@@ -37,16 +37,15 @@ model Whitelist {
   panels          Panel[]
   users           WhitelistUser[]
   identifiers     WhitelistIdentifier[]
-  whitelistRoles  WhitelistRole[]
 
   @@unique([guildId, slug])
   @@map("whitelists")
 }
 
-model WhitelistRole {
+model PanelRole {
   id          Int      @id @default(autoincrement())
   guildId     BigInt   @map("guild_id")
-  whitelistId Int      @map("whitelist_id")
+  panelId     Int      @map("panel_id")
   roleId      BigInt   @map("role_id")
   roleName    String   @map("role_name") @db.VarChar(100)
   slotLimit   Int      @default(1) @map("slot_limit")
@@ -57,10 +56,10 @@ model WhitelistRole {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  whitelist   Whitelist @relation(fields: [whitelistId], references: [id], onDelete: Cascade)
+  panel       Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
 
-  @@unique([guildId, whitelistId, roleId])
-  @@map("whitelist_roles")
+  @@unique([guildId, panelId, roleId])
+  @@map("panel_roles")
 }
 
 model WhitelistUser {
@@ -155,6 +154,7 @@ model Panel {
   updatedAt        DateTime @map("updated_at")
 
   whitelist        Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
+  panelRoles       PanelRole[]
 
   @@map("panels")
 }

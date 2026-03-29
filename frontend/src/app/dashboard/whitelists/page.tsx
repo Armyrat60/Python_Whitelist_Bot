@@ -11,7 +11,6 @@ import {
   Check,
   X,
   RefreshCw,
-  ShieldCheck,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -19,18 +18,13 @@ import {
   useToggleWhitelist,
   useCreateWhitelist,
   useDeleteWhitelist,
-  useWhitelistRoles,
-  useAddWhitelistRole,
-  useRemoveWhitelistRole,
-  useRoles,
 } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
-import type { Whitelist, SquadGroup, WhitelistRole, DiscordRole } from "@/lib/types";
+import type { Whitelist, SquadGroup } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -221,7 +215,6 @@ function WhitelistCard({
   onDelete: () => void;
 }) {
   const url = whitelist.url ?? "";
-  const { data: roles } = useWhitelistRoles(whitelist.id);
 
   const qc = useQueryClient();
   const [editingName, setEditingName] = useState(false);
@@ -284,18 +277,6 @@ function WhitelistCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Access Roles</span>
-          <span className="font-medium">
-            {roles === undefined ? (
-              <span className="text-muted-foreground/40 text-xs">…</span>
-            ) : roles.length === 0 ? (
-              <span className="text-amber-400 text-xs">None configured</span>
-            ) : (
-              <span className="text-xs">{roles.length} role{roles.length !== 1 ? "s" : ""}</span>
-            )}
-          </span>
-        </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Squad Group</span>
           <span className="font-medium">{whitelist.squad_group || "\u2014"}</span>
@@ -375,43 +356,6 @@ function WhitelistConfigSheet({
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
   const [showNewUrl, setShowNewUrl] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [addRoleOpen, setAddRoleOpen] = useState(false);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
-  const [slotLimit, setSlotLimit] = useState("1");
-  const [isStackable, setIsStackable] = useState(false);
-
-  const { data: whitelistRoles, isLoading: rolesLoading } = useWhitelistRoles(whitelist.id);
-  const { data: discordRoles } = useRoles();
-  const addRole = useAddWhitelistRole(whitelist.id);
-  const removeRole = useRemoveWhitelistRole(whitelist.id);
-
-  const availableRoles: ComboboxOption[] = useMemo(() => {
-    const assignedIds = new Set((whitelistRoles ?? []).map((r) => r.role_id));
-    return (discordRoles ?? [])
-      .filter((r) => !assignedIds.has(r.id))
-      .map((r) => ({ value: r.id, label: r.name }));
-  }, [discordRoles, whitelistRoles]);
-
-  function handleAddRole() {
-    if (!selectedRoleId) return;
-    const role = discordRoles?.find((r) => r.id === selectedRoleId);
-    if (!role) return;
-    const slots = parseInt(slotLimit, 10);
-    if (isNaN(slots) || slots < 1) return;
-    addRole.mutate(
-      { role_id: role.id, role_name: role.name, slot_limit: slots, is_stackable: isStackable },
-      {
-        onSuccess: () => {
-          toast.success(`Added ${role.name}`);
-          setSelectedRoleId("");
-          setSlotLimit("1");
-          setIsStackable(false);
-          setAddRoleOpen(false);
-        },
-        onError: () => toast.error("Failed to add role"),
-      }
-    );
-  }
 
   // Track whether user has manually overridden the filename
   const autoFilename = `${slugify(name)}.txt`;
@@ -516,122 +460,6 @@ function WhitelistConfigSheet({
             <Save className="mr-1.5 h-3.5 w-3.5" />
             Save
           </Button>
-
-          {/* Access Roles */}
-          <div className="border-t border-white/[0.06] pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>
-                <ShieldCheck className="inline mr-1.5 h-3.5 w-3.5 opacity-60" />
-                Access Roles
-              </Label>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setAddRoleOpen((v) => !v)}
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Add
-              </Button>
-            </div>
-
-            {addRoleOpen && (
-              <div className="rounded-lg border border-white/[0.08] p-3 space-y-3 bg-white/[0.02]">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Discord Role</Label>
-                  <Combobox
-                    options={availableRoles}
-                    value={selectedRoleId}
-                    onValueChange={setSelectedRoleId}
-                    placeholder="Select role..."
-                    searchPlaceholder="Search roles..."
-                    emptyText="No roles available."
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <div className="space-y-1.5 flex-1">
-                    <Label className="text-xs">Slots</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={slotLimit}
-                      onChange={(e) => setSlotLimit(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5 flex items-end gap-2 pb-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <Switch
-                        checked={isStackable}
-                        onCheckedChange={setIsStackable}
-                        id={`stackable-new-${whitelist.id}`}
-                      />
-                      <Label htmlFor={`stackable-new-${whitelist.id}`} className="text-xs text-muted-foreground">
-                        Stack
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={handleAddRole}
-                    disabled={!selectedRoleId || addRole.isPending}
-                  >
-                    Add Role
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setAddRoleOpen(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {rolesLoading ? (
-              <div className="space-y-1.5">
-                {[1, 2].map((i) => (
-                  <div key={i} className="h-8 rounded animate-pulse bg-white/[0.04]" />
-                ))}
-              </div>
-            ) : whitelistRoles && whitelistRoles.length > 0 ? (
-              <div className="space-y-1.5">
-                {whitelistRoles.map((role) => (
-                  <div
-                    key={role.role_id}
-                    className="flex items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-sm"
-                  >
-                    <span className="flex-1 truncate font-medium text-foreground">
-                      {role.display_name || role.role_name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {role.slot_limit} slot{role.slot_limit !== 1 ? "s" : ""}
-                    </span>
-                    {role.is_stackable && (
-                      <span className="shrink-0 text-[10px] text-blue-400 border border-blue-400/30 rounded px-1">
-                        stack
-                      </span>
-                    )}
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() =>
-                        removeRole.mutate(role.role_id, {
-                          onError: () => toast.error("Failed to remove role"),
-                        })
-                      }
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No access roles configured. Add roles to control who gets whitelisted.
-              </p>
-            )}
-          </div>
 
           <div className="border-t border-white/[0.06] pt-4 space-y-3">
             <Label>Whitelist URL</Label>

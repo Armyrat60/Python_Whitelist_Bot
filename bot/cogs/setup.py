@@ -78,7 +78,15 @@ class SlotLimitModal(discord.ui.Modal):
         if not wl:
             await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
             return
-        await self.bot.db.add_whitelist_role(guild_id, wl["id"], self.role_id, self.role_name, slot_limit)
+        panels = await self.bot.db.fetchall(
+            "SELECT id FROM panels WHERE guild_id=%s AND enabled=TRUE LIMIT 1",
+            (guild_id,),
+        )
+        if not panels:
+            await interaction.response.send_message("No enabled panel found. Create a panel first.", ephemeral=True)
+            return
+        panel_id = int(panels[0][0])
+        await self.bot.db.add_panel_role(guild_id, panel_id, self.role_id, self.role_name, slot_limit)
         await self.bot.db.audit(guild_id, "setup_rolemap_add", interaction.user.id, None, f"type={self.whitelist_type} role={self.role_name}({self.role_id}) slots={slot_limit}", self.whitelist_type)
         await interaction.response.send_message(f"Mapped **{self.role_name}** to **{slot_limit}** slot(s) for {self.whitelist_type}.", ephemeral=True)
 
@@ -335,8 +343,12 @@ class MainSetupView(discord.ui.View):
             log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
             gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
             wl = await self.bot.db.get_whitelist_by_slug(guild_id, wt)
-            if wl:
-                mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+            panel_rows_hub = await self.bot.db.fetchall(
+                "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+                (guild_id, wl["id"] if wl else -1),
+            ) if wl else []
+            if panel_rows_hub:
+                mappings = await self.bot.db.get_panel_roles(guild_id, int(panel_rows_hub[0][0]))
             else:
                 mappings = []
             # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
@@ -542,8 +554,12 @@ class TypeSettingsView(discord.ui.View):
         panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
         log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
         wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
-        if wl:
-            mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+        panel_rows = await self.bot.db.fetchall(
+            "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+            (guild_id, wl["id"] if wl else -1),
+        ) if wl else []
+        if panel_rows:
+            mappings = await self.bot.db.get_panel_roles(guild_id, int(panel_rows[0][0]))
         else:
             mappings = []
         # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
@@ -648,8 +664,16 @@ class TypeSettingsView(discord.ui.View):
         if not wl:
             await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
             return
+        panel_rows_rm = await self.bot.db.fetchall(
+            "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+            (guild_id, wl["id"]),
+        )
+        if not panel_rows_rm:
+            await interaction.response.send_message(f"No enabled panel found for `{self.whitelist_type}`.", ephemeral=True)
+            return
+        panel_id_rm = int(panel_rows_rm[0][0])
         # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
-        mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+        mappings = await self.bot.db.get_panel_roles(guild_id, panel_id_rm)
         active = [m for m in mappings if m[6]]
         if not active:
             await interaction.response.send_message(f"No {self.whitelist_type} role mappings to remove.", ephemeral=True)
@@ -746,7 +770,15 @@ class RemoveRoleMappingView(discord.ui.View):
         if not wl:
             await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
             return
-        await self.bot.db.remove_whitelist_role(guild_id, wl["id"], role_id)
+        panel_rows_del = await self.bot.db.fetchall(
+            "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+            (guild_id, wl["id"]),
+        )
+        if not panel_rows_del:
+            await interaction.response.send_message(f"No enabled panel found for `{self.whitelist_type}`.", ephemeral=True)
+            return
+        panel_id_del = int(panel_rows_del[0][0])
+        await self.bot.db.remove_panel_role(guild_id, panel_id_del, role_id)
         await self.bot.db.audit(guild_id, "setup_rolemap_remove", interaction.user.id, None, f"type={self.whitelist_type} role_id={role_id}", self.whitelist_type)
         await interaction.response.send_message(f"Removed role mapping for <@&{role_id}> from {self.whitelist_type}.", ephemeral=True)
 

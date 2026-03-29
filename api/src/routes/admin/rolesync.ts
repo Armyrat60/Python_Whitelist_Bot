@@ -53,18 +53,28 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       const actorId = BigInt(req.session.userId!)
       const { whitelist_type: wlTypeFilter, dry_run: dryRun = false } = req.body ?? {}
 
-      // Get all active whitelist roles for this guild, optionally filtered by whitelist slug
-      const wlRoles = await app.prisma.whitelistRole.findMany({
+      // Get all active panel roles for this guild, optionally filtered by whitelist slug
+      const wlRoles = await app.prisma.panelRole.findMany({
         where: {
           guildId,
           isActive: true,
-          ...(wlTypeFilter
-            ? { whitelist: { slug: wlTypeFilter } }
-            : {}),
+        },
+        include: {
+          panel: {
+            select: { whitelistId: true, enabled: true },
+          },
         },
       })
 
-      if (!wlRoles.length) {
+      // Filter by whitelist slug if requested
+      const filteredRoles = wlTypeFilter
+        ? wlRoles.filter(r => {
+            if (!r.panel.whitelistId) return false
+            return true // slug filter below after wl lookup
+          })
+        : wlRoles
+
+      if (!filteredRoles.length) {
         return reply.send({ ok: true, added: 0, already_exists: 0, message: "No active role mappings found." })
       }
 
@@ -75,9 +85,11 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       let alreadyExists = 0
       const now = new Date()
 
-      for (const wlRole of wlRoles) {
-        const wl = await app.prisma.whitelist.findUnique({ where: { id: wlRole.whitelistId } })
+      for (const wlRole of filteredRoles) {
+        if (!wlRole.panel.whitelistId) continue
+        const wl = await app.prisma.whitelist.findUnique({ where: { id: wlRole.panel.whitelistId } })
         if (!wl) continue
+        if (wlTypeFilter && wl.slug !== wlTypeFilter) continue
 
         const roleIdStr = String(wlRole.roleId)
         const membersWithRole = allMembers.filter((m) => m.roles.includes(roleIdStr))
@@ -136,8 +148,8 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   app.get("/role-stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    // Collect all active whitelist role IDs (deduplicated — same role may be in multiple whitelists)
-    const wlRoles = await app.prisma.whitelistRole.findMany({
+    // Collect all active panel role IDs (deduplicated — same role may be in multiple panels)
+    const wlRoles = await app.prisma.panelRole.findMany({
       where: { guildId, isActive: true },
       select: { roleId: true, roleName: true },
     })
@@ -234,7 +246,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
     const guildId = BigInt(req.session.activeGuildId!)
 
     // Collect every role ID that grants whitelist access (deduplicated)
-    const wlRoles = await app.prisma.whitelistRole.findMany({
+    const wlRoles = await app.prisma.panelRole.findMany({
       where: { guildId, isActive: true },
       select: { roleId: true },
     })
@@ -277,7 +289,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
     const guildId = BigInt(req.session.activeGuildId!)
 
     const [wlRoles, liveRoles] = await Promise.all([
-      app.prisma.whitelistRole.findMany({ where: { guildId, isActive: true } }),
+      app.prisma.panelRole.findMany({ where: { guildId, isActive: true } }),
       app.discord.fetchRoles(guildId).catch(() => [] as Array<{ id: string; name: string }>),
     ])
 
@@ -354,7 +366,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   app.post("/backfill/tiers", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const wlRoles = await app.prisma.whitelistRole.findMany({ where: { guildId, isActive: true } })
+    const wlRoles = await app.prisma.panelRole.findMany({ where: { guildId, isActive: true } })
     if (!wlRoles.length) {
       return reply.send({ ok: true, updated: 0, message: "No active tier entries found" })
     }

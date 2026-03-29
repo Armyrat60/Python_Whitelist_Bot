@@ -237,10 +237,10 @@ POSTGRES_SCHEMA = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS whitelist_roles (
+    CREATE TABLE IF NOT EXISTS panel_roles (
         id SERIAL PRIMARY KEY,
         guild_id BIGINT NOT NULL,
-        whitelist_id INTEGER NOT NULL,
+        panel_id INTEGER NOT NULL,
         role_id BIGINT NOT NULL,
         role_name VARCHAR(100) NOT NULL,
         slot_limit INTEGER NOT NULL DEFAULT 1,
@@ -250,8 +250,8 @@ POSTGRES_SCHEMA = [
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        FOREIGN KEY (whitelist_id) REFERENCES whitelists(id) ON DELETE CASCADE,
-        UNIQUE (guild_id, whitelist_id, role_id)
+        FOREIGN KEY (panel_id) REFERENCES panels(id) ON DELETE CASCADE,
+        UNIQUE (guild_id, panel_id, role_id)
     )
     """,
     """
@@ -1100,50 +1100,51 @@ class Database:
             return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=TRUE ORDER BY permission")
         return await self.fetchall("SELECT permission, description, is_active FROM squad_permissions ORDER BY permission")
 
-    # ── Whitelist Roles ──
+    # ── Panel Roles ──
 
-    async def get_whitelist_roles(self, guild_id: int, whitelist_id: int) -> List[tuple]:
-        """Get roles for a specific whitelist. Returns (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)."""
+    async def get_panel_roles(self, guild_id: int, panel_id: int) -> List[tuple]:
+        """Get roles for a specific panel. Returns (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)."""
         return await self.fetchall(
             """
             SELECT id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable
-            FROM whitelist_roles
-            WHERE guild_id=%s AND whitelist_id=%s
+            FROM panel_roles
+            WHERE guild_id=%s AND panel_id=%s
             ORDER BY sort_order ASC, slot_limit ASC, role_name ASC
             """,
-            (guild_id, whitelist_id),
+            (guild_id, panel_id),
         )
 
-    async def get_all_whitelist_roles(self, guild_id: int) -> List[tuple]:
-        """Get all whitelist roles for a guild. Returns (whitelist_id, role_id, role_name, slot_limit, is_active)."""
+    async def get_all_panel_roles(self, guild_id: int) -> List[tuple]:
+        """Get all panel roles for a guild joined with panel whitelist_id. Returns (panel_id, whitelist_id, role_id, role_name, slot_limit, is_active)."""
         return await self.fetchall(
             """
-            SELECT whitelist_id, role_id, role_name, slot_limit, is_active
-            FROM whitelist_roles
-            WHERE guild_id=%s
-            ORDER BY whitelist_id, slot_limit ASC, role_name ASC
+            SELECT pr.panel_id, p.whitelist_id, pr.role_id, pr.role_name, pr.slot_limit, pr.is_active
+            FROM panel_roles pr
+            JOIN panels p ON p.id = pr.panel_id
+            WHERE pr.guild_id=%s
+            ORDER BY pr.panel_id, pr.slot_limit ASC, pr.role_name ASC
             """,
             (guild_id,),
         )
 
-    async def add_whitelist_role(self, guild_id: int, whitelist_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
+    async def add_panel_role(self, guild_id: int, panel_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
         now = utcnow()
         row = await self.execute_returning(
             """
-            INSERT INTO whitelist_roles (guild_id, whitelist_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at, updated_at)
+            INSERT INTO panel_roles (guild_id, panel_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
-            ON CONFLICT (guild_id, whitelist_id, role_id) DO UPDATE
+            ON CONFLICT (guild_id, panel_id, role_id) DO UPDATE
                 SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
                     display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order,
                     is_active=TRUE, is_stackable=EXCLUDED.is_stackable, updated_at=EXCLUDED.updated_at
             RETURNING id
             """,
-            (guild_id, whitelist_id, role_id, role_name, slot_limit, display_name, sort_order, is_stackable, now, now),
+            (guild_id, panel_id, role_id, role_name, slot_limit, display_name, sort_order, is_stackable, now, now),
         )
         return row[0]
 
-    async def remove_whitelist_role(self, guild_id: int, whitelist_id: int, role_id: int):
+    async def remove_panel_role(self, guild_id: int, panel_id: int, role_id: int):
         await self.execute(
-            "DELETE FROM whitelist_roles WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
-            (guild_id, whitelist_id, role_id),
+            "DELETE FROM panel_roles WHERE guild_id=%s AND panel_id=%s AND role_id=%s",
+            (guild_id, panel_id, role_id),
         )

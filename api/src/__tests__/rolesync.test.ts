@@ -31,7 +31,7 @@ describe('GET /role-stats', () => {
   })
 
   it('returns { stats: [], gateway_mode: false } when no whitelist roles', async () => {
-    t.prisma.whitelistRole.findMany.mockResolvedValueOnce([])
+    t.prisma.panelRole.findMany.mockResolvedValueOnce([])
 
     const res = await t.app.inject({ method: 'GET', url: '/api/admin/role-stats' })
     expect(res.statusCode).toBe(200)
@@ -43,7 +43,7 @@ describe('GET /role-stats', () => {
   it('returns stats with correct shape for each role', async () => {
     const roleId = '555666777888999000'
 
-    t.prisma.whitelistRole.findMany.mockResolvedValueOnce([
+    t.prisma.panelRole.findMany.mockResolvedValueOnce([
       { roleId: BigInt(roleId), roleName: 'VIP Tier' },
     ])
 
@@ -80,7 +80,7 @@ describe('GET /role-stats', () => {
   })
 
   it('each stat has all required fields', async () => {
-    t.prisma.whitelistRole.findMany.mockResolvedValueOnce([
+    t.prisma.panelRole.findMany.mockResolvedValueOnce([
       { roleId: BigInt('111222333444555666'), roleName: 'Some Role' },
     ])
     t.discord.fetchRoles.mockResolvedValueOnce([])
@@ -107,7 +107,7 @@ describe('GET /role-stats', () => {
     const roleId = '777888999000111222'
 
     // Same role assigned to two different whitelists (whitelistId 1 and 2)
-    t.prisma.whitelistRole.findMany.mockResolvedValueOnce([
+    t.prisma.panelRole.findMany.mockResolvedValueOnce([
       { roleId: BigInt(roleId), roleName: 'Dual Role' },
       { roleId: BigInt(roleId), roleName: 'Dual Role' },
     ])

@@ -55,10 +55,11 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         slots = wl.defaultSlotLimit
       }
 
-      // Check whitelist roles for this user's Discord roles
+      // Check panel roles for this user's Discord roles
+      // panel_roles are per-panel; gather all active roles from panels linked to this whitelist
       if (memberRoleIds.size > 0) {
-        const wlRoles = await app.prisma.whitelistRole.findMany({
-          where: { guildId, whitelistId: wl.id, isActive: true },
+        const wlRoles = await app.prisma.panelRole.findMany({
+          where: { guildId, isActive: true, panel: { whitelistId: wl.id, enabled: true } },
         })
         const stackable: Array<{ name: string; slots: number }> = []
         const nonStackable: Array<{ name: string; slots: number }> = []

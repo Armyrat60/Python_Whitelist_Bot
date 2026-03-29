@@ -2,11 +2,11 @@
 -- Merges role_mappings + tier_categories + tier_entries into whitelist_roles
 -- Removes tierCategoryId from panels
 
--- 1. Create whitelist_roles table (IF NOT EXISTS: bot may have pre-created it)
-CREATE TABLE IF NOT EXISTS "whitelist_roles" (
+-- 1. Create panel_roles table (IF NOT EXISTS: bot may have pre-created it)
+CREATE TABLE IF NOT EXISTS "panel_roles" (
     "id" SERIAL PRIMARY KEY,
     "guild_id" BIGINT NOT NULL,
-    "whitelist_id" INTEGER NOT NULL,
+    "panel_id" INTEGER NOT NULL,
     "role_id" BIGINT NOT NULL,
     "role_name" VARCHAR(100) NOT NULL,
     "slot_limit" INTEGER NOT NULL DEFAULT 1,
@@ -16,12 +16,12 @@ CREATE TABLE IF NOT EXISTS "whitelist_roles" (
     "sort_order" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "whitelist_roles_whitelist_id_fkey"
-        FOREIGN KEY ("whitelist_id") REFERENCES "whitelists"("id") ON DELETE CASCADE
+    CONSTRAINT "panel_roles_panel_id_fkey"
+        FOREIGN KEY ("panel_id") REFERENCES "panels"("id") ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "whitelist_roles_guild_id_whitelist_id_role_id_key"
-    ON "whitelist_roles"("guild_id", "whitelist_id", "role_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "panel_roles_guild_id_panel_id_role_id_key"
+    ON "panel_roles"("guild_id", "panel_id", "role_id");
 
 -- 2. Remove tier_category_id from panels
 ALTER TABLE "panels" DROP COLUMN IF EXISTS "tier_category_id";

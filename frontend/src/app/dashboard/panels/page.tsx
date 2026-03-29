@@ -10,6 +10,7 @@ import {
   X,
   Pencil,
   Check,
+  ShieldCheck,
 } from "lucide-react";
 import {
   usePanels,
@@ -19,8 +20,12 @@ import {
   useUpdatePanel,
   useDeletePanel,
   usePushPanel,
+  usePanelRoles,
+  useAddPanelRole,
+  useRemovePanelRole,
+  useRoles,
 } from "@/hooks/use-settings";
-import type { Panel, Whitelist } from "@/lib/types";
+import type { Panel, Whitelist, PanelRole, DiscordRole } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -177,6 +182,45 @@ function PanelCard({
   const [enabled, setEnabled] = useState(panel.enabled ?? true);
   const [showRoleMentions, setShowRoleMentions] = useState(panel.show_role_mentions ?? true);
 
+  // Access roles state
+  const [addRoleOpen, setAddRoleOpen] = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+  const [slotLimit, setSlotLimit] = useState("1");
+  const [isStackable, setIsStackable] = useState(false);
+
+  const { data: panelRoles, isLoading: rolesLoading } = usePanelRoles(panel.id);
+  const { data: discordRoles } = useRoles();
+  const addRole = useAddPanelRole(panel.id);
+  const removeRole = useRemovePanelRole(panel.id);
+
+  const availableRoles: ComboboxOption[] = useMemo(() => {
+    const assignedIds = new Set((panelRoles ?? []).map((r) => r.role_id));
+    return (discordRoles ?? [])
+      .filter((r) => !assignedIds.has(r.id))
+      .map((r) => ({ value: r.id, label: r.name }));
+  }, [discordRoles, panelRoles]);
+
+  function handleAddRole() {
+    if (!selectedRoleId) return;
+    const role = discordRoles?.find((r) => r.id === selectedRoleId);
+    if (!role) return;
+    const slots = parseInt(slotLimit, 10);
+    if (isNaN(slots) || slots < 1) return;
+    addRole.mutate(
+      { role_id: role.id, role_name: role.name, slot_limit: slots, is_stackable: isStackable },
+      {
+        onSuccess: () => {
+          toast.success(`Added ${role.name}`);
+          setSelectedRoleId("");
+          setSlotLimit("1");
+          setIsStackable(false);
+          setAddRoleOpen(false);
+        },
+        onError: () => toast.error("Failed to add role"),
+      }
+    );
+  }
+
   const channelName =
     channels.find((c) => c.id === panel.channel_id)?.name ?? "None";
   const logChannelName =
@@ -288,6 +332,11 @@ function PanelCard({
           {panel.whitelist_id && (
             <Badge variant="outline">{wlName}</Badge>
           )}
+          {panelRoles !== undefined && panelRoles.length > 0 && (
+            <Badge variant="outline">
+              {panelRoles.length} role{panelRoles.length !== 1 ? "s" : ""}
+            </Badge>
+          )}
           {!panel.channel_id && !panel.whitelist_id && (
             <span className="text-xs text-muted-foreground">Not configured</span>
           )}
@@ -350,6 +399,122 @@ function PanelCard({
                 checked={showRoleMentions}
                 onCheckedChange={setShowRoleMentions}
               />
+            </div>
+
+            {/* Access Roles */}
+            <div className="border-t border-white/[0.06] pt-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">
+                  <ShieldCheck className="inline mr-1.5 h-3.5 w-3.5 opacity-60" />
+                  Access Roles
+                </Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAddRoleOpen((v) => !v)}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add
+                </Button>
+              </div>
+
+              {addRoleOpen && (
+                <div className="rounded-lg border border-white/[0.08] p-3 space-y-3 bg-white/[0.02]">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Discord Role</Label>
+                    <Combobox
+                      options={availableRoles}
+                      value={selectedRoleId}
+                      onValueChange={setSelectedRoleId}
+                      placeholder="Select role..."
+                      searchPlaceholder="Search roles..."
+                      emptyText="No roles available."
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="space-y-1.5 flex-1">
+                      <Label className="text-xs">Slots</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={slotLimit}
+                        onChange={(e) => setSlotLimit(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5 flex items-end gap-2 pb-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          checked={isStackable}
+                          onCheckedChange={setIsStackable}
+                          id={`stackable-new-${panel.id}`}
+                        />
+                        <Label htmlFor={`stackable-new-${panel.id}`} className="text-xs text-muted-foreground">
+                          Stack
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={handleAddRole}
+                      disabled={!selectedRoleId || addRole.isPending}
+                    >
+                      Add Role
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setAddRoleOpen(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {rolesLoading ? (
+                <div className="space-y-1.5">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-8 rounded animate-pulse bg-white/[0.04]" />
+                  ))}
+                </div>
+              ) : panelRoles && panelRoles.length > 0 ? (
+                <div className="space-y-1.5">
+                  {panelRoles.map((role) => (
+                    <div
+                      key={role.role_id}
+                      className="flex items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-sm"
+                    >
+                      <span className="flex-1 truncate font-medium text-foreground">
+                        {role.display_name || role.role_name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {role.slot_limit} slot{role.slot_limit !== 1 ? "s" : ""}
+                      </span>
+                      {role.is_stackable && (
+                        <span className="shrink-0 text-[10px] text-blue-400 border border-blue-400/30 rounded px-1">
+                          stack
+                        </span>
+                      )}
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          removeRole.mutate(role.role_id, {
+                            onError: () => toast.error("Failed to remove role"),
+                          })
+                        }
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No access roles configured. Add roles to control who gets whitelisted.
+                </p>
+              )}
             </div>
           </>
         )}

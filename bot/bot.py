@@ -232,7 +232,12 @@ class WhitelistBot(commands.Bot):
             status = "Enabled" if wl["enabled"] else "Disabled"
             panel_ch = f"<#{wl['panel_channel_id']}>" if wl["panel_channel_id"] else "`Not set`"
             log_ch = f"<#{wl['log_channel_id']}>" if wl["log_channel_id"] else "`Not set`"
-            wl_roles = await self.db.get_whitelist_roles(guild_id, wl["id"])
+            panels_for_wl = await self.db.fetchall(
+                "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+                (guild_id, wl["id"]),
+            )
+            panel_id_for_wl = int(panels_for_wl[0][0]) if panels_for_wl else None
+            wl_roles = await self.db.get_panel_roles(guild_id, panel_id_for_wl) if panel_id_for_wl else []
             role_lines = [f"<@&{r[1]}> = {r[3]} slots" for r in wl_roles if r[6]] or ["`None`"]
             embed.add_field(
                 name=wl["name"],
@@ -326,8 +331,17 @@ class WhitelistBot(commands.Bot):
         member_role_ids = {r.id for r in member.roles}
         member_role_names = {r.id: r.name for r in member.roles}
 
-        # wl_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
-        wl_roles = await self.db.get_whitelist_roles(guild_id, whitelist_id)
+        # Resolve panel_id: use provided panel or find the first enabled panel for this whitelist
+        panel_id = panel["id"] if panel else None
+        if panel_id is None:
+            panels = await self.db.fetchall(
+                "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+                (guild_id, whitelist_id),
+            )
+            panel_id = int(panels[0][0]) if panels else None
+
+        # panel_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+        wl_roles = await self.db.get_panel_roles(guild_id, panel_id) if panel_id else []
         stackable_matched = []
         non_stackable_matched = []
         for r in wl_roles:
@@ -687,8 +701,13 @@ class WhitelistBot(commands.Bot):
             whitelist_id = wl["id"]
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
-                # Auto-enroll: check whitelist_roles for this whitelist
-                wl_roles = await self.db.get_whitelist_roles(guild_id, whitelist_id)
+                # Auto-enroll: check panel_roles for any panel linked to this whitelist
+                panels = await self.db.fetchall(
+                    "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
+                    (guild_id, whitelist_id),
+                )
+                panel_id = int(panels[0][0]) if panels else None
+                wl_roles = await self.db.get_panel_roles(guild_id, panel_id) if panel_id else []
                 active_mapped = {int(r[1]) for r in wl_roles if r[6]}
 
                 if not active_mapped or not (active_mapped & member_role_ids):
@@ -782,15 +801,15 @@ class WhitelistBot(commands.Bot):
     async def _daily_role_sync(self, guild: "discord.Guild") -> None:
         """Ensure whitelist membership matches Discord role membership for all mapped roles."""
         guild_id = guild.id
-        all_wl_roles = await self.db.get_all_whitelist_roles(guild_id)
+        all_wl_roles = await self.db.get_all_panel_roles(guild_id)
         if not all_wl_roles:
             return
 
-        # Group active role_ids by whitelist_id
-        # get_all_whitelist_roles returns (whitelist_id, role_id, role_name, slot_limit, is_active)
+        # Group active role_ids by whitelist_id (via panel join)
+        # get_all_panel_roles returns (panel_id, whitelist_id, role_id, role_name, slot_limit, is_active)
         by_whitelist: dict[int, list[int]] = {}
         for row in all_wl_roles:
-            wl_id, role_id, _name, _slots, is_active = row[0], row[1], row[2], row[3], row[4]
+            _panel_id, wl_id, role_id, _name, _slots, is_active = row[0], row[1], row[2], row[3], row[4], row[5]
             if is_active and wl_id:
                 by_whitelist.setdefault(wl_id, []).append(role_id)
 

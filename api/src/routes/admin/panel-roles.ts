@@ -1,14 +1,15 @@
 /**
- * Whitelist role access rules — CRUD.
+ * Panel role access rules — CRUD.
  *
- * Each whitelist has a set of Discord roles that grant access with a
- * configurable slot limit. This replaces the old role_mappings +
- * tier_categories + tier_entries tables.
+ * Each panel has a set of Discord roles that grant access with a
+ * configurable slot limit. Roles are defined per-panel so different
+ * panels can have different role requirements even when pointing to
+ * the same whitelist.
  *
- * GET    /api/admin/whitelists/:whitelistId/roles
- * POST   /api/admin/whitelists/:whitelistId/roles
- * PUT    /api/admin/whitelists/:whitelistId/roles/:roleId
- * DELETE /api/admin/whitelists/:whitelistId/roles/:roleId
+ * GET    /api/admin/panels/:panelId/roles
+ * POST   /api/admin/panels/:panelId/roles
+ * PUT    /api/admin/panels/:panelId/roles/:roleId
+ * DELETE /api/admin/panels/:panelId/roles/:roleId
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { syncOutputs } from "../../services/output.js"
@@ -30,21 +31,15 @@ function safeJson(data: unknown): unknown {
   return JSON.parse(JSON.stringify(data, bigintReplacer))
 }
 
-async function queuePanelsForWhitelist(
-  app: FastifyInstance, guildId: bigint, whitelistId: number, reason: string
+async function queuePanelRefresh(
+  app: FastifyInstance, guildId: bigint, panelId: number, reason: string
 ) {
   try {
-    const panels = await app.prisma.panel.findMany({
-      where:  { guildId, whitelistId },
-      select: { id: true },
+    await app.prisma.panelRefreshQueue.create({
+      data: { guildId, panelId, reason, action: "refresh" },
     })
-    await Promise.all(panels.map(p =>
-      app.prisma.panelRefreshQueue.create({
-        data: { guildId, panelId: p.id, reason, action: "refresh" },
-      })
-    ))
   } catch (err) {
-    app.log.warn({ err }, "Failed to queue panel refreshes for whitelist")
+    app.log.warn({ err }, "Failed to queue panel refresh")
   }
 }
 
@@ -59,24 +54,24 @@ async function triggerSync(app: FastifyInstance, guildId: bigint) {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-export default async function whitelistRoleRoutes(app: FastifyInstance) {
+export default async function panelRoleRoutes(app: FastifyInstance) {
   const { prisma } = app
 
-  // ── GET /api/admin/whitelists/:whitelistId/roles ─────────────────────────
+  // ── GET /api/admin/panels/:panelId/roles ─────────────────────────────────
 
-  app.get<{ Params: { whitelistId: string } }>(
-    "/whitelists/:whitelistId/roles",
+  app.get<{ Params: { panelId: string } }>(
+    "/panels/:panelId/roles",
     { preHandler: adminHook },
     async (req, reply) => {
-      const guildId     = BigInt(req.session.activeGuildId!)
-      const whitelistId = parseInt(req.params.whitelistId, 10)
-      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      const guildId = BigInt(req.session.activeGuildId!)
+      const panelId = parseInt(req.params.panelId, 10)
+      if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
 
-      const wl = await prisma.whitelist.findFirst({ where: { id: whitelistId, guildId } })
-      if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
+      const panel = await prisma.panel.findFirst({ where: { id: panelId, guildId } })
+      if (!panel) return reply.code(404).send({ error: "Panel not found" })
 
-      const roles = await prisma.whitelistRole.findMany({
-        where:   { whitelistId, guildId },
+      const roles = await prisma.panelRole.findMany({
+        where:   { panelId, guildId },
         orderBy: [{ sortOrder: "asc" }, { slotLimit: "asc" }, { roleName: "asc" }],
       })
 
@@ -86,7 +81,7 @@ export default async function whitelistRoleRoutes(app: FastifyInstance) {
         for (const role of roles) {
           const liveName = nameMap.get(String(role.roleId))
           if (liveName && liveName !== role.roleName) {
-            prisma.whitelistRole.update({
+            prisma.panelRole.update({
               where: { id: role.id },
               data:  { roleName: liveName },
             }).catch(() => {})
@@ -109,18 +104,18 @@ export default async function whitelistRoleRoutes(app: FastifyInstance) {
     }
   )
 
-  // ── POST /api/admin/whitelists/:whitelistId/roles ─────────────────────────
+  // ── POST /api/admin/panels/:panelId/roles ────────────────────────────────
 
-  app.post<{ Params: { whitelistId: string } }>(
-    "/whitelists/:whitelistId/roles",
+  app.post<{ Params: { panelId: string } }>(
+    "/panels/:panelId/roles",
     { preHandler: adminHook },
     async (req, reply) => {
-      const guildId     = BigInt(req.session.activeGuildId!)
-      const whitelistId = parseInt(req.params.whitelistId, 10)
-      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      const guildId = BigInt(req.session.activeGuildId!)
+      const panelId = parseInt(req.params.panelId, 10)
+      if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
 
-      const wl = await prisma.whitelist.findFirst({ where: { id: whitelistId, guildId } })
-      if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
+      const panel = await prisma.panel.findFirst({ where: { id: panelId, guildId } })
+      if (!panel) return reply.code(404).send({ error: "Panel not found" })
 
       const body = req.body as {
         role_id:      string
@@ -140,11 +135,11 @@ export default async function whitelistRoleRoutes(app: FastifyInstance) {
       const roleId = BigInt(body.role_id)
       const now    = new Date()
 
-      const role = await prisma.whitelistRole.upsert({
-        where:  { guildId_whitelistId_roleId: { guildId, whitelistId, roleId } },
+      const role = await prisma.panelRole.upsert({
+        where:  { guildId_panelId_roleId: { guildId, panelId, roleId } },
         create: {
           guildId,
-          whitelistId,
+          panelId,
           roleId,
           roleName:    body.role_name,
           slotLimit:   Number(body.slot_limit),
@@ -164,28 +159,28 @@ export default async function whitelistRoleRoutes(app: FastifyInstance) {
         },
       })
 
-      await queuePanelsForWhitelist(app, guildId, whitelistId, "role_added")
+      await queuePanelRefresh(app, guildId, panelId, "role_added")
       triggerSync(app, guildId).catch(() => {})
 
       return reply.code(201).send(safeJson({ ok: true, id: role.id }))
     }
   )
 
-  // ── PUT /api/admin/whitelists/:whitelistId/roles/:roleId ──────────────────
+  // ── PUT /api/admin/panels/:panelId/roles/:roleId ─────────────────────────
 
-  app.put<{ Params: { whitelistId: string; roleId: string } }>(
-    "/whitelists/:whitelistId/roles/:roleId",
+  app.put<{ Params: { panelId: string; roleId: string } }>(
+    "/panels/:panelId/roles/:roleId",
     { preHandler: adminHook },
     async (req, reply) => {
-      const guildId     = BigInt(req.session.activeGuildId!)
-      const whitelistId = parseInt(req.params.whitelistId, 10)
-      const roleId      = (() => { try { return BigInt(req.params.roleId) } catch { return null } })()
+      const guildId = BigInt(req.session.activeGuildId!)
+      const panelId = parseInt(req.params.panelId, 10)
+      const roleId  = (() => { try { return BigInt(req.params.roleId) } catch { return null } })()
 
-      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
-      if (!roleId)            return reply.code(400).send({ error: "Invalid roleId" })
+      if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
+      if (!roleId)        return reply.code(400).send({ error: "Invalid roleId" })
 
-      const existing = await prisma.whitelistRole.findFirst({
-        where: { guildId, whitelistId, roleId },
+      const existing = await prisma.panelRole.findFirst({
+        where: { guildId, panelId, roleId },
       })
       if (!existing) return reply.code(404).send({ error: "Role not found" })
 
@@ -204,34 +199,34 @@ export default async function whitelistRoleRoutes(app: FastifyInstance) {
       if (body.display_name !== undefined) data["displayName"] = body.display_name
       if (body.sort_order   !== undefined) data["sortOrder"]   = body.sort_order
 
-      await prisma.whitelistRole.update({ where: { id: existing.id }, data })
+      await prisma.panelRole.update({ where: { id: existing.id }, data })
 
-      await queuePanelsForWhitelist(app, guildId, whitelistId, "role_updated")
+      await queuePanelRefresh(app, guildId, panelId, "role_updated")
 
       return reply.send({ ok: true })
     }
   )
 
-  // ── DELETE /api/admin/whitelists/:whitelistId/roles/:roleId ──────────────
+  // ── DELETE /api/admin/panels/:panelId/roles/:roleId ──────────────────────
 
-  app.delete<{ Params: { whitelistId: string; roleId: string } }>(
-    "/whitelists/:whitelistId/roles/:roleId",
+  app.delete<{ Params: { panelId: string; roleId: string } }>(
+    "/panels/:panelId/roles/:roleId",
     { preHandler: adminHook },
     async (req, reply) => {
-      const guildId     = BigInt(req.session.activeGuildId!)
-      const whitelistId = parseInt(req.params.whitelistId, 10)
-      const roleId      = (() => { try { return BigInt(req.params.roleId) } catch { return null } })()
+      const guildId = BigInt(req.session.activeGuildId!)
+      const panelId = parseInt(req.params.panelId, 10)
+      const roleId  = (() => { try { return BigInt(req.params.roleId) } catch { return null } })()
 
-      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
-      if (!roleId)            return reply.code(400).send({ error: "Invalid roleId" })
+      if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
+      if (!roleId)        return reply.code(400).send({ error: "Invalid roleId" })
 
-      const existing = await prisma.whitelistRole.findFirst({
-        where: { guildId, whitelistId, roleId },
+      const existing = await prisma.panelRole.findFirst({
+        where: { guildId, panelId, roleId },
       })
       if (!existing) return reply.code(404).send({ error: "Role not found" })
 
-      await prisma.whitelistRole.delete({ where: { id: existing.id } })
-      await queuePanelsForWhitelist(app, guildId, whitelistId, "role_removed")
+      await prisma.panelRole.delete({ where: { id: existing.id } })
+      await queuePanelRefresh(app, guildId, panelId, "role_removed")
       triggerSync(app, guildId).catch(() => {})
 
       return reply.send({ ok: true })

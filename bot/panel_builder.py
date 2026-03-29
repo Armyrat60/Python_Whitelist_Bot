@@ -41,8 +41,9 @@ async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict
     if not wl:
         return tier_lines
 
-    # wl_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
-    wl_roles = await db.get_whitelist_roles(guild_id, wl["id"])
+    # panel_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+    panel_id = panel["id"] if panel else None
+    wl_roles = await db.get_panel_roles(guild_id, panel_id) if panel_id else []
     wl_roles = sorted(
         [r for r in wl_roles if bool(r[6])],  # r[6] = is_active
         key=lambda r: r[3],  # sort by slot_limit ascending

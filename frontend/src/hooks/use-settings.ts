@@ -8,7 +8,7 @@ import type {
   Settings,
   Whitelist,
   Panel,
-  WhitelistRole,
+  PanelRole,
   DiscordRole,
   DiscordChannel,
   SquadGroup,
@@ -317,50 +317,50 @@ export function usePushPanel() {
   });
 }
 
-// ─── Whitelist Roles ────────────────────────────────────────────────────────
+// ─── Panel Roles ─────────────────────────────────────────────────────────────
 
-export function useWhitelistRoles(whitelistId: number | null) {
-  return useQuery<WhitelistRole[]>({
-    queryKey: ["whitelist-roles", whitelistId],
+export function usePanelRoles(panelId: number | null) {
+  return useQuery<PanelRole[]>({
+    queryKey: ["panel-roles", panelId],
     queryFn: async () => {
-      const res = await api.get<{ roles: WhitelistRole[] }>(`/api/admin/whitelists/${whitelistId}/roles`);
+      const res = await api.get<{ roles: PanelRole[] }>(`/api/admin/panels/${panelId}/roles`);
       return res.roles;
     },
-    enabled: whitelistId !== null,
+    enabled: panelId !== null,
   });
 }
 
-export function useAddWhitelistRole(whitelistId: number) {
+export function useAddPanelRole(panelId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { role_id: string; role_name: string; slot_limit: number; is_stackable?: boolean; display_name?: string }) =>
-      api.post(`/api/admin/whitelists/${whitelistId}/roles`, data),
+      api.post(`/api/admin/panels/${panelId}/roles`, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["panel-roles", panelId] });
       qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
 
-export function useUpdateWhitelistRole(whitelistId: number) {
+export function useUpdatePanelRole(panelId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ roleId, ...data }: { roleId: string; slot_limit?: number; is_stackable?: boolean; is_active?: boolean; display_name?: string }) =>
-      api.put(`/api/admin/whitelists/${whitelistId}/roles/${roleId}`, data),
+      api.put(`/api/admin/panels/${panelId}/roles/${roleId}`, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["panel-roles", panelId] });
       qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
 
-export function useRemoveWhitelistRole(whitelistId: number) {
+export function useRemovePanelRole(panelId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (roleId: string) =>
-      api.delete(`/api/admin/whitelists/${whitelistId}/roles/${roleId}`),
+      api.delete(`/api/admin/panels/${panelId}/roles/${roleId}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["panel-roles", panelId] });
       qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
