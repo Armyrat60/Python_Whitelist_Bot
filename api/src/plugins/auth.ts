@@ -4,7 +4,6 @@
  * requireAdmin / requireAuth helpers on the Fastify instance.
  * Sessions survive API restarts — stored in the `sessions` table via Prisma raw queries.
  */
-import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
 import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
@@ -74,7 +73,11 @@ function isTableMissing(err: any): boolean {
   return err?.code === "42P01" || /relation.*does not exist/i.test(err?.message ?? "")
 }
 
-const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
+// NOT wrapped with fp() — this plugin is intentionally scoped.
+// Registering it in a child context means session middleware ONLY runs on routes
+// inside that context. Routes registered outside (healthz, files, internal) never
+// touch the session store and have zero DB dependency during healthchecks.
+const authPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
   // ─── Prisma-backed session store ───────────────────────────────────────────
@@ -186,6 +189,6 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
       return reply.code(403).send({ error: "Insufficient permissions" })
     }
   })
-})
+}
 
 export default authPlugin

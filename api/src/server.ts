@@ -62,42 +62,55 @@ async function build() {
   })
 
   await app.register(prismaPlugin)
-  await app.register(authPlugin)
 
   // ─── Discord REST client (shared across routes) ──────────────────────────────
 
   const discord = new DiscordRESTClient(env.DISCORD_TOKEN)
   app.decorate("discord", discord)
 
-  // ─── Routes ─────────────────────────────────────────────────────────────────
+  // ─── Routes outside session scope (zero DB dependency — healthcheck safe) ────
+  //
+  // authPlugin is NOT wrapped with fp(), so its session middleware only applies
+  // within the child scope below. These three registrations are in the root scope
+  // and will NEVER trigger a session store DB query, making /healthz reliable
+  // regardless of database availability during blue-green deploys.
 
-  await app.register(fileRoutes)
-  await app.register(internalRoutes, { prefix: "/internal" })
-  await app.register(authRoutes)   // login/callback/logout are top-level paths
-  await app.register(guildRoutes, { prefix: "/api" })
-  await app.register(adminSettingsRoutes, { prefix: "/api/admin" })
-  await app.register(whitelistRoutes, { prefix: "/api/admin" })
-  await app.register(groupRoutes, { prefix: "/api/admin" })
-  await app.register(panelRoutes, { prefix: "/api/admin" })
-  await app.register(panelRoleRoutes, { prefix: "/api/admin" })
-  await app.register(categoryRoutes, { prefix: "/api/admin" })
-  await app.register(userRoutes, { prefix: "/api/admin" })
-  await app.register(playerRoutes, { prefix: "/api/admin" })
-  await app.register(auditRoutes, { prefix: "/api/admin" })
-  await app.register(notificationRoutes, { prefix: "/api/admin" })
-  await app.register(permissionsRoutes, { prefix: "/api/admin" })
-  await app.register(importExportRoutes, { prefix: "/api/admin" })
-  await app.register(roleSyncRoutes, { prefix: "/api/admin" })
-  await app.register(reconcileRoutes, { prefix: "/api/admin" })
-  await app.register(myWhitelistRoutes, { prefix: "/api" })
-  await app.register(steamRoutes, { prefix: "/api" })
-
-  // Health check
   app.get("/healthz", async () => ({
     status: "ok",
     guilds: discord.guildCount(),
     files: cache.fileCount(),
   }))
+
+  await app.register(fileRoutes)
+  await app.register(internalRoutes, { prefix: "/internal" })
+
+  // ─── Routes inside session scope ────────────────────────────────────────────
+  //
+  // authPlugin registers @fastify/cookie + @fastify/session + requireAuth decorators.
+  // Because it is NOT wrapped with fp(), those hooks are scoped here only.
+
+  await app.register(async (api) => {
+    await api.register(authPlugin)
+
+    await api.register(authRoutes)   // login/callback/logout
+    await api.register(guildRoutes, { prefix: "/api" })
+    await api.register(adminSettingsRoutes, { prefix: "/api/admin" })
+    await api.register(whitelistRoutes, { prefix: "/api/admin" })
+    await api.register(groupRoutes, { prefix: "/api/admin" })
+    await api.register(panelRoutes, { prefix: "/api/admin" })
+    await api.register(panelRoleRoutes, { prefix: "/api/admin" })
+    await api.register(categoryRoutes, { prefix: "/api/admin" })
+    await api.register(userRoutes, { prefix: "/api/admin" })
+    await api.register(playerRoutes, { prefix: "/api/admin" })
+    await api.register(auditRoutes, { prefix: "/api/admin" })
+    await api.register(notificationRoutes, { prefix: "/api/admin" })
+    await api.register(permissionsRoutes, { prefix: "/api/admin" })
+    await api.register(importExportRoutes, { prefix: "/api/admin" })
+    await api.register(roleSyncRoutes, { prefix: "/api/admin" })
+    await api.register(reconcileRoutes, { prefix: "/api/admin" })
+    await api.register(myWhitelistRoutes, { prefix: "/api" })
+    await api.register(steamRoutes, { prefix: "/api" })
+  })
 
   return app
 }
