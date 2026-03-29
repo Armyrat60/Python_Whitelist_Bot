@@ -75,20 +75,6 @@ export default function WhitelistsPage() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [syncing, setSyncing] = useState(false);
-
-  async function handleSyncFilenames() {
-    setSyncing(true);
-    try {
-      const res = await api.post<{ ok: boolean; updated: number }>("/api/admin/whitelists/sync-filenames", {});
-      toast.success(res.updated > 0 ? `Fixed ${res.updated} filename${res.updated !== 1 ? "s" : ""}` : "All filenames are already correct");
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch {
-      toast.error("Failed to sync filenames");
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   function handleCreate() {
     if (!newName.trim()) return;
@@ -213,10 +199,6 @@ export default function WhitelistsPage() {
           </DialogFooter>
         </DialogContent>
         </Dialog>
-        <Button variant="ghost" size="sm" onClick={handleSyncFilenames} disabled={syncing}>
-          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-          Fix All Filenames
-        </Button>
       </div>
     </div>
   );
