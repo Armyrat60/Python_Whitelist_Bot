@@ -139,6 +139,83 @@ export async function logSyncRun(
   )
 }
 
+// ─── Job queue helpers ────────────────────────────────────────────────────────
+
+export interface JobRow {
+  id:       number
+  guild_id: bigint
+  job_type: string
+  payload:  Record<string, unknown>
+}
+
+/**
+ * Claim the next N pending bridge_sync jobs.
+ * Atomically marks them as 'running' so concurrent workers don't double-process.
+ */
+export async function claimPendingJobs(limit: number): Promise<JobRow[]> {
+  const result = await pool.query<JobRow>(
+    `UPDATE job_queue
+     SET status     = 'running',
+         started_at = NOW()
+     WHERE id IN (
+       SELECT id FROM job_queue
+       WHERE status   = 'pending'
+         AND job_type = 'bridge_sync'
+       ORDER BY priority DESC, created_at ASC
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING id, guild_id, job_type, payload`,
+    [limit],
+  )
+  return result.rows
+}
+
+/** Mark a job as completed with an optional result payload. */
+export async function completeJob(
+  id: number,
+  result: Record<string, unknown>,
+): Promise<void> {
+  await pool.query(
+    `UPDATE job_queue
+     SET status       = 'done',
+         completed_at = NOW(),
+         result       = $2
+     WHERE id = $1`,
+    [id, JSON.stringify(result)],
+  )
+}
+
+/** Mark a job as failed with an error message. */
+export async function failJob(id: number, error: string): Promise<void> {
+  await pool.query(
+    `UPDATE job_queue
+     SET status       = 'failed',
+         completed_at = NOW(),
+         error        = $2
+     WHERE id = $1`,
+    [id, error],
+  )
+}
+
+/**
+ * Enqueue a bridge_sync job for a guild — but only if there is no
+ * pending or running job already queued for that guild.
+ */
+export async function enqueueIfIdle(guildId: bigint): Promise<void> {
+  await pool.query(
+    `INSERT INTO job_queue (guild_id, job_type, status, priority)
+     SELECT $1, 'bridge_sync', 'pending', 0
+     WHERE NOT EXISTS (
+       SELECT 1 FROM job_queue
+       WHERE guild_id = $1
+         AND job_type = 'bridge_sync'
+         AND status IN ('pending', 'running')
+     )`,
+    [guildId],
+  )
+}
+
 /** Close pool on graceful shutdown. */
 export async function closePG(): Promise<void> {
   await pool.end()

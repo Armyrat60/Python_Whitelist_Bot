@@ -21,6 +21,9 @@ export const config = {
 
   // Players per INSERT batch per guild (keeps memory bounded on large servers)
   BATCH_SIZE: parseInt(process.env.BATCH_SIZE ?? "500", 10),
+
+  // Max guilds syncing concurrently when processing the job queue
+  CONCURRENCY: parseInt(process.env.CONCURRENCY ?? "3", 10),
 }
 
 export function validateConfig() {

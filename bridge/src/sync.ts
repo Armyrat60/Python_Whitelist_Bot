@@ -1,14 +1,24 @@
 /**
  * Core sync logic.
  *
- * Reads all enabled guild configs from bridge_configs, then for each guild:
- *   1. Connects to that guild's SquadJS MySQL database
- *   2. Fetches all players from DBLog_Players
- *   3. Upserts them into squad_players in the whitelister PostgreSQL DB
- *   4. Updates last_sync_at / last_sync_status / last_sync_message
+ * On each cron tick (`runSync`):
+ *   1. Enqueue a bridge_sync job for every enabled guild that isn't already queued
+ *   2. Claim up to CONCURRENCY pending jobs and process them in parallel
+ *
+ * Job lifecycle: pending → running → done | failed
+ * Manual syncs (POST /sync-now) enqueue with higher priority (10 vs 0).
  */
 
-import { pool, ensureTable, upsertPlayers, logSyncRun } from "./db.js"
+import {
+  pool,
+  ensureTable,
+  upsertPlayers,
+  logSyncRun,
+  claimPendingJobs,
+  completeJob,
+  failJob,
+  enqueueIfIdle,
+} from "./db.js"
 import { fetchPlayersForGuild } from "./mysql.js"
 import { config } from "./config.js"
 
@@ -26,17 +36,16 @@ interface BridgeConfigRow {
 
 /** Fetch all enabled guild bridge configs from the DB. */
 async function loadEnabledConfigs(): Promise<BridgeConfigRow[]> {
-  const result = await pool.query<BridgeConfigRow[]>(
+  const result = await pool.query<BridgeConfigRow>(
     `SELECT id, guild_id, mysql_host, mysql_port, mysql_database,
             mysql_user, mysql_password, server_name, sync_interval_minutes
      FROM bridge_configs
      WHERE enabled = TRUE`,
   )
-  // pg returns { rows: [...] }
-  return (result as unknown as { rows: BridgeConfigRow[] }).rows
+  return result.rows
 }
 
-/** Update sync status after a run (success or error). */
+/** Update last_sync_at / status / message on the bridge_configs row. */
 async function updateSyncStatus(
   guildId: bigint,
   status:  "ok" | "error",
@@ -52,68 +61,95 @@ async function updateSyncStatus(
   )
 }
 
-/** Run a full sync across all enabled guilds. */
+/** Run the actual MySQL → PostgreSQL sync for one guild. */
+async function syncGuild(cfg: BridgeConfigRow): Promise<string> {
+  const label = `[bridge][guild=${cfg.guild_id}][server="${cfg.server_name}"]`
+
+  const players = await fetchPlayersForGuild({
+    host:     cfg.mysql_host,
+    port:     cfg.mysql_port,
+    database: cfg.mysql_database,
+    user:     cfg.mysql_user,
+    password: cfg.mysql_password,
+  })
+
+  console.log(`${label} Fetched ${players.length} player(s)`)
+
+  if (players.length === 0) {
+    const msg = "Connected — DBLog_Players is empty"
+    await updateSyncStatus(cfg.guild_id, "ok", msg)
+    return msg
+  }
+
+  let totalUpserted = 0
+  let totalLinked   = 0
+  const BATCH = config.BATCH_SIZE
+
+  for (let i = 0; i < players.length; i += BATCH) {
+    const batch = players.slice(i, i + BATCH).map((p) => ({
+      steamId:  p.steamID,
+      lastName: p.lastName,
+    }))
+    const { upserted, linked } = await upsertPlayers(cfg.guild_id, cfg.server_name, batch)
+    totalUpserted += upserted
+    totalLinked   += linked
+  }
+
+  const summary = `Synced ${players.length} player(s): ${totalUpserted} upserted, ${totalLinked} linked to Discord`
+  console.log(`${label} ${summary}`)
+  await updateSyncStatus(cfg.guild_id, "ok", summary)
+  await logSyncRun(cfg.guild_id, summary)
+  return summary
+}
+
+/** Process a single claimed job. */
+async function processJob(job: { id: number; guild_id: bigint }): Promise<void> {
+  const configs = await loadEnabledConfigs()
+  const cfg = configs.find((c) => c.guild_id === job.guild_id)
+
+  if (!cfg) {
+    await failJob(job.id, "Bridge config not found or disabled")
+    return
+  }
+
+  try {
+    const summary = await syncGuild(cfg)
+    await completeJob(job.id, { summary })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[bridge][guild=${job.guild_id}] Sync error: ${msg}`)
+    await updateSyncStatus(job.guild_id, "error", `Sync failed: ${msg}`)
+    await failJob(job.id, msg)
+  }
+}
+
+/** Main entry point — called by the cron scheduler. */
 export async function runSync(): Promise<void> {
   await ensureTable()
 
+  // 1. Enqueue a job for each enabled guild that isn't already queued
   const configs = await loadEnabledConfigs()
 
   if (configs.length === 0) {
     console.log("[bridge] No enabled bridge configs found — nothing to sync")
+  } else {
+    console.log(`[bridge] Enqueueing ${configs.length} guild(s) for sync...`)
+    for (const cfg of configs) {
+      await enqueueIfIdle(cfg.guild_id)
+    }
+  }
+
+  // 2. Claim and process pending jobs (up to CONCURRENCY at once)
+  const jobs = await claimPendingJobs(config.CONCURRENCY)
+
+  if (jobs.length === 0) {
+    console.log("[bridge] No pending jobs to process")
     return
   }
 
-  console.log(`[bridge] Syncing ${configs.length} guild(s)...`)
+  console.log(`[bridge] Processing ${jobs.length} job(s) concurrently (max=${config.CONCURRENCY})`)
 
-  for (const cfg of configs) {
-    const label = `[bridge][guild=${cfg.guild_id}][server="${cfg.server_name}"]`
+  await Promise.all(jobs.map(processJob))
 
-    let players
-    try {
-      players = await fetchPlayersForGuild({
-        host:     cfg.mysql_host,
-        port:     cfg.mysql_port,
-        database: cfg.mysql_database,
-        user:     cfg.mysql_user,
-        password: cfg.mysql_password,
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`${label} MySQL error: ${msg}`)
-      await updateSyncStatus(cfg.guild_id, "error", `MySQL connection failed: ${msg}`)
-      continue
-    }
-
-    console.log(`${label} Fetched ${players.length} player(s)`)
-
-    if (players.length === 0) {
-      await updateSyncStatus(cfg.guild_id, "ok", "Connected — DBLog_Players is empty")
-      continue
-    }
-
-    try {
-      let totalUpserted = 0
-      let totalLinked   = 0
-      const BATCH = config.BATCH_SIZE
-
-      for (let i = 0; i < players.length; i += BATCH) {
-        const batch = players.slice(i, i + BATCH).map((p) => ({
-          steamId:  p.steamID,
-          lastName: p.lastName,
-        }))
-        const { upserted, linked } = await upsertPlayers(cfg.guild_id, cfg.server_name, batch)
-        totalUpserted += upserted
-        totalLinked   += linked
-      }
-
-      const summary = `Synced ${players.length} player(s): ${totalUpserted} upserted, ${totalLinked} linked to Discord`
-      console.log(`${label} ${summary}`)
-      await updateSyncStatus(cfg.guild_id, "ok", summary)
-      await logSyncRun(cfg.guild_id, summary)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`${label} PG write error: ${msg}`)
-      await updateSyncStatus(cfg.guild_id, "error", `Sync write failed: ${msg}`)
-    }
-  }
+  console.log(`[bridge] Done — processed ${jobs.length} job(s)`)
 }

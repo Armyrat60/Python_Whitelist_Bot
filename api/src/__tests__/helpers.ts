@@ -109,6 +109,13 @@ export function makeMockPrisma() {
       upsert:     mockFn(),
       delete:     mockFn(),
     },
+    jobQueue: {
+      create:     mockFn(),
+      findUnique: mockFn(),
+      findMany:   mockList(),
+      update:     mockFn(),
+      count:      mockCount(),
+    },
     squadPlayer: {
       findMany:   mockList(),
       findFirst:  mockFn(),

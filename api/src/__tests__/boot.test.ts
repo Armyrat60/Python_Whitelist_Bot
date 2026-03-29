@@ -25,6 +25,8 @@ import playerRoutes          from '../routes/admin/players.js'
 import auditRoutes           from '../routes/admin/audit.js'
 import notificationRoutes    from '../routes/admin/notifications.js'
 import permissionsRoutes     from '../routes/admin/permissions.js'
+import bridgeRoutes          from '../routes/admin/bridge.js'
+import jobRoutes             from '../routes/admin/jobs.js'
 
 // Non-admin routes
 import { authRoutes }        from '../routes/auth.js'
@@ -58,6 +60,8 @@ describe('API boot', () => {
       await app.register(importExportRoutes,   { prefix: '/api/admin' })
       await app.register(roleSyncRoutes,       { prefix: '/api/admin' })
       await app.register(reconcileRoutes,      { prefix: '/api/admin' })
+      await app.register(bridgeRoutes,         { prefix: '/api/admin' })
+      await app.register(jobRoutes,            { prefix: '/api/admin' })
     })
 
     // App started successfully — close cleanly

@@ -122,6 +122,29 @@ export default async function bridgeRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── POST /bridge-config/sync-now ────────────────────────────────────────
+  // Enqueue an immediate bridge_sync job for this guild.
+
+  app.post("/bridge-config/sync-now", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const existing = await app.prisma.bridgeConfig.findUnique({ where: { guildId } })
+    if (!existing) return reply.code(404).send({ error: "No bridge config saved" })
+    if (!existing.enabled) return reply.code(400).send({ error: "Bridge is disabled — enable it first" })
+
+    const job = await app.prisma.jobQueue.create({
+      data: {
+        guildId,
+        jobType:  "bridge_sync",
+        payload:  {},
+        status:   "pending",
+        priority: 10,   // higher priority than cron-triggered syncs (which use 0)
+      },
+    })
+
+    return reply.send({ ok: true, job_id: job.id })
+  })
+
   // ── DELETE /bridge-config ────────────────────────────────────────────────
 
   app.delete("/bridge-config", { preHandler: adminHook }, async (req, reply) => {

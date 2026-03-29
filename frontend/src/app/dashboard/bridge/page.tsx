@@ -10,12 +10,15 @@ import {
   Trash2,
   RefreshCw,
   Clock,
+  Zap,
 } from "lucide-react";
 import {
   useBridgeConfig,
   useSaveBridgeConfig,
   useDeleteBridgeConfig,
   useTestBridgeConnection,
+  useSyncNow,
+  useJobStatus,
 } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +64,21 @@ export default function BridgePage() {
   const remove  = useDeleteBridgeConfig();
   const test    = useTestBridgeConnection();
 
+  const syncNow  = useSyncNow();
   const existing = data?.config ?? null;
+
+  // Track the most recently enqueued job for live status
+  const [activeJobId, setActiveJobId] = useState<number | null>(null);
+  const { data: jobData } = useJobStatus(activeJobId);
+  const activeJob = jobData?.job ?? null;
+
+  // Clear the job tracker once it finishes
+  useEffect(() => {
+    if (activeJob && (activeJob.status === "done" || activeJob.status === "failed")) {
+      const timer = setTimeout(() => setActiveJobId(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeJob?.status]);
 
   // Form state
   const [host,     setHost]     = useState("");
@@ -134,6 +151,16 @@ export default function BridgePage() {
       }
     } catch {
       toast.error("Test request failed");
+    }
+  }
+
+  async function handleSyncNow() {
+    try {
+      const result = await syncNow.mutateAsync();
+      setActiveJobId(result.job_id);
+      toast.success("Sync job queued");
+    } catch {
+      toast.error("Failed to queue sync");
     }
   }
 
@@ -291,6 +318,29 @@ export default function BridgePage() {
         </div>
       </div>
 
+      {/* Active job status */}
+      {activeJob && (
+        <div className={`rounded-lg border px-4 py-3 text-xs flex items-center gap-2 ${
+          activeJob.status === "done"
+            ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+            : activeJob.status === "failed"
+            ? "border-red-500/30 bg-red-500/5 text-red-400"
+            : "border-white/[0.08] bg-white/[0.02] text-muted-foreground"
+        }`}>
+          {(activeJob.status === "pending" || activeJob.status === "running") && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+          )}
+          {activeJob.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+          {activeJob.status === "failed" && <XCircle className="h-3.5 w-3.5 shrink-0" />}
+          <span>
+            {activeJob.status === "pending" && "Sync queued — waiting for worker..."}
+            {activeJob.status === "running" && "Syncing players..."}
+            {activeJob.status === "done" && (activeJob.result?.summary ?? "Sync complete")}
+            {activeJob.status === "failed" && `Sync failed: ${activeJob.error}`}
+          </span>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center gap-3">
         <Button
@@ -315,6 +365,21 @@ export default function BridgePage() {
           )}
           Test Connection
         </Button>
+
+        {existing && (
+          <Button
+            variant="outline"
+            onClick={handleSyncNow}
+            disabled={syncNow.isPending || activeJob?.status === "pending" || activeJob?.status === "running"}
+          >
+            {(syncNow.isPending || activeJob?.status === "pending" || activeJob?.status === "running") ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Zap className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Sync Now
+          </Button>
+        )}
 
         {existing && (
           <AlertDialog>

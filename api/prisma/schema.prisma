@@ -273,6 +273,24 @@ model BridgeConfig {
   @@map("bridge_configs")
 }
 
+model JobQueue {
+  id          Int       @id @default(autoincrement())
+  guildId     BigInt    @map("guild_id")
+  jobType     String    @map("job_type") @db.VarChar(50)
+  payload     Json      @default("{}")
+  status      String    @default("pending") @db.VarChar(20)
+  priority    Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  result      Json?
+  error       String?
+
+  @@index([guildId, status])
+  @@index([status, priority, createdAt])
+  @@map("job_queue")
+}
+
 model SquadPlayer {
   id           Int      @id @default(autoincrement())
   guildId      BigInt   @map("guild_id")

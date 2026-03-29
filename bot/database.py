@@ -514,6 +514,24 @@ POSTGRES_MIGRATIONS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_squad_players_guild ON squad_players (guild_id)",
     "CREATE INDEX IF NOT EXISTS idx_squad_players_discord ON squad_players (discord_id) WHERE discord_id IS NOT NULL",
+    # --- Job queue: async background jobs (bridge sync, role sync, etc.) ---
+    """
+    CREATE TABLE IF NOT EXISTS job_queue (
+        id           SERIAL PRIMARY KEY,
+        guild_id     BIGINT       NOT NULL,
+        job_type     VARCHAR(50)  NOT NULL,
+        payload      JSONB        NOT NULL DEFAULT '{}',
+        status       VARCHAR(20)  NOT NULL DEFAULT 'pending',
+        priority     INT          NOT NULL DEFAULT 0,
+        created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+        started_at   TIMESTAMP    NULL,
+        completed_at TIMESTAMP    NULL,
+        result       JSONB        NULL,
+        error        TEXT         NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_job_queue_guild_status ON job_queue (guild_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_job_queue_status_priority ON job_queue (status, priority, created_at)",
 ]
 
 

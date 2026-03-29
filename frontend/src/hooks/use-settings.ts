@@ -790,3 +790,36 @@ export function useTestBridgeConnection() {
       ),
   });
 }
+
+export function useSyncNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; job_id: number }>("/api/admin/bridge-config/sync-now", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bridge-config"] }),
+  });
+}
+
+export function useJobStatus(jobId: number | null) {
+  return useQuery<{
+    job: {
+      id: number;
+      job_type: string;
+      status: string;
+      created_at: string;
+      started_at: string | null;
+      completed_at: string | null;
+      result: { summary?: string } | null;
+      error: string | null;
+    };
+  }>({
+    queryKey: ["job", jobId],
+    queryFn: () => api.get(`/api/admin/jobs/${jobId}`),
+    enabled: jobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.job?.status;
+      // Keep polling while job is pending or running
+      return status === "pending" || status === "running" ? 1500 : false;
+    },
+  });
+}
