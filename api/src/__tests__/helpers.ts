@@ -186,7 +186,7 @@ export async function buildTestApp(
     req.session.username     = 'TestAdmin'
     req.session.activeGuildId = TEST_GUILD_ID
     req.session.guilds = [
-      { id: TEST_GUILD_ID, name: 'Test Guild', icon: null, isAdmin: true },
+      { id: TEST_GUILD_ID, name: 'Test Guild', icon: null, isAdmin: true, permissionLevel: 'admin' as const },
     ]
   })
 

@@ -111,9 +111,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       app.discord.fetchUserGuilds(accessToken),
     ])
 
-    // ── Build mutual-guild list with admin/mod check ──────────────────────────
+    // ── Build mutual-guild list with permission level ─────────────────────────
 
-    type SessionGuild = { id: string; name: string; icon: string | null; isAdmin: boolean }
+    type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer"
+    type SessionGuild = { id: string; name: string; icon: string | null; isAdmin: boolean; permissionLevel: PermissionLevel }
     const mutualGuilds: SessionGuild[] = []
 
     for (const ug of userGuilds) {
@@ -144,21 +145,36 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
       // Check mod roles from bot_settings
       const modRoleSetting = await app.prisma.botSetting.findUnique({
-        where: {
-          guildId_settingKey: {
-            guildId:    BigInt(ug.id),
-            settingKey: "mod_role_ids",
-          },
-        },
+        where: { guildId_settingKey: { guildId: BigInt(ug.id), settingKey: "mod_role_ids" } },
       })
       const modRoleIds = modRoleSetting?.settingValue?.split(",").filter(Boolean) ?? []
       const hasModRole = memberRoles.some((r) => modRoleIds.includes(r))
 
+      // Check explicit dashboard_permissions grant
+      const explicitGrant = await app.prisma.dashboardPermission.findUnique({
+        where: { guildId_discordId: { guildId: BigInt(ug.id), discordId: discordUser.id } },
+      })
+
+      // Resolve permission level (highest wins)
+      let permissionLevel: PermissionLevel
+      if (isOwner) {
+        permissionLevel = "owner"
+      } else if (hasAdminPerm || hasModRole) {
+        permissionLevel = "admin"
+      } else if (explicitGrant?.permissionLevel === "roster_manager") {
+        permissionLevel = "roster_manager"
+      } else if (explicitGrant?.permissionLevel === "viewer") {
+        permissionLevel = "viewer"
+      } else {
+        continue  // no access — skip this guild
+      }
+
       mutualGuilds.push({
-        id:      ug.id,
-        name:    ug.name,
-        icon:    ug.icon,
-        isAdmin: isOwner || hasAdminPerm || hasModRole,
+        id:              ug.id,
+        name:            ug.name,
+        icon:            ug.icon,
+        isAdmin:         permissionLevel === "owner" || permissionLevel === "admin",
+        permissionLevel,
       })
     }
 
@@ -188,13 +204,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     )
 
     return reply.send({
-      logged_in:       true,
-      user_id:         req.session.userId,
-      username:        req.session.username,
-      avatar:          req.session.avatar ?? null,
-      guilds:          req.session.guilds ?? [],
-      active_guild_id: req.session.activeGuildId ?? null,
-      is_mod:          activeGuild?.isAdmin ?? false,
+      logged_in:        true,
+      user_id:          req.session.userId,
+      username:         req.session.username,
+      avatar:           req.session.avatar ?? null,
+      guilds:           req.session.guilds ?? [],
+      active_guild_id:  req.session.activeGuildId ?? null,
+      is_mod:           activeGuild?.isAdmin ?? false,
+      permission_level: activeGuild?.permissionLevel ?? null,
     })
   })
 

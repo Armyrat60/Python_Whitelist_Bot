@@ -448,6 +448,21 @@ POSTGRES_MIGRATIONS = [
 
     # --- User notes column (may be absent on older deployments) ---
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS notes VARCHAR(500) NULL",
+
+    # --- Dashboard permissions (Phase 5) ---
+    """
+    CREATE TABLE IF NOT EXISTS dashboard_permissions (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        discord_id VARCHAR(32) NOT NULL,
+        discord_name VARCHAR(100),
+        permission_level VARCHAR(20) NOT NULL DEFAULT 'viewer',
+        granted_by VARCHAR(32),
+        granted_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (guild_id, discord_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_permissions_guild ON dashboard_permissions (guild_id)",
 ]
 
 

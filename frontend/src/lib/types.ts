@@ -1,9 +1,12 @@
+export type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer";
+
 export interface Guild {
   id: string;
   name: string;
   icon: string | null;
   is_mod: boolean;
   mod_reason?: string;
+  permissionLevel?: PermissionLevel;
 }
 
 export interface Session {
@@ -14,6 +17,16 @@ export interface Session {
   guilds: Guild[];
   active_guild_id: string;
   is_mod: boolean;
+  permission_level: PermissionLevel | null;
+}
+
+export interface DashboardPermission {
+  id: number;
+  discord_id: string;
+  discord_name: string | null;
+  permission_level: PermissionLevel;
+  granted_by: string | null;
+  granted_at: string;
 }
 
 export interface Whitelist {

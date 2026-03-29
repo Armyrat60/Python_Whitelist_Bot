@@ -58,6 +58,7 @@ const manageLinks = [
 
 const settingsLinks = [
   { href: "/dashboard/settings", label: "Settings", icon: Sliders },
+  { href: "/dashboard/permissions", label: "Permissions", icon: Shield },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
   { href: "/dashboard/audit", label: "Audit Log", icon: FileText },

@@ -19,14 +19,21 @@ declare module "@fastify/session" {
     username?: string
     avatar?: string
     activeGuildId?: string // Currently selected guild
-    guilds?: Array<{ id: string; name: string; icon: string | null; isAdmin: boolean }>
+    guilds?: Array<{
+      id: string
+      name: string
+      icon: string | null
+      isAdmin: boolean
+      permissionLevel: "owner" | "admin" | "roster_manager" | "viewer"
+    }>
   }
 }
 
 declare module "fastify" {
   interface FastifyInstance {
-    requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
-    requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    requireAuth:          (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    requireAdmin:         (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    requireRosterManager: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 }
 
@@ -138,6 +145,21 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
     const guild = req.session.guilds?.find((g) => g.id === req.session.activeGuildId)
     if (!guild?.isAdmin) {
       return reply.code(403).send({ error: "Not an admin of this guild" })
+    }
+  })
+
+  // requireRosterManager — allows owner, admin, and roster_manager
+  app.decorate("requireRosterManager", async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!req.session.userId) {
+      return reply.code(401).send({ error: "Not authenticated" })
+    }
+    if (!req.session.activeGuildId) {
+      return reply.code(400).send({ error: "No guild selected" })
+    }
+    const guild = req.session.guilds?.find((g) => g.id === req.session.activeGuildId)
+    const level = guild?.permissionLevel
+    if (!level || !["owner", "admin", "roster_manager"].includes(level)) {
+      return reply.code(403).send({ error: "Insufficient permissions" })
     }
   })
 })

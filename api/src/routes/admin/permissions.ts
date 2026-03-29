@@ -1,0 +1,132 @@
+/**
+ * Dashboard permissions routes.
+ * Manages who has dashboard access beyond the auto-detected admin/owner level.
+ *
+ * GET    /api/admin/permissions           — list all explicit grants for this guild
+ * POST   /api/admin/permissions           — grant access to a Discord user
+ * PUT    /api/admin/permissions/:discordId — change a user's permission level
+ * DELETE /api/admin/permissions/:discordId — revoke a user's dashboard access
+ *
+ * Permission levels:
+ *   owner          — guild owner (cannot be granted/revoked, read-only display)
+ *   admin          — MANAGE_GUILD / mod role (auto-detected, not stored here)
+ *   roster_manager — can manage Manual Roster categories (stored in this table)
+ *   viewer         — read-only dashboard access (stored in this table)
+ */
+import type { FastifyPluginAsync } from "fastify"
+
+const VALID_LEVELS = ["roster_manager", "viewer"] as const
+type GrantableLevel = typeof VALID_LEVELS[number]
+
+const permissionsRoutes: FastifyPluginAsync = async (app) => {
+  // ── GET /permissions ────────────────────────────────────────────────────────
+
+  app.get("/permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const rows = await app.prisma.dashboardPermission.findMany({
+      where: { guildId },
+      orderBy: { grantedAt: "asc" },
+    })
+
+    return reply.send(rows.map((r) => ({
+      id:               r.id,
+      discord_id:       r.discordId,
+      discord_name:     r.discordName,
+      permission_level: r.permissionLevel,
+      granted_by:       r.grantedBy,
+      granted_at:       r.grantedAt,
+    })))
+  })
+
+  // ── POST /permissions ───────────────────────────────────────────────────────
+
+  app.post<{
+    Body: { discord_id: string; discord_name?: string; permission_level: string }
+  }>("/permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const { discord_id, discord_name, permission_level } = req.body
+
+    if (!discord_id) {
+      return reply.code(400).send({ error: "discord_id is required" })
+    }
+    if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
+      return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+
+    const row = await app.prisma.dashboardPermission.upsert({
+      where:  { guildId_discordId: { guildId, discordId: discord_id } },
+      create: {
+        guildId,
+        discordId:       discord_id,
+        discordName:     discord_name ?? null,
+        permissionLevel: permission_level,
+        grantedBy:       req.session.userId ?? null,
+      },
+      update: {
+        discordName:     discord_name ?? undefined,
+        permissionLevel: permission_level,
+        grantedBy:       req.session.userId ?? null,
+        grantedAt:       new Date(),
+      },
+    })
+
+    return reply.code(201).send({
+      id:               row.id,
+      discord_id:       row.discordId,
+      discord_name:     row.discordName,
+      permission_level: row.permissionLevel,
+      granted_by:       row.grantedBy,
+      granted_at:       row.grantedAt,
+    })
+  })
+
+  // ── PUT /permissions/:discordId ─────────────────────────────────────────────
+
+  app.put<{
+    Params: { discordId: string }
+    Body:   { permission_level: string }
+  }>("/permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId   = BigInt(req.session.activeGuildId!)
+    const discordId = req.params.discordId
+    const { permission_level } = req.body
+
+    if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
+      return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+
+    const existing = await app.prisma.dashboardPermission.findUnique({
+      where: { guildId_discordId: { guildId, discordId } },
+    })
+    if (!existing) return reply.code(404).send({ error: "Permission grant not found" })
+
+    const updated = await app.prisma.dashboardPermission.update({
+      where: { guildId_discordId: { guildId, discordId } },
+      data:  { permissionLevel: permission_level },
+    })
+
+    return reply.send({ ok: true, permission_level: updated.permissionLevel })
+  })
+
+  // ── DELETE /permissions/:discordId ──────────────────────────────────────────
+
+  app.delete<{
+    Params: { discordId: string }
+  }>("/permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId   = BigInt(req.session.activeGuildId!)
+    const discordId = req.params.discordId
+
+    const existing = await app.prisma.dashboardPermission.findUnique({
+      where: { guildId_discordId: { guildId, discordId } },
+    })
+    if (!existing) return reply.code(404).send({ error: "Permission grant not found" })
+
+    await app.prisma.dashboardPermission.delete({
+      where: { guildId_discordId: { guildId, discordId } },
+    })
+
+    return reply.send({ ok: true })
+  })
+}
+
+export default permissionsRoutes

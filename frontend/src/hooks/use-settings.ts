@@ -19,6 +19,8 @@ import type {
   AuditEntry,
   WhitelistCategory,
   CategoryManager,
+  DashboardPermission,
+  PermissionLevel,
 } from "@/lib/types";
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
@@ -675,5 +677,40 @@ export function useSaveNotifications() {
 export function useTriggerReport() {
   return useMutation({
     mutationFn: () => api.post("/api/admin/report", {}),
+  });
+}
+
+// ─── Dashboard Permissions ──────────────────────────────────────────────────
+
+export function usePermissions() {
+  return useQuery<DashboardPermission[]>({
+    queryKey: ["permissions"],
+    queryFn: () => api.get<DashboardPermission[]>("/api/admin/permissions"),
+  });
+}
+
+export function useGrantPermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { discord_id: string; discord_name?: string; permission_level: PermissionLevel }) =>
+      api.post<DashboardPermission>("/api/admin/permissions", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
+  });
+}
+
+export function useUpdatePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ discordId, permission_level }: { discordId: string; permission_level: PermissionLevel }) =>
+      api.put(`/api/admin/permissions/${discordId}`, { permission_level }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
+  });
+}
+
+export function useRevokePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (discordId: string) => api.delete(`/api/admin/permissions/${discordId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
 }

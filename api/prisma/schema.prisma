@@ -217,6 +217,20 @@ model NotificationRouting {
   @@map("notification_routing")
 }
 
+model DashboardPermission {
+  id              Int      @id @default(autoincrement())
+  guildId         BigInt   @map("guild_id")
+  discordId       String   @map("discord_id") @db.VarChar(32)
+  discordName     String?  @map("discord_name") @db.VarChar(100)
+  permissionLevel String   @default("viewer") @map("permission_level") @db.VarChar(20)
+  grantedBy       String?  @map("granted_by") @db.VarChar(32)
+  grantedAt       DateTime @default(now()) @map("granted_at")
+
+  @@unique([guildId, discordId])
+  @@index([guildId])
+  @@map("dashboard_permissions")
+}
+
 model SteamNameCache {
   steamId     String   @id @map("steam_id") @db.VarChar(20)
   personaName String   @map("persona_name") @db.VarChar(255)
