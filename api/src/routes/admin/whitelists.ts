@@ -91,6 +91,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
       output_filename?: string
       squad_group?: string
       default_slot_limit?: number
+      is_manual?: boolean
     }
 
     if (!body.name || typeof body.name !== "string") {
@@ -133,6 +134,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
         defaultSlotLimit: body.default_slot_limit ?? 1,
         stackRoles:       false,
         isDefault:        false,
+        isManual:         body.is_manual         ?? false,
         createdAt:        new Date(),
         updatedAt:        new Date(),
       }
@@ -171,6 +173,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
       default_slot_limit: "defaultSlotLimit",
       squad_group:      "squadGroup",
       panel_message_id: "panelMessageId",
+      is_manual:        "isManual",
     }
 
     const data: Record<string, unknown> = { updatedAt: new Date() }

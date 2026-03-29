@@ -16,6 +16,8 @@ import type {
   HealthStatus,
   WhitelistUser,
   AuditEntry,
+  WhitelistCategory,
+  CategoryManager,
 } from "@/lib/types";
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ interface SettingsResponse {
     squad_group: string;
     is_default: boolean;
     url: string;
+    is_manual: boolean;
   }>;
   squad_groups: string[];
   squad_permissions: Record<string, string>;
@@ -65,6 +68,7 @@ export function useWhitelists() {
         output_filename: tc.output_filename,
         is_default: tc.is_default,
         url: tc.url,
+        is_manual: tc.is_manual,
       }))
     : [];
   return { data: whitelists, ...rest };
@@ -275,6 +279,86 @@ export function useDeleteWhitelist() {
       qc.invalidateQueries({ queryKey: ["health"] });
       qc.invalidateQueries({ queryKey: ["panels"] });
     },
+  });
+}
+
+// ─── Whitelist category hooks ─────────────────────────────────────────────
+
+export function useCategories(whitelistId: number | null) {
+  return useQuery<WhitelistCategory[]>({
+    queryKey: ["categories", whitelistId],
+    queryFn: async () => {
+      const res = await api.get<{ categories: WhitelistCategory[] }>(
+        `/api/admin/whitelists/${whitelistId}/categories`
+      );
+      return res.categories;
+    },
+    enabled: whitelistId !== null,
+  });
+}
+
+export function useCreateCategory(whitelistId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; slot_limit?: number | null; sort_order?: number }) =>
+      api.post(`/api/admin/whitelists/${whitelistId}/categories`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories", whitelistId] }),
+  });
+}
+
+export function useUpdateCategory(whitelistId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; slot_limit?: number | null; sort_order?: number }) =>
+      api.put(`/api/admin/whitelists/${whitelistId}/categories/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories", whitelistId] }),
+  });
+}
+
+export function useDeleteCategory(whitelistId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (categoryId: number) =>
+      api.delete(`/api/admin/whitelists/${whitelistId}/categories/${categoryId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories", whitelistId] }),
+  });
+}
+
+export function useCategoryManagers(whitelistId: number, categoryId: number | null) {
+  return useQuery<CategoryManager[]>({
+    queryKey: ["category-managers", whitelistId, categoryId],
+    queryFn: async () => {
+      const res = await api.get<{ managers: CategoryManager[] }>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/managers`
+      );
+      return res.managers;
+    },
+    enabled: categoryId !== null,
+  });
+}
+
+export function useAddCategoryManager(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { discord_id: string; discord_name: string }) =>
+      api.post(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/managers`,
+        data
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["category-managers", whitelistId, categoryId] }),
+  });
+}
+
+export function useRemoveCategoryManager(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (discordId: string) =>
+      api.delete(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/managers/${discordId}`
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["category-managers", whitelistId, categoryId] }),
   });
 }
 

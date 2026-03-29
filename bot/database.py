@@ -272,6 +272,29 @@ POSTGRES_SCHEMA = [
         PRIMARY KEY (guild_id, event_type)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS whitelist_categories (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        whitelist_id INTEGER NOT NULL REFERENCES whitelists(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        slot_limit INTEGER NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (whitelist_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS category_managers (
+        id SERIAL PRIMARY KEY,
+        category_id INTEGER NOT NULL REFERENCES whitelist_categories(id) ON DELETE CASCADE,
+        discord_id BIGINT NOT NULL,
+        discord_name VARCHAR(255) NOT NULL,
+        added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (category_id, discord_id)
+    )
+    """,
 ]
 
 # ─── Migration statements ────────────────────────────────────────────────────
@@ -416,6 +439,15 @@ POSTGRES_MIGRATIONS = [
     "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS message_id BIGINT NULL",
 
     "ALTER TABLE panels DROP COLUMN IF EXISTS tier_category_id",
+
+    # --- Manual whitelist flag ---
+    "ALTER TABLE whitelists ADD COLUMN IF NOT EXISTS is_manual BOOLEAN NOT NULL DEFAULT FALSE",
+
+    # --- Category assignment on whitelist users ---
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS category_id INTEGER NULL REFERENCES whitelist_categories(id) ON DELETE SET NULL",
+
+    # --- User notes column (may be absent on older deployments) ---
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS notes VARCHAR(500) NULL",
 ]
 
 
@@ -565,7 +597,7 @@ class Database:
     _WHITELIST_COLUMNS = (
         "id", "guild_id", "name", "slug", "enabled", "panel_channel_id",
         "panel_message_id", "log_channel_id", "squad_group", "output_filename",
-        "default_slot_limit", "stack_roles", "is_default", "created_at", "updated_at",
+        "default_slot_limit", "stack_roles", "is_default", "is_manual", "created_at", "updated_at",
     )
 
     def _row_to_whitelist(self, row: tuple) -> Dict[str, Any]:
@@ -574,6 +606,7 @@ class Database:
         d["enabled"] = bool(d["enabled"])
         d["stack_roles"] = bool(d["stack_roles"])
         d["is_default"] = bool(d["is_default"])
+        d["is_manual"] = bool(d.get("is_manual", False))
         d["default_slot_limit"] = int(d["default_slot_limit"])
         return d
 
@@ -610,7 +643,7 @@ class Database:
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
-                   stack_roles, is_default, created_at, updated_at
+                   stack_roles, is_default, is_manual, created_at, updated_at
             FROM whitelists WHERE id=%s
             """,
             (whitelist_id,),
@@ -622,7 +655,7 @@ class Database:
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
-                   stack_roles, is_default, created_at, updated_at
+                   stack_roles, is_default, is_manual, created_at, updated_at
             FROM whitelists WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
             """,
@@ -635,7 +668,7 @@ class Database:
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
-                   stack_roles, is_default, created_at, updated_at
+                   stack_roles, is_default, is_manual, created_at, updated_at
             FROM whitelists WHERE guild_id=%s AND slug=%s
             """,
             (guild_id, slug),
@@ -647,7 +680,7 @@ class Database:
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
-                   stack_roles, is_default, created_at, updated_at
+                   stack_roles, is_default, is_manual, created_at, updated_at
             FROM whitelists WHERE id=%s
             """,
             (whitelist_id,),
@@ -659,7 +692,7 @@ class Database:
             """
             SELECT id, guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
                    log_channel_id, squad_group, output_filename, default_slot_limit,
-                   stack_roles, is_default, created_at, updated_at
+                   stack_roles, is_default, is_manual, created_at, updated_at
             FROM whitelists WHERE guild_id=%s AND is_default=TRUE LIMIT 1
             """,
             (guild_id,),
@@ -670,9 +703,9 @@ class Database:
         allowed = {
             "name", "slug", "enabled", "panel_channel_id", "panel_message_id",
             "log_channel_id", "squad_group", "output_filename", "default_slot_limit",
-            "stack_roles", "is_default",
+            "stack_roles", "is_default", "is_manual",
         }
-        bool_cols = {"enabled", "stack_roles", "is_default"}
+        bool_cols = {"enabled", "stack_roles", "is_default", "is_manual"}
         parts = []
         params = []
         for key, value in kwargs.items():
@@ -693,6 +726,108 @@ class Database:
 
     async def delete_whitelist(self, whitelist_id: int):
         await self.execute("DELETE FROM whitelists WHERE id=%s", (whitelist_id,))
+
+    # ── Categories ──
+
+    _CATEGORY_COLUMNS = ("id", "guild_id", "whitelist_id", "name", "slot_limit", "sort_order", "created_at", "updated_at")
+
+    def _row_to_category(self, row: tuple) -> Dict[str, Any]:
+        d = dict(zip(self._CATEGORY_COLUMNS, row))
+        if d.get("slot_limit") is not None:
+            d["slot_limit"] = int(d["slot_limit"])
+        d["sort_order"] = int(d["sort_order"])
+        return d
+
+    async def get_categories(self, guild_id: int, whitelist_id: int) -> List[Dict[str, Any]]:
+        rows = await self.fetchall(
+            """
+            SELECT id, guild_id, whitelist_id, name, slot_limit, sort_order, created_at, updated_at
+            FROM whitelist_categories
+            WHERE guild_id=%s AND whitelist_id=%s
+            ORDER BY sort_order ASC, name ASC
+            """,
+            (guild_id, whitelist_id),
+        )
+        return [self._row_to_category(r) for r in rows]
+
+    async def create_category(self, guild_id: int, whitelist_id: int, name: str,
+                               slot_limit: Optional[int] = None, sort_order: int = 0) -> Dict[str, Any]:
+        now = utcnow()
+        row = await self.execute_returning(
+            """
+            INSERT INTO whitelist_categories (guild_id, whitelist_id, name, slot_limit, sort_order, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, guild_id, whitelist_id, name, slot_limit, sort_order, created_at, updated_at
+            """,
+            (guild_id, whitelist_id, name, slot_limit, sort_order, now, now),
+        )
+        return self._row_to_category(row)
+
+    async def update_category(self, category_id: int, name: Optional[str] = None,
+                               slot_limit: Optional[int] = None, sort_order: Optional[int] = None) -> Dict[str, Any]:
+        parts = []
+        params = []
+        if name is not None:
+            parts.append("name=%s")
+            params.append(name)
+        if slot_limit is not None:
+            parts.append("slot_limit=%s")
+            params.append(slot_limit)
+        if sort_order is not None:
+            parts.append("sort_order=%s")
+            params.append(sort_order)
+        parts.append("updated_at=%s")
+        params.append(utcnow())
+        params.append(category_id)
+        await self.execute(
+            f"UPDATE whitelist_categories SET {', '.join(parts)} WHERE id=%s",
+            tuple(params),
+        )
+        row = await self.fetchone(
+            """
+            SELECT id, guild_id, whitelist_id, name, slot_limit, sort_order, created_at, updated_at
+            FROM whitelist_categories WHERE id=%s
+            """,
+            (category_id,),
+        )
+        return self._row_to_category(row) if row else {}
+
+    async def delete_category(self, category_id: int):
+        await self.execute("DELETE FROM whitelist_categories WHERE id=%s", (category_id,))
+
+    _CATEGORY_MANAGER_COLUMNS = ("id", "category_id", "discord_id", "discord_name", "added_at")
+
+    def _row_to_category_manager(self, row: tuple) -> Dict[str, Any]:
+        return dict(zip(self._CATEGORY_MANAGER_COLUMNS, row))
+
+    async def get_category_managers(self, category_id: int) -> List[Dict[str, Any]]:
+        rows = await self.fetchall(
+            """
+            SELECT id, category_id, discord_id, discord_name, added_at
+            FROM category_managers WHERE category_id=%s
+            ORDER BY added_at ASC
+            """,
+            (category_id,),
+        )
+        return [self._row_to_category_manager(r) for r in rows]
+
+    async def add_category_manager(self, category_id: int, discord_id: int, discord_name: str) -> Dict[str, Any]:
+        row = await self.execute_returning(
+            """
+            INSERT INTO category_managers (category_id, discord_id, discord_name)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (category_id, discord_id) DO UPDATE SET discord_name=EXCLUDED.discord_name
+            RETURNING id, category_id, discord_id, discord_name, added_at
+            """,
+            (category_id, discord_id, discord_name),
+        )
+        return self._row_to_category_manager(row)
+
+    async def remove_category_manager(self, category_id: int, discord_id: int):
+        await self.execute(
+            "DELETE FROM category_managers WHERE category_id=%s AND discord_id=%s",
+            (category_id, discord_id),
+        )
 
     # ── Panels ──
 

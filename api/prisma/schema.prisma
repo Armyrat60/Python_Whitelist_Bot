@@ -31,15 +31,48 @@ model Whitelist {
   defaultSlotLimit Int      @default(1) @map("default_slot_limit")
   stackRoles       Boolean  @default(false) @map("stack_roles")
   isDefault        Boolean  @default(false) @map("is_default")
+  isManual         Boolean  @default(false) @map("is_manual")
   createdAt        DateTime @map("created_at")
   updatedAt        DateTime @map("updated_at")
 
   panels          Panel[]
   users           WhitelistUser[]
   identifiers     WhitelistIdentifier[]
+  categories      WhitelistCategory[]
 
   @@unique([guildId, slug])
   @@map("whitelists")
+}
+
+model WhitelistCategory {
+  id          Int      @id @default(autoincrement())
+  guildId     BigInt   @map("guild_id")
+  whitelistId Int      @map("whitelist_id")
+  name        String   @db.VarChar(100)
+  slotLimit   Int?     @map("slot_limit")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  whitelist Whitelist          @relation(fields: [whitelistId], references: [id], onDelete: Cascade)
+  managers  CategoryManager[]
+  users     WhitelistUser[]
+
+  @@unique([whitelistId, name])
+  @@map("whitelist_categories")
+}
+
+model CategoryManager {
+  id          Int      @id @default(autoincrement())
+  categoryId  Int      @map("category_id")
+  discordId   BigInt   @map("discord_id")
+  discordName String   @map("discord_name") @db.VarChar(255)
+  addedAt     DateTime @default(now()) @map("added_at")
+
+  category WhitelistCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, discordId])
+  @@map("category_managers")
 }
 
 model PanelRole {
@@ -77,6 +110,8 @@ model WhitelistUser {
   expiresAt          DateTime? @map("expires_at")
   createdVia         String?  @map("created_via") @db.VarChar(50)
   notes              String?  @db.VarChar(500)
+  categoryId         Int?     @map("category_id")
+  category           WhitelistCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   whitelist          Whitelist @relation(fields: [whitelistId], references: [id])
 

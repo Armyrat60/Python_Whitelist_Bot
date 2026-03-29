@@ -81,7 +81,10 @@ export default async function userRoutes(app: FastifyInstance) {
       prisma.whitelistUser.count({ where }),
       prisma.whitelistUser.findMany({
         where,
-        include: { whitelist: { select: { slug: true, name: true } } },
+        include: {
+          whitelist: { select: { slug: true, name: true } },
+          category:  { select: { id: true, name: true } },
+        },
         orderBy: { discordName: "asc" },
         take:    perPage,
         skip:    (page - 1) * perPage,
@@ -123,6 +126,8 @@ export default async function userRoutes(app: FastifyInstance) {
         expires_at:           u.expiresAt,
         created_via:          u.createdVia,
         notes:                u.notes,
+        category_id:          u.categoryId ?? null,
+        category_name:        u.category?.name ?? null,
         steam_ids:            idents.steam_ids,
         eos_ids:              idents.eos_ids,
       }
@@ -150,6 +155,7 @@ export default async function userRoutes(app: FastifyInstance) {
       slot_limit_override?: number | null
       expires_at?:          string | null
       notes?:               string | null
+      category_id?:         number | null
     }
 
     if (!body.discord_id || !body.discord_name || !body.whitelist_slug) {
@@ -173,6 +179,7 @@ export default async function userRoutes(app: FastifyInstance) {
           slotLimitOverride: body.slot_limit_override ?? null,
           expiresAt:         body.expires_at ? new Date(body.expires_at) : null,
           notes:             body.notes ?? null,
+          categoryId:        body.category_id ?? null,
           updatedAt:         now,
         },
         create: {
@@ -185,6 +192,7 @@ export default async function userRoutes(app: FastifyInstance) {
           effectiveSlotLimit: body.slot_limit_override ?? wl.defaultSlotLimit,
           expiresAt:         body.expires_at ? new Date(body.expires_at) : null,
           notes:             body.notes ?? null,
+          categoryId:        body.category_id ?? null,
           createdAt:         now,
           updatedAt:         now,
           createdVia:        "admin",
@@ -260,6 +268,7 @@ export default async function userRoutes(app: FastifyInstance) {
       slot_limit_override?: number | null
       expires_at?:          string | null
       notes?:               string | null
+      category_id?:         number | null
     }
 
     const wl = await prisma.whitelist.findUnique({
@@ -277,6 +286,7 @@ export default async function userRoutes(app: FastifyInstance) {
     if (body.slot_limit_override !== undefined) data.slotLimitOverride = body.slot_limit_override
     if (body.expires_at          !== undefined) data.expiresAt         = body.expires_at ? new Date(body.expires_at) : null
     if (body.notes               !== undefined) data.notes             = body.notes ?? null
+    if (body.category_id         !== undefined) data.categoryId        = body.category_id ?? null
 
     await prisma.whitelistUser.update({
       where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },

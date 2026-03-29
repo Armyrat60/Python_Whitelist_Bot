@@ -27,6 +27,27 @@ export interface Whitelist {
   output_filename: string;
   is_default: boolean;
   url: string;
+  is_manual?: boolean;
+}
+
+export interface WhitelistCategory {
+  id: number;
+  whitelist_id: number;
+  name: string;
+  slot_limit: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  manager_count: number;
+  user_count: number;
+}
+
+export interface CategoryManager {
+  id: number;
+  category_id: number;
+  discord_id: string;
+  discord_name: string;
+  added_at: string;
 }
 
 export interface Panel {

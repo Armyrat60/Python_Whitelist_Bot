@@ -11,6 +11,13 @@ import {
   Check,
   X,
   RefreshCw,
+  BookUser,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  UserPlus,
+  UserMinus,
+  Pencil,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -18,15 +25,23 @@ import {
   useToggleWhitelist,
   useCreateWhitelist,
   useDeleteWhitelist,
+  useCategories,
+  useCreateCategory,
+  useUpdateCategory,
+  useDeleteCategory,
+  useCategoryManagers,
+  useAddCategoryManager,
+  useRemoveCategoryManager,
 } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
-import type { Whitelist, SquadGroup } from "@/lib/types";
+import type { Whitelist, SquadGroup, WhitelistCategory } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
@@ -74,16 +89,18 @@ export default function WhitelistsPage() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newIsManual, setNewIsManual] = useState(false);
 
   function handleCreate() {
     if (!newName.trim()) return;
     const slug = slugify(newName.trim());
     createWhitelist.mutate(
-      { name: newName.trim(), output_filename: `${slug}.txt` },
+      { name: newName.trim(), output_filename: `${slug}.txt`, is_manual: newIsManual },
       {
         onSuccess: () => {
           toast.success("Whitelist created");
           setNewName("");
+          setNewIsManual(false);
           setCreateOpen(false);
         },
         onError: () => toast.error("Failed to create whitelist"),
@@ -187,6 +204,16 @@ export default function WhitelistsPage() {
                 placeholder="e.g. Tournament Whitelist"
               />
             </div>
+            <div className="flex items-center justify-between rounded-lg border border-white/[0.06] p-3">
+              <div>
+                <p className="text-sm font-medium">Manual Roster</p>
+                <p className="text-xs text-muted-foreground">Admin-curated list with named categories. No Discord role required.</p>
+              </div>
+              <Switch
+                checked={newIsManual}
+                onCheckedChange={setNewIsManual}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -271,32 +298,22 @@ function WhitelistCard({
               {whitelist.name}
             </span>
           )}
-          <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0 ml-auto" title="Whitelist ID">
-            #{whitelist.id}
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {whitelist.is_manual && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Roster</Badge>
+            )}
+            <span className="text-[10px] font-mono text-muted-foreground/40 select-all" title="Whitelist ID">
+              #{whitelist.id}
+            </span>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Squad Group</span>
-          <span className="font-medium">{whitelist.squad_group || "\u2014"}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Output File</span>
-          <span className="font-medium font-mono text-xs">
-            {whitelist.output_filename || "\u2014"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex-1 truncate text-xs font-mono text-muted-foreground">
-            {url || <span className="italic text-muted-foreground/50">URL pending deploy…</span>}
-          </span>
-          {url && (
-            <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">
-              <Copy className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
+        {whitelist.is_manual ? (
+          <ManualWhitelistContent whitelist={whitelist} />
+        ) : (
+          <RoleWhitelistContent whitelist={whitelist} url={url} onCopy={copyUrl} />
+        )}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
         <div className="flex items-center gap-2">
@@ -309,7 +326,11 @@ function WhitelistCard({
           </span>
         </div>
         <div className="ml-auto flex gap-2">
-          <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
+          {whitelist.is_manual ? (
+            <RosterManagerSheet whitelist={whitelist} />
+          ) : (
+            <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
+          )}
           <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -340,9 +361,471 @@ function WhitelistCard({
   );
 }
 
+function RoleWhitelistContent({ whitelist, url, onCopy }: { whitelist: Whitelist; url: string; onCopy: () => void }) {
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Squad Group</span>
+        <span className="font-medium">{whitelist.squad_group || "\u2014"}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Output File</span>
+        <span className="font-medium font-mono text-xs">
+          {whitelist.output_filename || "\u2014"}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="flex-1 truncate text-xs font-mono text-muted-foreground">
+          {url || <span className="italic text-muted-foreground/50">URL pending deploy…</span>}
+        </span>
+        {url && (
+          <Button variant="ghost" size="icon-xs" onClick={onCopy} title="Copy URL">
+            <Copy className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ManualWhitelistContent({ whitelist }: { whitelist: Whitelist }) {
+  const { data: categories } = useCategories(whitelist.id);
+  const totalUsers = categories?.reduce((sum, c) => sum + c.user_count, 0) ?? 0;
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Squad Group</span>
+        <span className="font-medium">{whitelist.squad_group || "\u2014"}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Categories</span>
+        <span className="font-medium">{categories?.length ?? "\u2014"}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Total Entries</span>
+        <span className="font-medium">{totalUsers}</span>
+      </div>
+    </>
+  );
+}
+
 function slugify(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
 }
+
+// ─── Roster Manager Sheet ─────────────────────────────────────────────────────
+
+function RosterManagerSheet({ whitelist }: { whitelist: Whitelist }) {
+  const { data: categories, isLoading } = useCategories(whitelist.id);
+  const createCategory = useCreateCategory(whitelist.id);
+  const updateCategory = useUpdateCategory(whitelist.id);
+  const deleteCategory = useDeleteCategory(whitelist.id);
+
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatSlotLimit, setNewCatSlotLimit] = useState("");
+  const [addCatOpen, setAddCatOpen] = useState(false);
+  const [expandedCatId, setExpandedCatId] = useState<number | null>(null);
+  const [editingCatId, setEditingCatId] = useState<number | null>(null);
+  const [editCatName, setEditCatName] = useState("");
+  const [editCatSlotLimit, setEditCatSlotLimit] = useState("");
+
+  function handleAddCategory() {
+    if (!newCatName.trim()) return;
+    createCategory.mutate(
+      {
+        name: newCatName.trim(),
+        slot_limit: newCatSlotLimit ? parseInt(newCatSlotLimit, 10) : null,
+      },
+      {
+        onSuccess: () => {
+          toast.success("Category created");
+          setNewCatName("");
+          setNewCatSlotLimit("");
+          setAddCatOpen(false);
+        },
+        onError: () => toast.error("Failed to create category"),
+      }
+    );
+  }
+
+  function startEditCat(cat: WhitelistCategory) {
+    setEditingCatId(cat.id);
+    setEditCatName(cat.name);
+    setEditCatSlotLimit(cat.slot_limit != null ? String(cat.slot_limit) : "");
+  }
+
+  function handleSaveCat(cat: WhitelistCategory) {
+    updateCategory.mutate(
+      {
+        id: cat.id,
+        name: editCatName.trim() || cat.name,
+        slot_limit: editCatSlotLimit ? parseInt(editCatSlotLimit, 10) : null,
+      },
+      {
+        onSuccess: () => {
+          toast.success("Category updated");
+          setEditingCatId(null);
+        },
+        onError: () => toast.error("Failed to update category"),
+      }
+    );
+  }
+
+  return (
+    <Sheet>
+      <SheetTrigger render={<Button size="sm" variant="outline" />}>
+        <BookUser className="mr-1.5 h-3.5 w-3.5" />
+        Manage Roster
+      </SheetTrigger>
+      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>{whitelist.name} — Roster</SheetTitle>
+          <SheetDescription>
+            Manage categories and their designated managers.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-3 p-4">
+          {isLoading ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : !categories || categories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.08] py-10 text-center">
+              <p className="text-sm font-medium">No categories yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">Add a category to start building this roster.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat) => (
+                <CategoryRow
+                  key={cat.id}
+                  cat={cat}
+                  whitelistId={whitelist.id}
+                  isExpanded={expandedCatId === cat.id}
+                  isEditing={editingCatId === cat.id}
+                  editCatName={editCatName}
+                  editCatSlotLimit={editCatSlotLimit}
+                  onToggleExpand={() =>
+                    setExpandedCatId(expandedCatId === cat.id ? null : cat.id)
+                  }
+                  onStartEdit={() => startEditCat(cat)}
+                  onCancelEdit={() => setEditingCatId(null)}
+                  onSaveEdit={() => handleSaveCat(cat)}
+                  onEditName={setEditCatName}
+                  onEditSlotLimit={setEditCatSlotLimit}
+                  onDelete={() =>
+                    deleteCategory.mutate(cat.id, {
+                      onSuccess: () => {
+                        toast.success("Category deleted");
+                        if (expandedCatId === cat.id) setExpandedCatId(null);
+                      },
+                      onError: () => toast.error("Failed to delete category"),
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
+
+          {addCatOpen ? (
+            <div className="rounded-lg border border-white/[0.08] p-3 space-y-2">
+              <p className="text-sm font-medium">New Category</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Name</Label>
+                <Input
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="e.g. [SquadName]"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Slot Limit <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={newCatSlotLimit}
+                  onChange={(e) => setNewCatSlotLimit(e.target.value)}
+                  placeholder="Leave blank for unlimited"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleAddCategory}
+                  disabled={createCategory.isPending || !newCatName.trim()}
+                >
+                  Add
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddCatOpen(false);
+                    setNewCatName("");
+                    setNewCatSlotLimit("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setAddCatOpen(true)}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Add Category
+            </Button>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CategoryRow({
+  cat,
+  whitelistId,
+  isExpanded,
+  isEditing,
+  editCatName,
+  editCatSlotLimit,
+  onToggleExpand,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onEditName,
+  onEditSlotLimit,
+  onDelete,
+}: {
+  cat: WhitelistCategory;
+  whitelistId: number;
+  isExpanded: boolean;
+  isEditing: boolean;
+  editCatName: string;
+  editCatSlotLimit: string;
+  onToggleExpand: () => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onEditName: (v: string) => void;
+  onEditSlotLimit: (v: string) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-white/[0.06] overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.02]">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+          onClick={onToggleExpand}
+        >
+          {isExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+          {isEditing ? (
+            <Input
+              value={editCatName}
+              onChange={(e) => onEditName(e.target.value)}
+              className="h-6 text-sm py-0"
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+          ) : (
+            <span className="text-sm font-medium truncate">{cat.name}</span>
+          )}
+        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {cat.slot_limit != null && !isEditing && (
+            <span className="text-[10px] text-muted-foreground">{cat.slot_limit} slots</span>
+          )}
+          {isEditing && (
+            <Input
+              type="number"
+              min={1}
+              value={editCatSlotLimit}
+              onChange={(e) => onEditSlotLimit(e.target.value)}
+              className="h-6 text-xs py-0 w-20"
+              placeholder="slots"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
+            <Users className="h-3 w-3" />
+            {cat.user_count}
+          </div>
+          {isEditing ? (
+            <>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onSaveEdit}>
+                <Check className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onCancelEdit}>
+                <X className="h-3 w-3" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onStartEdit}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger render={
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive" />
+                }>
+                  <Trash2 className="h-3 w-3" />
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Deleting this category will remove all managers. Existing users in this category will be unassigned (not deleted).
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" onClick={onDelete}>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
+        </div>
+      </div>
+      {isExpanded && (
+        <CategoryManagerSection categoryId={cat.id} whitelistId={whitelistId} />
+      )}
+    </div>
+  );
+}
+
+function CategoryManagerSection({
+  categoryId,
+  whitelistId,
+}: {
+  categoryId: number;
+  whitelistId: number;
+}) {
+  const { data: managers, isLoading } = useCategoryManagers(whitelistId, categoryId);
+  const addManager = useAddCategoryManager(whitelistId, categoryId);
+  const removeManager = useRemoveCategoryManager(whitelistId, categoryId);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [discordId, setDiscordId] = useState("");
+  const [discordName, setDiscordName] = useState("");
+
+  function handleAdd() {
+    if (!discordId.trim() || !discordName.trim()) return;
+    addManager.mutate(
+      { discord_id: discordId.trim(), discord_name: discordName.trim() },
+      {
+        onSuccess: () => {
+          toast.success("Manager added");
+          setDiscordId("");
+          setDiscordName("");
+          setAddOpen(false);
+        },
+        onError: () => toast.error("Failed to add manager"),
+      }
+    );
+  }
+
+  return (
+    <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] space-y-2">
+      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+        <Users className="h-3 w-3" />
+        Managers
+        <span className="ml-auto text-muted-foreground/50">{managers?.length ?? 0}</span>
+      </p>
+
+      {isLoading ? (
+        <Skeleton className="h-8 w-full" />
+      ) : managers && managers.length > 0 ? (
+        <div className="space-y-1">
+          {managers.map((m) => (
+            <div key={m.discord_id} className="flex items-center gap-2 rounded px-2 py-1 bg-white/[0.02]">
+              <span className="text-xs flex-1 min-w-0 truncate">{m.discord_name}</span>
+              <span className="text-[10px] font-mono text-muted-foreground/50 shrink-0">{m.discord_id}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-5 w-5 p-0 text-destructive hover:text-destructive shrink-0"
+                onClick={() =>
+                  removeManager.mutate(m.discord_id, {
+                    onSuccess: () => toast.success("Manager removed"),
+                    onError: () => toast.error("Failed to remove manager"),
+                  })
+                }
+              >
+                <UserMinus className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground/50 italic">No managers assigned.</p>
+      )}
+
+      {addOpen ? (
+        <div className="space-y-1.5 rounded-lg border border-white/[0.06] p-2">
+          <Input
+            value={discordName}
+            onChange={(e) => setDiscordName(e.target.value)}
+            placeholder="Discord username"
+            className="h-7 text-xs"
+            autoFocus
+          />
+          <Input
+            value={discordId}
+            onChange={(e) => setDiscordId(e.target.value)}
+            placeholder="Discord ID (e.g. 123456789012345678)"
+            className="h-7 text-xs font-mono"
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          />
+          <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleAdd}
+              disabled={addManager.isPending || !discordId.trim() || !discordName.trim()}
+            >
+              <UserPlus className="mr-1 h-3 w-3" />
+              Add
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => { setAddOpen(false); setDiscordId(""); setDiscordName(""); }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-full text-xs"
+          onClick={() => setAddOpen(true)}
+        >
+          <UserPlus className="mr-1 h-3 w-3" />
+          Add Manager
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ─── Whitelist Config Sheet (role-based) ─────────────────────────────────────
 
 function WhitelistConfigSheet({
   whitelist,

@@ -100,6 +100,7 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (app) => {
         default_slot_limit: wl.defaultSlotLimit,
         stack_roles:      wl.stackRoles,
         is_default:       wl.isDefault,
+        is_manual:        wl.isManual,
         url:              getFileUrl(guildId, filename, urlSalt),
       }
     }

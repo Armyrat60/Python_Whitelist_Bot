@@ -18,6 +18,7 @@ import whitelistRoutes from "./routes/admin/whitelists.js"
 import groupRoutes from "./routes/admin/groups.js"
 import panelRoutes from "./routes/admin/panels.js"
 import panelRoleRoutes from "./routes/admin/panel-roles.js"
+import categoryRoutes from "./routes/admin/categories.js"
 import userRoutes from "./routes/admin/users.js"
 import auditRoutes from "./routes/admin/audit.js"
 import notificationRoutes from "./routes/admin/notifications.js"
@@ -62,6 +63,7 @@ async function build() {
   await app.register(groupRoutes, { prefix: "/api/admin" })
   await app.register(panelRoutes, { prefix: "/api/admin" })
   await app.register(panelRoleRoutes, { prefix: "/api/admin" })
+  await app.register(categoryRoutes, { prefix: "/api/admin" })
   await app.register(userRoutes, { prefix: "/api/admin" })
   await app.register(auditRoutes, { prefix: "/api/admin" })
   await app.register(notificationRoutes, { prefix: "/api/admin" })
