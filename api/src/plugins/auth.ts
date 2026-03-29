@@ -1,11 +1,13 @@
 /**
  * Session and auth plugin.
- * Registers @fastify/cookie + @fastify/session and exposes
+ * Registers @fastify/cookie + @fastify/session (PostgreSQL store) and exposes
  * requireAdmin / requireAuth helpers on the Fastify instance.
+ * Sessions survive API restarts — stored in the `sessions` table.
  */
 import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
+import ConnectPgSimple from "connect-pg-simple"
 import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { env } from "../lib/env.js"
 import { createHmac } from "crypto"
@@ -44,10 +46,20 @@ function sessionSecret(): string {
 const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
+  // PostgreSQL session store — sessions survive API restarts
+  const PgStore = ConnectPgSimple(session as unknown as Parameters<typeof ConnectPgSimple>[0])
+  const pgStore = new PgStore({
+    conString: env.DATABASE_URL,
+    tableName: "sessions",
+    createTableIfMissing: true,   // auto-creates the table on first run
+    pruneSessionInterval: 60 * 60, // prune expired sessions every hour
+  })
+
   await app.register(cookie)
   await app.register(session, {
     secret: sessionSecret(),
     cookieName: "wl_session",
+    store: pgStore as never,
     cookie: {
       secure: isSecure,
       httpOnly: true,

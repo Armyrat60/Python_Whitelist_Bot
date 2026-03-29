@@ -153,11 +153,9 @@ Last updated: 2026-03-29
 - [ ] Status badge: Active / Expiring Soon / Expired
 
 ### Infrastructure
-- [ ] Session persistence (in-memory store loses sessions on restart)
-  - Option A: Redis session store
-  - Option B: PostgreSQL session store (connect-pg-simple)
-- [ ] Rate limiting on all API routes (currently only file serving)
-- [ ] Global request rate limiting (100 req/min per IP)
+- [x] Session persistence — PostgreSQL store via connect-pg-simple (auto-creates `sessions` table)
+- [x] Global rate limiting — 200 req/min per IP; 20/min on /login
+- [ ] Audit log pagination + archival for large guilds
 - [ ] Audit log pagination + archival for large guilds
 - [ ] Metrics/observability (Prometheus or similar)
 - [ ] `.env.example` documentation for all required env vars
@@ -166,17 +164,17 @@ Last updated: 2026-03-29
 
 ## 🗓 Suggested Phase Order
 
-| Phase | Focus | Effort |
-|---|---|---|
-| **1** | Nav rename, sidebar restructure, Audit Log move | Small |
-| **2** | My Whitelist page update, Steam ID display improvements | Small |
-| **3** | Player Profiles + Player Search | Medium |
-| **4** | Permissions page + expanded access control | Medium |
-| **5** | Discord bot updates (roster commands, notifications) | Medium |
-| **6** | SquadJS MySQL bridge | Medium |
-| **7** | Steam verification + account linking | Large |
-| **8** | BattleMetrics API | Large |
-| **9** | Session persistence, rate limiting, observability | Large |
+| Phase | Focus | Effort | Status |
+|---|---|---|---|
+| **1** | Nav rename, sidebar restructure, Audit Log move | Small | ✅ Done |
+| **2** | My Whitelist page update, Steam ID display improvements | Small | ✅ Done |
+| **3** | Player Profiles + Player Search | Medium | ✅ Done |
+| **4** | Session persistence (login survives restart) + rate limiting | Small | Next |
+| **5** | Permissions page + expanded access control | Medium | |
+| **6** | Discord bot updates (roster commands, notifications) | Medium | |
+| **7** | SquadJS MySQL bridge | Medium | |
+| **8** | Steam verification + account linking | Large | |
+| **9** | BattleMetrics API | Large | |
 
 ---
 

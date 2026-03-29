@@ -1,5 +1,6 @@
 import Fastify from "fastify"
 import cors from "@fastify/cors"
+import rateLimit from "@fastify/rate-limit"
 
 import { env } from "./lib/env.js"
 import prismaPlugin from "./plugins/prisma.js"
@@ -43,6 +44,20 @@ async function build() {
     origin: env.CORS_ORIGIN || env.WEB_BASE_URL || false,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  })
+
+  // Global rate limiting — 200 req/min per IP, stricter on auth routes
+  await app.register(rateLimit, {
+    global: true,
+    max: 200,
+    timeWindow: "1 minute",
+    skipOnError: true,
+    keyGenerator: (req: { ip: string }) => req.ip,
+    errorResponseBuilder: () => ({
+      error: "Too many requests",
+      message: "Rate limit exceeded. Try again in a minute.",
+      statusCode: 429,
+    }),
   })
 
   await app.register(prismaPlugin)

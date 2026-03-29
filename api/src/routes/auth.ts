@@ -42,7 +42,7 @@ const MANAGE_GUILD  = 0x20n
 export const authRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /login ──────────────────────────────────────────────────────────────
 
-  app.get("/login", async (req, reply) => {
+  app.get("/login", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
     const state = randomBytes(16).toString("hex")
     const isSecure = env.NODE_ENV === "production"
 
