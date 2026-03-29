@@ -2,14 +2,20 @@
  * Dashboard permissions routes.
  * Manages who has dashboard access beyond the auto-detected admin/owner level.
  *
- * GET    /api/admin/dashboard-permissions           — list all explicit grants for this guild
- * POST   /api/admin/dashboard-permissions           — grant access to a Discord user
- * PUT    /api/admin/dashboard-permissions/:discordId — change a user's permission level
- * DELETE /api/admin/dashboard-permissions/:discordId — revoke a user's dashboard access
+ * By User (Discord ID):
+ *   GET    /api/admin/dashboard-permissions            — list all user grants
+ *   POST   /api/admin/dashboard-permissions            — grant access to a user
+ *   PUT    /api/admin/dashboard-permissions/:discordId — change a user's level
+ *   DELETE /api/admin/dashboard-permissions/:discordId — revoke a user's access
  *
- * NOTE: Route prefix is /dashboard-permissions (not /permissions) to avoid
- * conflict with groups.ts which already owns GET /api/admin/permissions
- * for the Squad hardcoded permissions list.
+ * By Role (Discord role ID):
+ *   GET    /api/admin/dashboard-role-permissions            — list all role grants
+ *   POST   /api/admin/dashboard-role-permissions            — grant access by role
+ *   PUT    /api/admin/dashboard-role-permissions/:roleId    — change a role's level
+ *   DELETE /api/admin/dashboard-role-permissions/:roleId    — revoke a role's access
+ *
+ * NOTE: Prefix is /dashboard-permissions (not /permissions) to avoid conflict
+ * with groups.ts which owns GET /api/admin/permissions for Squad permissions.
  */
 import type { FastifyPluginAsync } from "fastify"
 
@@ -121,6 +127,114 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
 
     await app.prisma.dashboardPermission.delete({
       where: { guildId_discordId: { guildId, discordId } },
+    })
+
+    return reply.send({ ok: true })
+  })
+  // ── GET /dashboard-role-permissions ───────────────────────────────────────
+
+  app.get("/dashboard-role-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const rows = await app.prisma.dashboardRolePermission.findMany({
+      where: { guildId },
+      orderBy: { grantedAt: "asc" },
+    })
+
+    return reply.send(rows.map((r) => ({
+      id:               r.id,
+      role_id:          r.roleId,
+      role_name:        r.roleName,
+      permission_level: r.permissionLevel,
+      granted_by:       r.grantedBy,
+      granted_at:       r.grantedAt,
+    })))
+  })
+
+  // ── POST /dashboard-role-permissions ──────────────────────────────────────
+
+  app.post<{
+    Body: { role_id: string; role_name?: string; permission_level: string }
+  }>("/dashboard-role-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const { role_id, role_name, permission_level } = req.body
+
+    if (!role_id) {
+      return reply.code(400).send({ error: "role_id is required" })
+    }
+    if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
+      return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+
+    const row = await app.prisma.dashboardRolePermission.upsert({
+      where:  { guildId_roleId: { guildId, roleId: role_id } },
+      create: {
+        guildId,
+        roleId:          role_id,
+        roleName:        role_name ?? null,
+        permissionLevel: permission_level,
+        grantedBy:       req.session.userId ?? null,
+      },
+      update: {
+        roleName:        role_name ?? undefined,
+        permissionLevel: permission_level,
+        grantedBy:       req.session.userId ?? null,
+        grantedAt:       new Date(),
+      },
+    })
+
+    return reply.code(201).send({
+      id:               row.id,
+      role_id:          row.roleId,
+      role_name:        row.roleName,
+      permission_level: row.permissionLevel,
+      granted_by:       row.grantedBy,
+      granted_at:       row.grantedAt,
+    })
+  })
+
+  // ── PUT /dashboard-role-permissions/:roleId ────────────────────────────────
+
+  app.put<{
+    Params: { roleId: string }
+    Body:   { permission_level: string }
+  }>("/dashboard-role-permissions/:roleId", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const { roleId } = req.params
+    const { permission_level } = req.body
+
+    if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
+      return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+
+    const existing = await app.prisma.dashboardRolePermission.findUnique({
+      where: { guildId_roleId: { guildId, roleId } },
+    })
+    if (!existing) return reply.code(404).send({ error: "Role grant not found" })
+
+    const updated = await app.prisma.dashboardRolePermission.update({
+      where: { guildId_roleId: { guildId, roleId } },
+      data:  { permissionLevel: permission_level },
+    })
+
+    return reply.send({ ok: true, permission_level: updated.permissionLevel })
+  })
+
+  // ── DELETE /dashboard-role-permissions/:roleId ─────────────────────────────
+
+  app.delete<{
+    Params: { roleId: string }
+  }>("/dashboard-role-permissions/:roleId", { preValidation: app.requireAdmin }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const { roleId } = req.params
+
+    const existing = await app.prisma.dashboardRolePermission.findUnique({
+      where: { guildId_roleId: { guildId, roleId } },
+    })
+    if (!existing) return reply.code(404).send({ error: "Role grant not found" })
+
+    await app.prisma.dashboardRolePermission.delete({
+      where: { guildId_roleId: { guildId, roleId } },
     })
 
     return reply.send({ ok: true })

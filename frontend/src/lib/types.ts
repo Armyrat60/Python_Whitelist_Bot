@@ -29,6 +29,15 @@ export interface DashboardPermission {
   granted_at: string;
 }
 
+export interface DashboardRolePermission {
+  id: number;
+  role_id: string;
+  role_name: string | null;
+  permission_level: PermissionLevel;
+  granted_by: string | null;
+  granted_at: string;
+}
+
 export interface Whitelist {
   id: number;
   slug: string;

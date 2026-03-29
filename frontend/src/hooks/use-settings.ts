@@ -20,6 +20,7 @@ import type {
   WhitelistCategory,
   CategoryManager,
   DashboardPermission,
+  DashboardRolePermission,
   PermissionLevel,
 } from "@/lib/types";
 
@@ -712,5 +713,40 @@ export function useRevokePermission() {
   return useMutation({
     mutationFn: (discordId: string) => api.delete(`/api/admin/dashboard-permissions/${discordId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
+  });
+}
+
+// ─── Dashboard Role Permissions ─────────────────────────────────────────────
+
+export function useRolePermissions() {
+  return useQuery<DashboardRolePermission[]>({
+    queryKey: ["role-permissions"],
+    queryFn: () => api.get<DashboardRolePermission[]>("/api/admin/dashboard-role-permissions"),
+  });
+}
+
+export function useGrantRolePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { role_id: string; role_name?: string; permission_level: PermissionLevel }) =>
+      api.post<DashboardRolePermission>("/api/admin/dashboard-role-permissions", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
+  });
+}
+
+export function useUpdateRolePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roleId, permission_level }: { roleId: string; permission_level: PermissionLevel }) =>
+      api.put(`/api/admin/dashboard-role-permissions/${roleId}`, { permission_level }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
+  });
+}
+
+export function useRevokeRolePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (roleId: string) => api.delete(`/api/admin/dashboard-role-permissions/${roleId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
   });
 }

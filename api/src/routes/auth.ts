@@ -150,20 +150,38 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const modRoleIds = modRoleSetting?.settingValue?.split(",").filter(Boolean) ?? []
       const hasModRole = memberRoles.some((r) => modRoleIds.includes(r))
 
-      // Check explicit dashboard_permissions grant
+      // Check explicit dashboard_permissions grant (by user ID)
       const explicitGrant = await app.prisma.dashboardPermission.findUnique({
         where: { guildId_discordId: { guildId: BigInt(ug.id), discordId: discordUser.id } },
       })
 
-      // Resolve permission level (highest wins)
+      // Check role-based grants — find highest level among matching roles
+      let roleGrant: { permissionLevel: string } | null = null
+      if (memberRoles.length > 0) {
+        const roleGrants = await app.prisma.dashboardRolePermission.findMany({
+          where: { guildId: BigInt(ug.id), roleId: { in: memberRoles } },
+        })
+        if (roleGrants.length > 0) {
+          const LEVEL_RANK: Record<string, number> = { roster_manager: 1, viewer: 0 }
+          roleGrant = roleGrants.reduce((best, cur) =>
+            (LEVEL_RANK[cur.permissionLevel] ?? -1) > (LEVEL_RANK[best.permissionLevel] ?? -1) ? cur : best
+          )
+        }
+      }
+
+      // Resolve permission level (highest wins; user grant takes priority over role grant at same level)
+      const effectiveExplicit = explicitGrant?.permissionLevel
+      const effectiveRole     = roleGrant?.permissionLevel
+      const effectiveGrant    = effectiveExplicit ?? effectiveRole
+
       let permissionLevel: PermissionLevel
       if (isOwner) {
         permissionLevel = "owner"
       } else if (hasAdminPerm || hasModRole) {
         permissionLevel = "admin"
-      } else if (explicitGrant?.permissionLevel === "roster_manager") {
+      } else if (effectiveGrant === "roster_manager") {
         permissionLevel = "roster_manager"
-      } else if (explicitGrant?.permissionLevel === "viewer") {
+      } else if (effectiveGrant === "viewer") {
         permissionLevel = "viewer"
       } else {
         continue  // no access — skip this guild

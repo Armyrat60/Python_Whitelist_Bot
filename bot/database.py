@@ -463,6 +463,21 @@ POSTGRES_MIGRATIONS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_dashboard_permissions_guild ON dashboard_permissions (guild_id)",
+
+    # --- Dashboard role permissions (grants by Discord role, not user ID) ---
+    """
+    CREATE TABLE IF NOT EXISTS dashboard_role_permissions (
+        id SERIAL PRIMARY KEY,
+        guild_id BIGINT NOT NULL,
+        role_id VARCHAR(32) NOT NULL,
+        role_name VARCHAR(100),
+        permission_level VARCHAR(20) NOT NULL DEFAULT 'viewer',
+        granted_by VARCHAR(32),
+        granted_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (guild_id, role_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_drp_guild ON dashboard_role_permissions (guild_id)",
 ]
 
 
