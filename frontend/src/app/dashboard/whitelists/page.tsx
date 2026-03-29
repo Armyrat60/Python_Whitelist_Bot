@@ -289,12 +289,14 @@ function WhitelistCard({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="flex-1 truncate text-xs text-muted-foreground font-mono">
-            {url}
+          <span className="flex-1 truncate text-xs font-mono text-muted-foreground">
+            {url || <span className="italic text-muted-foreground/50">URL pending deploy…</span>}
           </span>
-          <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">
-            <Copy className="h-3 w-3" />
-          </Button>
+          {url && (
+            <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">
+              <Copy className="h-3 w-3" />
+            </Button>
+          )}
         </div>
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
