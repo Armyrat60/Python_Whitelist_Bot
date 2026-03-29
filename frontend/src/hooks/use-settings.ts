@@ -424,6 +424,7 @@ export function useAddTierEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
@@ -436,6 +437,7 @@ export function useUpdateTierEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
@@ -448,6 +450,7 @@ export function useRemoveTierEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tier-categories"] });
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
