@@ -35,38 +35,21 @@ export interface Panel {
   channel_id: string | null;
   log_channel_id: string | null;
   whitelist_id: number | null;
-  tier_category_id: number | null;
   panel_message_id: string | null;
   is_default: boolean;
   enabled: boolean;
   show_role_mentions: boolean;
 }
 
-export interface TierCategory {
-  id: number;
-  name: string;
-  description: string;
-  is_default: boolean;
-  entries: TierEntry[];
-}
-
-export interface TierEntry {
+export interface WhitelistRole {
   id: number;
   role_id: string;
   role_name: string;
   slot_limit: number;
+  is_stackable: boolean;
+  is_active: boolean;
   display_name: string | null;
   sort_order: number;
-  is_active: boolean;
-  is_stackable: boolean;
-}
-
-export interface RoleMapping {
-  id: number;
-  role_id: string;
-  role_name: string;
-  slot_limit: number;
-  is_active: boolean;
 }
 
 export interface SquadGroup {

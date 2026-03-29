@@ -74,7 +74,11 @@ class SlotLimitModal(discord.ui.Modal):
         if slot_limit < 1:
             await interaction.response.send_message("Slot limit must be at least 1.", ephemeral=True)
             return
-        await self.bot.db.add_role_mapping(guild_id, self.whitelist_type, self.role_id, self.role_name, slot_limit)
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
+            return
+        await self.bot.db.add_whitelist_role(guild_id, wl["id"], self.role_id, self.role_name, slot_limit)
         await self.bot.db.audit(guild_id, "setup_rolemap_add", interaction.user.id, None, f"type={self.whitelist_type} role={self.role_name}({self.role_id}) slots={slot_limit}", self.whitelist_type)
         await interaction.response.send_message(f"Mapped **{self.role_name}** to **{slot_limit}** slot(s) for {self.whitelist_type}.", ephemeral=True)
 
@@ -330,8 +334,13 @@ class MainSetupView(discord.ui.View):
             panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
             log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
             gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
-            mappings = await self.bot.db.get_role_mappings(guild_id, wt)
-            active_roles = [f"<@&{rid}>=`{sl}`" for rid, _, sl, active in mappings if active]
+            wl = await self.bot.db.get_whitelist_by_slug(guild_id, wt)
+            if wl:
+                mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+            else:
+                mappings = []
+            # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+            active_roles = [f"<@&{r[1]}>=`{r[3]}`" for r in mappings if r[6]]
             roles_text = ", ".join(active_roles) if active_roles else "`None`"
             desc_lines.append(f"\U0001f4e6 **{wt.title()}** \u2014 {icon} Enabled")
             desc_lines.append(f"\u2003Panel: {panel_ch} \u2502 Log: {log_ch} \u2502 GitHub: {gh_icon} `{cfg['github_filename']}`")
@@ -532,8 +541,13 @@ class TypeSettingsView(discord.ui.View):
         gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
         panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
         log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
-        mappings = await self.bot.db.get_role_mappings(guild_id, self.whitelist_type)
-        active_roles = [f"<@&{rid}> \u2192 `{sl}` slots" for rid, _, sl, active in mappings if active]
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if wl:
+            mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+        else:
+            mappings = []
+        # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+        active_roles = [f"<@&{r[1]}> \u2192 `{r[3]}` slots" for r in mappings if r[6]]
         roles_text = "\n".join(active_roles) if active_roles else "`No role mappings configured`"
         e = discord.Embed(
             title=f"\U0001f4e6 {self.whitelist_type.title()} Settings",
@@ -630,8 +644,13 @@ class TypeSettingsView(discord.ui.View):
     @discord.ui.button(label="Remove Role", style=discord.ButtonStyle.red, row=3)
     async def remove_role_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild.id
-        mappings = await self.bot.db.get_role_mappings(guild_id, self.whitelist_type)
-        active = [m for m in mappings if m[3]]
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
+            return
+        # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+        mappings = await self.bot.db.get_whitelist_roles(guild_id, wl["id"])
+        active = [m for m in mappings if m[6]]
         if not active:
             await interaction.response.send_message(f"No {self.whitelist_type} role mappings to remove.", ephemeral=True)
             return
@@ -709,9 +728,10 @@ class RemoveRoleMappingView(discord.ui.View):
         super().__init__(timeout=120)
         self.bot = bot
         self.whitelist_type = whitelist_type
+        # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
         options = [
-            discord.SelectOption(label=f"{role_name} ({slot_limit} slots)", value=str(role_id))
-            for role_id, role_name, slot_limit, is_active in mappings if is_active
+            discord.SelectOption(label=f"{r[2]} ({r[3]} slots)", value=str(r[1]))
+            for r in mappings if r[6]
         ]
         if not options:
             return
@@ -722,7 +742,11 @@ class RemoveRoleMappingView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         role_id = int(interaction.data["values"][0])
-        await self.bot.db.remove_role_mapping(guild_id, self.whitelist_type, role_id)
+        wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+        if not wl:
+            await interaction.response.send_message(f"Whitelist `{self.whitelist_type}` not found.", ephemeral=True)
+            return
+        await self.bot.db.remove_whitelist_role(guild_id, wl["id"], role_id)
         await self.bot.db.audit(guild_id, "setup_rolemap_remove", interaction.user.id, None, f"type={self.whitelist_type} role_id={role_id}", self.whitelist_type)
         await interaction.response.send_message(f"Removed role mapping for <@&{role_id}> from {self.whitelist_type}.", ephemeral=True)
 

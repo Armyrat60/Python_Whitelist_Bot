@@ -318,10 +318,10 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     })
     if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
 
-    const [userCount, identifierCount, roleMappingCount] = await Promise.all([
+    const [userCount, identifierCount, whitelistRoleCount] = await Promise.all([
       prisma.whitelistUser.count({ where: { whitelistId: wl.id } }),
       prisma.whitelistIdentifier.count({ where: { whitelistId: wl.id } }),
-      prisma.roleMapping.count({ where: { whitelistId: wl.id } }),
+      prisma.whitelistRole.count({ where: { whitelistId: wl.id } }),
     ])
 
     await prisma.auditLog.create({
@@ -330,7 +330,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
         whitelistId:    wl.id,
         actionType:     "whitelist_deleted",
         actorDiscordId: req.session.userId ? BigInt(req.session.userId) : null,
-        details:        JSON.stringify({ slug, name: wl.name, userCount, identifierCount, roleMappingCount }),
+        details:        JSON.stringify({ slug, name: wl.name, userCount, identifierCount, whitelistRoleCount }),
         createdAt:      new Date(),
       }
     })
@@ -338,7 +338,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     await prisma.$transaction([
       prisma.whitelistIdentifier.deleteMany({ where: { whitelistId: wl.id } }),
       prisma.whitelistUser.deleteMany({ where: { whitelistId: wl.id } }),
-      prisma.roleMapping.deleteMany({ where: { whitelistId: wl.id } }),
+      prisma.whitelistRole.deleteMany({ where: { whitelistId: wl.id } }),
       prisma.whitelist.delete({ where: { id: wl.id } }),
     ])
 

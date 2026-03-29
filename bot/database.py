@@ -155,20 +155,6 @@ POSTGRES_SCHEMA = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS role_mappings (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        role_id BIGINT NOT NULL,
-        role_name VARCHAR(255) NOT NULL,
-        slot_limit INT NOT NULL,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL,
-        UNIQUE (guild_id, whitelist_id, role_id)
-    )
-    """,
-    """
     CREATE TABLE IF NOT EXISTS whitelist_users (
         guild_id BIGINT NOT NULL DEFAULT 0,
         discord_id BIGINT NOT NULL,
@@ -246,37 +232,26 @@ POSTGRES_SCHEMA = [
         panel_message_id BIGINT NULL,
         is_default BOOLEAN NOT NULL DEFAULT FALSE,
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        tier_category_id INT NULL,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS tier_categories (
+    CREATE TABLE IF NOT EXISTS whitelist_roles (
         id SERIAL PRIMARY KEY,
         guild_id BIGINT NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        description VARCHAR(500) NULL,
-        is_default BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL,
-        UNIQUE (guild_id, name)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS tier_entries (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        category_id INT NOT NULL,
+        whitelist_id INTEGER NOT NULL,
         role_id BIGINT NOT NULL,
-        role_name VARCHAR(255) NOT NULL,
-        slot_limit INT NOT NULL DEFAULT 1,
-        display_name VARCHAR(100) NULL,
-        sort_order INT NOT NULL DEFAULT 0,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        role_name VARCHAR(100) NOT NULL,
+        slot_limit INTEGER NOT NULL DEFAULT 1,
         is_stackable BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL,
-        UNIQUE (guild_id, category_id, role_id)
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        display_name VARCHAR(100),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        FOREIGN KEY (whitelist_id) REFERENCES whitelists(id) ON DELETE CASCADE,
+        UNIQUE (guild_id, whitelist_id, role_id)
     )
     """,
     """
@@ -439,6 +414,8 @@ POSTGRES_MIGRATIONS = [
     "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'refresh'",
     "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS channel_id BIGINT NULL",
     "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS message_id BIGINT NULL",
+
+    "ALTER TABLE panels DROP COLUMN IF EXISTS tier_category_id",
 ]
 
 
@@ -547,42 +524,6 @@ class Database:
         else:
             wl_id = existing[0]
 
-        # Seed one default tier category if none exists, and migrate role_mappings
-        existing_tier_cat = await self.fetchone(
-            "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
-            (guild_id,),
-        )
-        if not existing_tier_cat:
-            try:
-                tier_cat_id = await self.create_tier_category(
-                    guild_id,
-                    name="Tier 1",
-                    description="Default tier category",
-                    is_default=True,
-                )
-            except Exception:
-                row = await self.fetchone(
-                    "SELECT id FROM tier_categories WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
-                    (guild_id,),
-                )
-                tier_cat_id = row[0] if row else None
-
-            # Migrate existing role_mappings into tier_entries under the default category
-            if tier_cat_id:
-                all_mappings = await self.fetchall(
-                    "SELECT role_id, role_name, slot_limit FROM role_mappings WHERE guild_id=%s",
-                    (guild_id,),
-                )
-                for rm in all_mappings:
-                    try:
-                        await self.add_tier_entry(
-                            guild_id, tier_cat_id, rm[0], rm[1], rm[2],
-                        )
-                    except Exception:
-                        pass  # Already exists or race condition
-        else:
-            tier_cat_id = existing_tier_cat[0]
-
         # Seed one default panel linked to the default whitelist if none exists
         if wl_id:
             existing_panel = await self.fetchone(
@@ -596,16 +537,9 @@ class Database:
                         name="Panel 1",
                         whitelist_id=wl_id,
                         is_default=True,
-                        tier_category_id=tier_cat_id,
                     )
                 except Exception:
                     pass  # Race condition: another process created it
-            else:
-                # Ensure existing default panel has tier_category_id set
-                panel_id = existing_panel[0]
-                panel = await self.get_panel_by_id(panel_id)
-                if panel and not panel.get("tier_category_id") and tier_cat_id:
-                    await self.update_panel(panel_id, tier_category_id=tier_cat_id)
 
     # ── Settings ──
 
@@ -764,7 +698,7 @@ class Database:
 
     _PANEL_COLUMNS = (
         "id", "guild_id", "name", "channel_id", "log_channel_id",
-        "whitelist_id", "panel_message_id", "is_default", "enabled", "tier_category_id",
+        "whitelist_id", "panel_message_id", "is_default", "enabled",
         "show_role_mentions", "created_at", "updated_at",
     )
 
@@ -780,7 +714,7 @@ class Database:
         rows = await self.fetchall(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id,
+                   whitelist_id, panel_message_id, is_default, enabled,
                    show_role_mentions, created_at, updated_at
             FROM panels WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
@@ -793,7 +727,7 @@ class Database:
         row = await self.fetchone(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id,
+                   whitelist_id, panel_message_id, is_default, enabled,
                    show_role_mentions, created_at, updated_at
             FROM panels WHERE id=%s
             """,
@@ -809,25 +743,23 @@ class Database:
         whitelist_id = kwargs.get("whitelist_id", None)
         panel_message_id = kwargs.get("panel_message_id", None)
         is_default = kwargs.get("is_default", False)
-        tier_category_id = kwargs.get("tier_category_id", None)
 
         row = await self.execute_returning(
             """
-            INSERT INTO panels
-            (guild_id, name, channel_id, log_channel_id, whitelist_id,
-             panel_message_id, is_default, tier_category_id, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO panels (guild_id, name, channel_id, log_channel_id, whitelist_id,
+             panel_message_id, is_default, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (guild_id, name, channel_id, log_channel_id, whitelist_id,
-             panel_message_id, is_default, tier_category_id, now, now),
+             panel_message_id, is_default, now, now),
         )
         return row[0]
 
     async def update_panel(self, panel_id: int, **kwargs):
         allowed = {
             "name", "channel_id", "log_channel_id", "whitelist_id",
-            "panel_message_id", "is_default", "enabled", "tier_category_id",
+            "panel_message_id", "is_default", "enabled",
             "show_role_mentions",
         }
         bool_cols = {"is_default", "enabled", "show_role_mentions"}
@@ -862,11 +794,11 @@ class Database:
             (guild_id, panel_id, reason, action, channel_id, message_id, utcnow()),
         )
 
-    async def queue_panels_for_category(self, guild_id: int, category_id: int, reason: str = "tier_changed"):
-        """Queue all panels that use a specific tier category for refresh."""
+    async def queue_panels_for_whitelist(self, guild_id: int, whitelist_id: int, reason: str = "role_changed"):
+        """Queue all panels linked to a whitelist for refresh."""
         panels = await self.fetchall(
-            "SELECT id FROM panels WHERE guild_id=%s AND tier_category_id=%s",
-            (guild_id, category_id),
+            "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s",
+            (guild_id, whitelist_id),
         )
         for row in panels:
             await self.queue_panel_refresh(guild_id, row[0], reason)
@@ -920,46 +852,6 @@ class Database:
             mapped[rename.get(key, key)] = value
         if mapped:
             await self.update_whitelist(wl["id"], **mapped)
-
-    # ── Role mappings ──
-
-    async def get_role_mappings(self, guild_id: int, whitelist_id: Optional[int] = None) -> List[tuple]:
-        if whitelist_id is not None:
-            return await self.fetchall(
-                """
-                SELECT role_id, role_name, slot_limit, is_active
-                FROM role_mappings
-                WHERE guild_id=%s AND whitelist_id=%s
-                ORDER BY slot_limit ASC, role_name ASC
-                """,
-                (guild_id, whitelist_id),
-            )
-        return await self.fetchall(
-            """
-            SELECT whitelist_id, role_id, role_name, slot_limit, is_active
-            FROM role_mappings
-            WHERE guild_id=%s
-            ORDER BY whitelist_id, slot_limit ASC, role_name ASC
-            """,
-            (guild_id,),
-        )
-
-    async def add_role_mapping(self, guild_id: int, whitelist_id: int, role_id: int, role_name: str, slot_limit: int):
-        await self.execute(
-            """
-            INSERT INTO role_mappings (guild_id, whitelist_id, role_id, role_name, slot_limit, is_active, created_at)
-            VALUES (%s, %s, %s, %s, %s, TRUE, %s)
-            ON CONFLICT (guild_id, whitelist_id, role_id) DO UPDATE
-                SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit, is_active=TRUE
-            """,
-            (guild_id, whitelist_id, role_id, role_name, slot_limit, utcnow()),
-        )
-
-    async def remove_role_mapping(self, guild_id: int, whitelist_id: int, role_id: int):
-        await self.execute(
-            "DELETE FROM role_mappings WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
-            (guild_id, whitelist_id, role_id),
-        )
 
     # ── Notification routing ──
 
@@ -1208,135 +1100,50 @@ class Database:
             return await self.fetchall("SELECT permission, description FROM squad_permissions WHERE is_active=TRUE ORDER BY permission")
         return await self.fetchall("SELECT permission, description, is_active FROM squad_permissions ORDER BY permission")
 
-    # ── Tier Categories ──
+    # ── Whitelist Roles ──
 
-    async def get_tier_categories(self, guild_id: int) -> List[dict]:
-        rows = await self.fetchall(
-            """
-            SELECT id, guild_id, name, description, is_default, created_at, updated_at
-            FROM tier_categories WHERE guild_id=%s
-            ORDER BY is_default DESC, name ASC
-            """,
-            (guild_id,),
-        )
-        result = []
-        for r in rows:
-            result.append({
-                "id": r[0],
-                "guild_id": r[1],
-                "name": r[2],
-                "description": r[3],
-                "is_default": bool(r[4]),
-                "created_at": r[5],
-                "updated_at": r[6],
-            })
-        return result
-
-    async def get_tier_category(self, category_id: int) -> Optional[dict]:
-        row = await self.fetchone(
-            """
-            SELECT id, guild_id, name, description, is_default, created_at, updated_at
-            FROM tier_categories WHERE id=%s
-            """,
-            (category_id,),
-        )
-        if not row:
-            return None
-        return {
-            "id": row[0],
-            "guild_id": row[1],
-            "name": row[2],
-            "description": row[3],
-            "is_default": bool(row[4]),
-            "created_at": row[5],
-            "updated_at": row[6],
-        }
-
-    async def create_tier_category(self, guild_id: int, name: str, description: str = "", is_default: bool = False) -> int:
-        now = utcnow()
-        row = await self.execute_returning(
-            """
-            INSERT INTO tier_categories (guild_id, name, description, is_default, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (guild_id, name, description, is_default, now, now),
-        )
-        return row[0]
-
-    async def update_tier_category(self, category_id: int, **kwargs):
-        allowed = {"name", "description", "is_default"}
-        bool_cols = {"is_default"}
-        parts = []
-        params = []
-        for key, value in kwargs.items():
-            if key in allowed:
-                if key in bool_cols:
-                    value = bool(value)
-                parts.append(f"{key}=%s")
-                params.append(value)
-        if not parts:
-            return
-        parts.append("updated_at=%s")
-        params.append(utcnow())
-        params.append(category_id)
-        await self.execute(
-            f"UPDATE tier_categories SET {', '.join(parts)} WHERE id=%s",
-            tuple(params),
-        )
-
-    async def delete_tier_category(self, category_id: int):
-        # Delete associated tier entries first
-        await self.execute("DELETE FROM tier_entries WHERE category_id=%s", (category_id,))
-        await self.execute("DELETE FROM tier_categories WHERE id=%s", (category_id,))
-
-    # ── Tier Entries ──
-
-    async def get_tier_entries(self, guild_id: int, category_id: int) -> List[tuple]:
+    async def get_whitelist_roles(self, guild_id: int, whitelist_id: int) -> List[tuple]:
+        """Get roles for a specific whitelist. Returns (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)."""
         return await self.fetchall(
             """
             SELECT id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable
-            FROM tier_entries
-            WHERE guild_id=%s AND category_id=%s
-            ORDER BY sort_order ASC, role_name ASC
+            FROM whitelist_roles
+            WHERE guild_id=%s AND whitelist_id=%s
+            ORDER BY sort_order ASC, slot_limit ASC, role_name ASC
             """,
-            (guild_id, category_id),
+            (guild_id, whitelist_id),
         )
 
-    async def add_tier_entry(self, guild_id: int, category_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
+    async def get_all_whitelist_roles(self, guild_id: int) -> List[tuple]:
+        """Get all whitelist roles for a guild. Returns (whitelist_id, role_id, role_name, slot_limit, is_active)."""
+        return await self.fetchall(
+            """
+            SELECT whitelist_id, role_id, role_name, slot_limit, is_active
+            FROM whitelist_roles
+            WHERE guild_id=%s
+            ORDER BY whitelist_id, slot_limit ASC, role_name ASC
+            """,
+            (guild_id,),
+        )
+
+    async def add_whitelist_role(self, guild_id: int, whitelist_id: int, role_id: int, role_name: str, slot_limit: int, display_name: str = None, sort_order: int = 0, is_stackable: bool = False) -> int:
         now = utcnow()
         row = await self.execute_returning(
             """
-            INSERT INTO tier_entries (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
-            ON CONFLICT (guild_id, category_id, role_id) DO UPDATE
+            INSERT INTO whitelist_roles (guild_id, whitelist_id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
+            ON CONFLICT (guild_id, whitelist_id, role_id) DO UPDATE
                 SET role_name=EXCLUDED.role_name, slot_limit=EXCLUDED.slot_limit,
                     display_name=EXCLUDED.display_name, sort_order=EXCLUDED.sort_order,
-                    is_active=TRUE, is_stackable=EXCLUDED.is_stackable
+                    is_active=TRUE, is_stackable=EXCLUDED.is_stackable, updated_at=EXCLUDED.updated_at
             RETURNING id
             """,
-            (guild_id, category_id, role_id, role_name, slot_limit, display_name, sort_order, is_stackable, now),
+            (guild_id, whitelist_id, role_id, role_name, slot_limit, display_name, sort_order, is_stackable, now, now),
         )
         return row[0]
 
-    async def update_tier_entry(self, entry_id: int, **kwargs):
-        allowed = {"role_name", "slot_limit", "display_name", "sort_order", "is_active", "is_stackable"}
-        bool_cols = {"is_active", "is_stackable"}
-        parts = []
-        params = []
-        for key, value in kwargs.items():
-            if key in allowed:
-                if key in bool_cols:
-                    value = bool(value)
-                parts.append(f"{key}=%s")
-                params.append(value)
-        if not parts:
-            return
-        params.append(entry_id)
+    async def remove_whitelist_role(self, guild_id: int, whitelist_id: int, role_id: int):
         await self.execute(
-            f"UPDATE tier_entries SET {', '.join(parts)} WHERE id=%s",
-            tuple(params),
+            "DELETE FROM whitelist_roles WHERE guild_id=%s AND whitelist_id=%s AND role_id=%s",
+            (guild_id, whitelist_id, role_id),
         )
-
-    async def remove_tier_entry(self, entry_id: int):
-        await self.execute("DELETE FROM tier_entries WHERE id=%s", (entry_id,))

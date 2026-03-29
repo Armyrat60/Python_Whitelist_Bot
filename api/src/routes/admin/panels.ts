@@ -65,7 +65,6 @@ export default async function panelRoutes(app: FastifyInstance) {
       panel_message_id:   p.panelMessageId?.toString() ?? null,
       is_default:         p.isDefault,
       enabled:            p.enabled,
-      tier_category_id:   p.tierCategoryId,
       show_role_mentions: p.showRoleMentions,
     }))
 
@@ -76,11 +75,10 @@ export default async function panelRoutes(app: FastifyInstance) {
   app.post("/panels", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const body = req.body as {
-      name:              string
-      channel_id?:       string | null
-      log_channel_id?:   string | null
-      whitelist_id?:     number | null
-      tier_category_id?: number | null
+      name:            string
+      channel_id?:     string | null
+      log_channel_id?: string | null
+      whitelist_id?:   number | null
     }
 
     if (!body.name || typeof body.name !== "string") {
@@ -102,7 +100,6 @@ export default async function panelRoutes(app: FastifyInstance) {
         panelMessageId: null,
         isDefault:      false,
         enabled:        true,
-        tierCategoryId: body.tier_category_id ?? null,
         createdAt:      new Date(),
         updatedAt:      new Date(),
       }
@@ -128,7 +125,6 @@ export default async function panelRoutes(app: FastifyInstance) {
       channel_id?:         string | null
       log_channel_id?:     string | null
       whitelist_id?:       number | null
-      tier_category_id?:   number | null
       enabled?:            boolean
       show_role_mentions?: boolean
     }
@@ -138,7 +134,6 @@ export default async function panelRoutes(app: FastifyInstance) {
     if (body.name               !== undefined) data["name"]             = body.name
     if (body.enabled            !== undefined) data["enabled"]          = body.enabled
     if (body.whitelist_id       !== undefined) data["whitelistId"]      = body.whitelist_id
-    if (body.tier_category_id   !== undefined) data["tierCategoryId"]   = body.tier_category_id
     if (body.show_role_mentions !== undefined) data["showRoleMentions"] = body.show_role_mentions
     if (body.channel_id         !== undefined) {
       data["channelId"] = body.channel_id ? BigInt(body.channel_id) : null

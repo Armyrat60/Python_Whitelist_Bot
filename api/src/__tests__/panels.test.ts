@@ -15,7 +15,6 @@ function makePanel(overrides: Record<string, unknown> = {}) {
     panelMessageId:   null,
     isDefault:        false,
     enabled:          true,
-    tierCategoryId:   null,
     showRoleMentions: false,
     createdAt:        new Date(),
     updatedAt:        new Date(),
@@ -59,7 +58,6 @@ describe('GET /panels', () => {
       panel_message_id:   null,
       is_default:         true,
       enabled:            true,
-      tier_category_id:   null,
       show_role_mentions: false,
     })
   })

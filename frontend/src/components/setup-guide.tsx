@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 const DISMISS_KEY = "setup_guide_dismissed_v1";
 
 interface SetupGuideProps {
-  hasRoleMappings: boolean;
+  hasWhitelistRoles: boolean;
   hasPanelChannel: boolean;
   hasWhitelistEnabled: boolean;
 }
 
 export function SetupGuide({
-  hasRoleMappings,
+  hasWhitelistRoles,
   hasPanelChannel,
   hasWhitelistEnabled,
 }: SetupGuideProps) {
@@ -35,10 +35,10 @@ export function SetupGuide({
       href: "/dashboard/whitelists",
     },
     {
-      done: hasRoleMappings,
-      label: "Add role mappings or tier categories",
-      description: "Link Discord roles to slot counts under Tiers",
-      href: "/dashboard/tiers",
+      done: hasWhitelistRoles,
+      label: "Add access roles to your whitelist",
+      description: "Link Discord roles to slot counts under Whitelists",
+      href: "/dashboard/whitelists",
     },
     {
       done: hasPanelChannel,

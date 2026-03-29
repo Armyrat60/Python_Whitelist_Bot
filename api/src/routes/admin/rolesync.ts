@@ -53,8 +53,8 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       const actorId = BigInt(req.session.userId!)
       const { whitelist_type: wlTypeFilter, dry_run: dryRun = false } = req.body ?? {}
 
-      // Get all active role mappings for this guild, optionally filtered by whitelist slug
-      const mappings = await app.prisma.roleMapping.findMany({
+      // Get all active whitelist roles for this guild, optionally filtered by whitelist slug
+      const wlRoles = await app.prisma.whitelistRole.findMany({
         where: {
           guildId,
           isActive: true,
@@ -64,7 +64,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
         },
       })
 
-      if (!mappings.length) {
+      if (!wlRoles.length) {
         return reply.send({ ok: true, added: 0, already_exists: 0, message: "No active role mappings found." })
       }
 
@@ -75,13 +75,11 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       let alreadyExists = 0
       const now = new Date()
 
-      for (const mapping of mappings) {
-        if (mapping.whitelistId == null) continue
-
-        const wl = await app.prisma.whitelist.findUnique({ where: { id: mapping.whitelistId } })
+      for (const wlRole of wlRoles) {
+        const wl = await app.prisma.whitelist.findUnique({ where: { id: wlRole.whitelistId } })
         if (!wl) continue
 
-        const roleIdStr = String(mapping.roleId)
+        const roleIdStr = String(wlRole.roleId)
         const membersWithRole = allMembers.filter((m) => m.roles.includes(roleIdStr))
 
         for (const member of membersWithRole) {
@@ -104,7 +102,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
                 whitelistId: wl.id,
                 discordName: member.name,
                 status: "active",
-                effectiveSlotLimit: mapping.slotLimit,
+                effectiveSlotLimit: wlRole.slotLimit,
                 createdVia: "role_sync",
                 createdAt: now,
                 updatedAt: now,
@@ -116,7 +114,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
                 actionType: "role_sync_pull",
                 actorDiscordId: actorId,
                 targetDiscordId: member.id,
-                details: `Added via role sync: role ${mapping.roleName} (${roleIdStr})`,
+                details: `Added via role sync: role ${wlRole.roleName} (${roleIdStr})`,
                 whitelistId: wl.id,
                 createdAt: now,
               },
@@ -138,16 +136,15 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   app.get("/role-stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    // Collect all active tier-entry and role-mapping role IDs
-    const [tierEntries, roleMappings] = await Promise.all([
-      app.prisma.tierEntry.findMany({ where: { guildId, isActive: true }, select: { roleId: true, roleName: true } }),
-      app.prisma.roleMapping.findMany({ where: { guildId, isActive: true }, select: { roleId: true, roleName: true } }),
-    ])
+    // Collect all active whitelist role IDs (deduplicated — same role may be in multiple whitelists)
+    const wlRoles = await app.prisma.whitelistRole.findMany({
+      where: { guildId, isActive: true },
+      select: { roleId: true, roleName: true },
+    })
 
     // Build deduplicated role list with stored names as fallback
     const roleNames = new Map<string, string>()
-    for (const te of tierEntries) roleNames.set(String(te.roleId), te.roleName)
-    for (const rm of roleMappings) roleNames.set(String(rm.roleId), rm.roleName)
+    for (const r of wlRoles) roleNames.set(String(r.roleId), r.roleName)
 
     if (!roleNames.size) {
       return reply.send({ stats: [], gateway_mode: false })
@@ -236,16 +233,13 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   app.get("/members/gap", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    // Collect every role ID that grants whitelist access
-    const [rmRows, teRows] = await Promise.all([
-      app.prisma.roleMapping.findMany({ where: { guildId, isActive: true }, select: { roleId: true } }),
-      app.prisma.tierEntry.findMany({ where: { guildId, isActive: true }, select: { roleId: true } }),
-    ])
+    // Collect every role ID that grants whitelist access (deduplicated)
+    const wlRoles = await app.prisma.whitelistRole.findMany({
+      where: { guildId, isActive: true },
+      select: { roleId: true },
+    })
 
-    const whitelistedRoleIds = new Set<string>([
-      ...rmRows.map((r) => String(r.roleId)),
-      ...teRows.map((r) => String(r.roleId)),
-    ])
+    const whitelistedRoleIds = new Set<string>(wlRoles.map((r) => String(r.roleId)))
 
     if (!whitelistedRoleIds.size) {
       return reply.send({ members: [], total: 0 })
@@ -277,14 +271,13 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   })
 
   // ── POST /verify-roles ───────────────────────────────────────────────────
-  // Check that every active role mapping/tier entry refers to an existing Discord role.
+  // Check that every active whitelist role refers to an existing Discord role.
 
   app.post("/verify-roles", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const [mappings, tierEntries, liveRoles] = await Promise.all([
-      app.prisma.roleMapping.findMany({ where: { guildId, isActive: true } }),
-      app.prisma.tierEntry.findMany({ where: { guildId, isActive: true } }),
+    const [wlRoles, liveRoles] = await Promise.all([
+      app.prisma.whitelistRole.findMany({ where: { guildId, isActive: true } }),
       app.discord.fetchRoles(guildId).catch(() => [] as Array<{ id: string; name: string }>),
     ])
 
@@ -292,14 +285,9 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
 
     const issues: Array<{ type: string; role_id: string; role_name: string; source: string }> = []
 
-    for (const m of mappings) {
-      if (!liveRoleIds.has(String(m.roleId))) {
-        issues.push({ type: "missing", role_id: String(m.roleId), role_name: m.roleName, source: "role_mapping" })
-      }
-    }
-    for (const te of tierEntries) {
-      if (!liveRoleIds.has(String(te.roleId))) {
-        issues.push({ type: "missing", role_id: String(te.roleId), role_name: te.roleName, source: "tier_entry" })
+    for (const r of wlRoles) {
+      if (!liveRoleIds.has(String(r.roleId))) {
+        issues.push({ type: "missing", role_id: String(r.roleId), role_name: r.roleName, source: "whitelist_role" })
       }
     }
 
@@ -366,15 +354,15 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   app.post("/backfill/tiers", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const tierEntries = await app.prisma.tierEntry.findMany({ where: { guildId, isActive: true } })
-    if (!tierEntries.length) {
+    const wlRoles = await app.prisma.whitelistRole.findMany({ where: { guildId, isActive: true } })
+    if (!wlRoles.length) {
       return reply.send({ ok: true, updated: 0, message: "No active tier entries found" })
     }
 
     const tierByRole = new Map(
-      tierEntries.map((te) => [
-        String(te.roleId),
-        { name: te.displayName ?? te.roleName, slots: te.slotLimit, stackable: te.isStackable },
+      wlRoles.map((r) => [
+        String(r.roleId),
+        { name: r.displayName ?? r.roleName, slots: r.slotLimit, stackable: r.isStackable },
       ]),
     )
 

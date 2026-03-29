@@ -38,9 +38,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       where: { guildId, enabled: true },
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     })
-    const panels = await app.prisma.panel.findMany({
-      where: { guildId, enabled: true },
-    })
 
     // Check if user is an admin/mod for this guild (from session)
     const sessionGuild = req.session.guilds?.find((g) => g.id === String(guildId))
@@ -49,9 +46,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const results: unknown[] = []
 
     for (const wl of whitelists) {
-      // Find panel with tier category for this whitelist
-      const panel = panels.find((p) => p.whitelistId === wl.id && p.tierCategoryId != null)
-
       let tierName: string | null = null
       let slots = 0
 
@@ -61,39 +55,24 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         slots = wl.defaultSlotLimit
       }
 
-      if (panel?.tierCategoryId) {
-        const entries = await app.prisma.tierEntry.findMany({
-          where: { categoryId: panel.tierCategoryId, guildId, isActive: true },
-        })
-        const matched: Array<{ name: string; slots: number }> = []
-        for (const te of entries) {
-          if (memberRoleIds.has(String(te.roleId))) {
-            matched.push({ name: te.displayName ?? te.roleName, slots: te.slotLimit })
-          }
-        }
-        if (matched.length > 0) {
-          if (wl.stackRoles) {
-            slots = matched.reduce((sum, m) => sum + m.slots, 0)
-            tierName = matched.map((m) => m.name).join(" + ")
-          } else {
-            const winner = matched.reduce((a, b) => (b.slots > a.slots ? b : a))
-            slots = winner.slots
-            tierName = winner.name
-          }
-        }
-      }
-
-      // Fall back to role_mappings
-      if (slots <= 0 && memberRoleIds.size > 0) {
-        const mappings = await app.prisma.roleMapping.findMany({
+      // Check whitelist roles for this user's Discord roles
+      if (memberRoleIds.size > 0) {
+        const wlRoles = await app.prisma.whitelistRole.findMany({
           where: { guildId, whitelistId: wl.id, isActive: true },
         })
-        for (const rm of mappings) {
-          if (memberRoleIds.has(String(rm.roleId))) {
-            tierName = rm.roleName
-            slots = rm.slotLimit
-            break
-          }
+        const stackable: Array<{ name: string; slots: number }> = []
+        const nonStackable: Array<{ name: string; slots: number }> = []
+        for (const r of wlRoles) {
+          if (!memberRoleIds.has(String(r.roleId))) continue
+          const entry = { name: r.displayName ?? r.roleName, slots: r.slotLimit }
+          if (r.isStackable) stackable.push(entry)
+          else nonStackable.push(entry)
+        }
+        if (stackable.length > 0 || nonStackable.length > 0) {
+          const stackSlots = stackable.reduce((s, m) => s + m.slots, 0)
+          const best = nonStackable.reduce((a, b) => (b.slots > a.slots ? b : a), { name: "", slots: 0 })
+          slots = stackSlots + best.slots
+          tierName = [...stackable.map(m => m.name), ...(best.slots > 0 ? [best.name] : [])].join(" + ") || null
         }
       }
 

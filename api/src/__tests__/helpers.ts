@@ -62,7 +62,7 @@ export function makeMockPrisma() {
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count:      mockCount(),
     },
-    roleMapping: {
+    whitelistRole: {
       findMany:   mockList(),
       findFirst:  mockFn(),
       findUnique: mockFn(),
@@ -72,22 +72,6 @@ export function makeMockPrisma() {
       delete:     mockFn(),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count:      mockCount(),
-    },
-    tierCategory: {
-      findMany:   mockList(),
-      findFirst:  mockFn(),
-      findUnique: mockFn(),
-      create:     mockFn(),
-      update:     mockFn(),
-      delete:     mockFn(),
-      count:      mockCount(),
-    },
-    tierEntry: {
-      findMany:   mockList(),
-      findFirst:  mockFn(),
-      create:     mockFn(),
-      update:     mockFn(),
-      delete:     mockFn(),
     },
     panelRefreshQueue: {
       create:     mockFn(),

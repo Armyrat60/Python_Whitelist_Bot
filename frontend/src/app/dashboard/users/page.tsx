@@ -25,7 +25,7 @@ import {
   Crown,
   RefreshCw,
 } from "lucide-react";
-import { useUsers, useWhitelists, useSteamNames, useTierCategories } from "@/hooks/use-settings";
+import { useUsers, useWhitelists, useSteamNames } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -404,15 +404,7 @@ function BulkActionBar({
   const [moveTargetSlug, setMoveTargetSlug] = useState("");
   const [tierTarget, setTierTarget] = useState<{ value: string; slots: number } | null>(null);
 
-  const { data: tierCategories } = useTierCategories();
-  const allTierEntries = (tierCategories ?? []).flatMap((cat) =>
-    (cat.entries ?? []).map((e) => ({
-      label: e.display_name ?? e.role_name,
-      value: e.display_name ?? e.role_name,
-      slots: e.slot_limit,
-      categoryName: cat.name,
-    }))
-  );
+  const allTierEntries: { label: string; value: string; slots: number; categoryName: string }[] = [];
 
   async function handleBulkDelete() {
     setBulkDeleting(true);
@@ -775,13 +767,7 @@ export default function UsersPage() {
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading, isError } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
-  const { data: tierCategories } = useTierCategories();
-  const allTierOptions = (tierCategories ?? []).flatMap((cat) =>
-    (cat.entries ?? []).map((e) => ({
-      label: e.display_name ?? e.role_name,
-      value: e.display_name ?? e.role_name,
-    }))
-  );
+  const allTierOptions: { label: string; value: string }[] = [];
   const [showGapReport, setShowGapReport] = useState(false);
   const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
@@ -1765,16 +1751,7 @@ function UserDetailSheet({
     }
   }
 
-  const { data: tierCategories } = useTierCategories();
-  // Flatten all tier entries across all categories for the dropdown
-  const allTierEntries = (tierCategories ?? []).flatMap((cat) =>
-    (cat.entries ?? []).map((e) => ({
-      label: e.display_name ?? e.role_name,
-      value: e.display_name ?? e.role_name,
-      slots: e.slot_limit,
-      categoryName: cat.name,
-    }))
-  );
+  const allTierEntries: { label: string; value: string; slots: number; categoryName: string }[] = [];
 
   function updateSlot(idx: number, value: string) {
     setSlots((prev) => {

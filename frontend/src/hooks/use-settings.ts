@@ -8,7 +8,7 @@ import type {
   Settings,
   Whitelist,
   Panel,
-  RoleMapping,
+  WhitelistRole,
   DiscordRole,
   DiscordChannel,
   SquadGroup,
@@ -16,7 +16,6 @@ import type {
   HealthStatus,
   WhitelistUser,
   AuditEntry,
-  TierCategory,
 } from "@/lib/types";
 
 // ─── Query hooks ────────────────────────────────────────────────────────────
@@ -38,7 +37,6 @@ interface SettingsResponse {
     is_default: boolean;
     url: string;
   }>;
-  role_mappings: Record<string, RoleMapping[]>;
   squad_groups: string[];
   squad_permissions: Record<string, string>;
 }
@@ -319,35 +317,56 @@ export function usePushPanel() {
   });
 }
 
-export function useAddRoleMapping() {
+// ─── Whitelist Roles ────────────────────────────────────────────────────────
+
+export function useWhitelistRoles(whitelistId: number | null) {
+  return useQuery<WhitelistRole[]>({
+    queryKey: ["whitelist-roles", whitelistId],
+    queryFn: async () => {
+      const res = await api.get<{ roles: WhitelistRole[] }>(`/api/admin/whitelists/${whitelistId}/roles`);
+      return res.roles;
+    },
+    enabled: whitelistId !== null,
+  });
+}
+
+export function useAddWhitelistRole(whitelistId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      slug,
-      ...data
-    }: {
-      slug: string;
-      role_id: string;
-      slot_limit: number;
-    }) => api.post(`/api/admin/roles/${slug}`, data),
+    mutationFn: (data: { role_id: string; role_name: string; slot_limit: number; is_stackable?: boolean; display_name?: string }) =>
+      api.post(`/api/admin/whitelists/${whitelistId}/roles`, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
 
-export function useRemoveRoleMapping() {
+export function useUpdateWhitelistRole(whitelistId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ slug, roleId }: { slug: string; roleId: string }) =>
-      api.delete(`/api/admin/roles/${slug}/${roleId}`),
+    mutationFn: ({ roleId, ...data }: { roleId: string; slot_limit?: number; is_stackable?: boolean; is_active?: boolean; display_name?: string }) =>
+      api.put(`/api/admin/whitelists/${whitelistId}/roles/${roleId}`, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
     },
   });
 }
 
-// ─── Tier Categories ───────────────────────────────────────────────────────
+export function useRemoveWhitelistRole(whitelistId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (roleId: string) =>
+      api.delete(`/api/admin/whitelists/${whitelistId}/roles/${roleId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["whitelist-roles", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["role-stats"] });
+    },
+  });
+}
+
+// ─── Role Stats ─────────────────────────────────────────────────────────────
 
 export interface RoleStat {
   role_id: string;
@@ -368,90 +387,6 @@ export function useRoleStats() {
     queryKey: ["role-stats"],
     queryFn: () => api.get<RoleStatsResult>("/api/admin/role-stats"),
     staleTime: 30_000,
-  });
-}
-
-export function useTierCategories() {
-  return useQuery<TierCategory[]>({
-    queryKey: ["tier-categories"],
-    queryFn: async () => {
-      const res = await api.get<{ categories: TierCategory[] }>("/api/admin/tier-categories");
-      return res.categories;
-    },
-  });
-}
-
-export function useCreateTierCategory() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: { name: string; description?: string }) =>
-      api.post("/api/admin/tier-categories", data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-}
-
-export function useUpdateTierCategory() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: number; name?: string; description?: string }) =>
-      api.put(`/api/admin/tier-categories/${id}`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-}
-
-export function useDeleteTierCategory() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/api/admin/tier-categories/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-}
-
-export function useAddTierEntry() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ categoryId, ...data }: { categoryId: number; role_id: string; role_name: string; slot_limit: number; display_name?: string; is_stackable?: boolean }) =>
-      api.post(`/api/admin/tier-categories/${categoryId}/entries`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["role-stats"] });
-    },
-  });
-}
-
-export function useUpdateTierEntry() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ categoryId, entryId, ...data }: { categoryId: number; entryId: number; slot_limit?: number; display_name?: string; sort_order?: number; is_active?: boolean; is_stackable?: boolean }) =>
-      api.put(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["role-stats"] });
-    },
-  });
-}
-
-export function useRemoveTierEntry() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ categoryId, entryId }: { categoryId: number; entryId: number }) =>
-      api.delete(`/api/admin/tier-categories/${categoryId}/entries/${entryId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tier-categories"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["role-stats"] });
-    },
   });
 }
 

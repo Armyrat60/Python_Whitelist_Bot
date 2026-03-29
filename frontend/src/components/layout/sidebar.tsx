@@ -11,9 +11,7 @@ import {
   List,
   PanelTop,
   Shield,
-  Lock,
   Sliders,
-  Crown,
   ChevronsUpDown,
   Check,
   Bell,
@@ -45,8 +43,6 @@ const mainLinks = [
 const manageLinks = [
   { href: "/dashboard/panels", label: "Panels", icon: PanelTop },
   { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
-  { href: "/dashboard/tiers", label: "Tiers", icon: Crown },
-  { href: "/dashboard/groups", label: "Groups", icon: Lock },
 ];
 
 const settingsLinks = [

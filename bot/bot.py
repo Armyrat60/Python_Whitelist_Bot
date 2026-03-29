@@ -232,8 +232,8 @@ class WhitelistBot(commands.Bot):
             status = "Enabled" if wl["enabled"] else "Disabled"
             panel_ch = f"<#{wl['panel_channel_id']}>" if wl["panel_channel_id"] else "`Not set`"
             log_ch = f"<#{wl['log_channel_id']}>" if wl["log_channel_id"] else "`Not set`"
-            mappings = await self.db.get_role_mappings(guild_id, wl["id"])
-            role_lines = [f"<@&{rid}> = {sl} slots" for rid, _, sl, active in mappings if active] or ["`None`"]
+            wl_roles = await self.db.get_whitelist_roles(guild_id, wl["id"])
+            role_lines = [f"<@&{r[1]}> = {r[3]} slots" for r in wl_roles if r[6]] or ["`None`"]
             embed.add_field(
                 name=wl["name"],
                 value=(
@@ -323,85 +323,51 @@ class WhitelistBot(commands.Bot):
                      guild_id, member.id, member.display_name, override_slots)
             return int(override_slots), f"override ({override_slots})"
 
-        # Check for tier_category_id on the panel first
-        tier_category_id = None
-        if panel and panel.get("tier_category_id"):
-            tier_category_id = panel["tier_category_id"]
-
         member_role_ids = {r.id for r in member.roles}
         member_role_names = {r.id: r.name for r in member.roles}
 
-        if tier_category_id:
-            # Use tier_entries from the category
-            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
-            tier_entries = await self.db.get_tier_entries(guild_id, tier_category_id)
-            stackable_matched = []
-            non_stackable_matched = []
-            for te in tier_entries:
-                te_role_id = int(te[1])
-                te_active = bool(te[6])
-                te_stackable = bool(te[7]) if len(te) > 7 else False
-                te_slots = te[3]
-                te_name = te[4] or te[2]
-                if te_active and te_role_id in member_role_ids:
-                    if te_stackable:
-                        stackable_matched.append((te_name, te_slots))
-                        log.info("Slot calc: guild=%s user=%s (%s) → MATCHED stackable tier '%s' = %d slots",
-                                 guild_id, member.id, member.display_name, te_name, te_slots)
-                    else:
-                        non_stackable_matched.append((te_name, te_slots))
-                        log.info("Slot calc: guild=%s user=%s (%s) → MATCHED exclusive tier '%s' = %d slots",
-                                 guild_id, member.id, member.display_name, te_name, te_slots)
+        # wl_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+        wl_roles = await self.db.get_whitelist_roles(guild_id, whitelist_id)
+        stackable_matched = []
+        non_stackable_matched = []
+        for r in wl_roles:
+            r_role_id = int(r[1])
+            r_active = bool(r[6])
+            r_stackable = bool(r[7])
+            r_slots = r[3]
+            r_name = r[4] or r[2]
+            if r_active and r_role_id in member_role_ids:
+                if r_stackable:
+                    stackable_matched.append((r_name, r_slots))
+                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED stackable '%s' = %d slots",
+                             guild_id, member.id, member.display_name, r_name, r_slots)
+                else:
+                    non_stackable_matched.append((r_name, r_slots))
+                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED exclusive '%s' = %d slots",
+                             guild_id, member.id, member.display_name, r_name, r_slots)
 
-            # Combine: all stackable entries + only the highest exclusive (non-stackable) entry
-            matched = list(stackable_matched)
-            if non_stackable_matched:
-                best_exclusive = max(non_stackable_matched, key=lambda x: x[1])
-                matched.append(best_exclusive)
-                if len(non_stackable_matched) > 1:
-                    log.info("Slot calc: guild=%s user=%s (%s) → multiple exclusive tiers, using highest '%s'",
-                             guild_id, member.id, member.display_name, best_exclusive[0])
+        # Combine: all stackable entries + only the highest exclusive (non-stackable) entry
+        matched = list(stackable_matched)
+        if non_stackable_matched:
+            best_exclusive = max(non_stackable_matched, key=lambda x: x[1])
+            matched.append(best_exclusive)
+            if len(non_stackable_matched) > 1:
+                log.info("Slot calc: guild=%s user=%s (%s) → multiple exclusive roles, using highest '%s'",
+                         guild_id, member.id, member.display_name, best_exclusive[0])
 
-            if not matched:
-                log.info("Slot calc: guild=%s user=%s (%s) → NO MATCH in category %s (%d entries). "
-                         "User roles: %s. Tier role IDs: %s",
-                         guild_id, member.id, member.display_name, tier_category_id,
-                         len(tier_entries),
-                         [(rid, member_role_names.get(rid, '?')) for rid in sorted(member_role_ids)],
-                         [(int(te[1]), te[2], bool(te[6])) for te in tier_entries])
-        else:
-            # Fall back to role_mappings for the whitelist (backward compat)
-            mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-            matched = []
-            for mapping in mappings:
-                role_id, role_name, slot_limit, is_active = mapping[0], mapping[1], mapping[2], mapping[3]
-                if is_active and int(role_id) in member_role_ids:
-                    matched.append((role_name, slot_limit))
-                    log.info("Slot calc: guild=%s user=%s (%s) → MATCHED role_mapping '%s' = %d slots",
-                             guild_id, member.id, member.display_name, role_name, slot_limit)
+        if not matched:
+            log.info("Slot calc: guild=%s user=%s (%s) → NO MATCH (%d roles). "
+                     "User roles: %s. Mapped role IDs: %s",
+                     guild_id, member.id, member.display_name, len(wl_roles),
+                     [(rid, member_role_names.get(rid, '?')) for rid in sorted(member_role_ids)],
+                     [(int(r[1]), r[2], bool(r[6])) for r in wl_roles])
 
         if matched:
-            if tier_category_id:
-                # Per-tier stacking already resolved above:
-                # matched = all stackable entries + best exclusive entry
-                # Always sum the final matched list
-                total = sum(x[1] for x in matched)
-                plan = " + ".join(f"{n}:{s}" for n, s in matched) if len(matched) > 1 else f"{matched[0][0]}:{matched[0][1]}"
-                log.info("Slot calc: guild=%s user=%s (%s) → TIER RESULT %d slots (%s)",
-                         guild_id, member.id, member.display_name, total, plan)
-                return total, plan
-            elif wl.get("stack_roles"):
-                # Legacy role_mappings with whitelist-level stack setting
-                total = sum(x[1] for x in matched)
-                plan = " + ".join(f"{n}:{s}" for n, s in matched)
-                log.info("Slot calc: guild=%s user=%s (%s) → STACKED %d total slots (%s)",
-                         guild_id, member.id, member.display_name, total, plan)
-                return total, plan
-            else:
-                winner = max(matched, key=lambda x: x[1])
-                log.info("Slot calc: guild=%s user=%s (%s) → BEST MATCH '%s' = %d slots",
-                         guild_id, member.id, member.display_name, winner[0], winner[1])
-                return winner[1], f"{winner[0]}:{winner[1]}"
+            total = sum(x[1] for x in matched)
+            plan = " + ".join(f"{n}:{s}" for n, s in matched) if len(matched) > 1 else f"{matched[0][0]}:{matched[0][1]}"
+            log.info("Slot calc: guild=%s user=%s (%s) → RESULT %d slots (%s)",
+                     guild_id, member.id, member.display_name, total, plan)
+            return total, plan
 
         default = int(wl.get("default_slot_limit", 1))
         log.info("Slot calc: guild=%s user=%s (%s) → DEFAULT %d slots (no tier match)",
@@ -420,11 +386,7 @@ class WhitelistBot(commands.Bot):
             whitelist_id = wl["id"]
             member = interaction.guild.get_member(interaction.user.id)
 
-            # Find panel for this whitelist to get tier_category_id
-            panels = await self.db.get_panels(guild_id)
-            panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
-
-            slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
+            slots, _ = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
             if slots <= 0:
                 await interaction.response.send_message("You don't have a role that grants whitelist access. Contact your server admin.", ephemeral=True)
                 return
@@ -462,11 +424,7 @@ class WhitelistBot(commands.Bot):
         whitelist_id = wl["id"]
         member = interaction.guild.get_member(interaction.user.id)
 
-        # Find panel for tier_category lookup
-        panels = await self.db.get_panels(guild_id)
-        panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
-
-        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl, panel=panel)
+        slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
         log.info("Submit: guild=%s user=%s (%s) wl=%s slots=%d plan=%s",
                  guild_id, member.id if member else '?', interaction.user, whitelist_type, slots, plan)
         steam_ids = list(dict.fromkeys(token for token in split_identifier_tokens(steam_raw) if token))
@@ -722,7 +680,6 @@ class WhitelistBot(commands.Bot):
     async def enforce_member_roles(self, member: discord.Member):
         guild_id = member.guild.id
         whitelists = await self.db.get_whitelists(guild_id)
-        panels = await self.db.get_panels(guild_id)
         member_role_ids = {r.id for r in member.roles}
         for wl in whitelists:
             if not wl["enabled"]:
@@ -730,17 +687,9 @@ class WhitelistBot(commands.Bot):
             whitelist_id = wl["id"]
             user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
             if not user_record:
-                # Auto-enroll: check role_mappings AND tier_entries for this whitelist's panel
-                role_mappings = await self.db.get_role_mappings(guild_id, whitelist_id)
-                active_mapped = {int(rm[0]) for rm in role_mappings if rm[3]}
-
-                # Also collect role IDs from tier_entries linked via any panel for this whitelist
-                panel_for_wl = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
-                if panel_for_wl:
-                    tier_entries = await self.db.get_tier_entries(guild_id, panel_for_wl["tier_category_id"])
-                    for te in tier_entries:
-                        if bool(te[6]):  # is_active
-                            active_mapped.add(int(te[1]))  # role_id
+                # Auto-enroll: check whitelist_roles for this whitelist
+                wl_roles = await self.db.get_whitelist_roles(guild_id, whitelist_id)
+                active_mapped = {int(r[1]) for r in wl_roles if r[6]}
 
                 if not active_mapped or not (active_mapped & member_role_ids):
                     continue
@@ -768,9 +717,7 @@ class WhitelistBot(commands.Bot):
                 user_record = await self.db.get_user_record(guild_id, member.id, whitelist_id)
                 if not user_record:
                     continue
-            # Find panel with tier_category for this whitelist
-            panel = next((p for p in panels if p.get("whitelist_id") == whitelist_id and p.get("tier_category_id")), None)
-            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl, panel=panel)
+            slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, user_record=user_record, wl=wl)
             status_before = user_record[1]
             if slots <= 0:
                 if status_before == "active":
@@ -835,13 +782,14 @@ class WhitelistBot(commands.Bot):
     async def _daily_role_sync(self, guild: "discord.Guild") -> None:
         """Ensure whitelist membership matches Discord role membership for all mapped roles."""
         guild_id = guild.id
-        all_mappings = await self.db.get_role_mappings(guild_id)  # all whitelists
-        if not all_mappings:
+        all_wl_roles = await self.db.get_all_whitelist_roles(guild_id)
+        if not all_wl_roles:
             return
 
         # Group active role_ids by whitelist_id
+        # get_all_whitelist_roles returns (whitelist_id, role_id, role_name, slot_limit, is_active)
         by_whitelist: dict[int, list[int]] = {}
-        for row in all_mappings:
+        for row in all_wl_roles:
             wl_id, role_id, _name, _slots, is_active = row[0], row[1], row[2], row[3], row[4]
             if is_active and wl_id:
                 by_whitelist.setdefault(wl_id, []).append(role_id)

@@ -42,9 +42,8 @@ export default function DashboardPage() {
 
   // Setup guide state
   const hasWhitelistEnabled = whitelists?.some((w) => w.enabled) ?? false;
-  const hasRoleMappings = settingsData?.role_mappings
-    ? Object.values(settingsData.role_mappings).some((arr) => arr.length > 0)
-    : false;
+  // We don't know whitelist roles here without extra queries — default to false until user visits the page
+  const hasWhitelistRoles = false;
   const hasPanelChannel = panels?.some((p) => p.channel_id) ?? false;
 
   async function handleResync() {
@@ -286,7 +285,7 @@ export default function DashboardPage() {
       {/* Setup guide — fixed bottom popup, shown until dismissed or fully configured */}
       <SetupGuide
         hasWhitelistEnabled={hasWhitelistEnabled}
-        hasRoleMappings={hasRoleMappings}
+        hasWhitelistRoles={hasWhitelistRoles}
         hasPanelChannel={hasPanelChannel}
       />
     </div>

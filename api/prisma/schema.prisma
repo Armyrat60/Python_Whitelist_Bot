@@ -34,30 +34,33 @@ model Whitelist {
   createdAt        DateTime @map("created_at")
   updatedAt        DateTime @map("updated_at")
 
-  panels           Panel[]
-  users            WhitelistUser[]
-  identifiers      WhitelistIdentifier[]
-  roleMappings     RoleMapping[]
+  panels          Panel[]
+  users           WhitelistUser[]
+  identifiers     WhitelistIdentifier[]
+  whitelistRoles  WhitelistRole[]
 
   @@unique([guildId, slug])
   @@map("whitelists")
 }
 
-model RoleMapping {
-  id            Int      @id @default(autoincrement())
-  guildId       BigInt   @default(0) @map("guild_id")
-  whitelistType String?  @map("whitelist_type") @db.VarChar(20)
-  whitelistId   Int?     @map("whitelist_id")
-  roleId        BigInt   @map("role_id")
-  roleName      String   @map("role_name") @db.VarChar(255)
-  slotLimit     Int      @map("slot_limit")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @map("created_at")
+model WhitelistRole {
+  id          Int      @id @default(autoincrement())
+  guildId     BigInt   @map("guild_id")
+  whitelistId Int      @map("whitelist_id")
+  roleId      BigInt   @map("role_id")
+  roleName    String   @map("role_name") @db.VarChar(100)
+  slotLimit   Int      @default(1) @map("slot_limit")
+  isStackable Boolean  @default(false) @map("is_stackable")
+  isActive    Boolean  @default(true) @map("is_active")
+  displayName String?  @map("display_name") @db.VarChar(100)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  whitelist     Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
+  whitelist   Whitelist @relation(fields: [whitelistId], references: [id], onDelete: Cascade)
 
   @@unique([guildId, whitelistId, roleId])
-  @@map("role_mappings")
+  @@map("whitelist_roles")
 }
 
 model WhitelistUser {
@@ -138,59 +141,22 @@ model SquadGroup {
 }
 
 model Panel {
-  id             Int      @id @default(autoincrement())
-  guildId        BigInt   @default(0) @map("guild_id")
-  name           String   @db.VarChar(100)
-  channelId      BigInt?  @map("channel_id")
-  logChannelId   BigInt?  @map("log_channel_id")
-  whitelistId    Int?     @map("whitelist_id")
-  panelMessageId BigInt?  @map("panel_message_id")
+  id               Int      @id @default(autoincrement())
+  guildId          BigInt   @default(0) @map("guild_id")
+  name             String   @db.VarChar(100)
+  channelId        BigInt?  @map("channel_id")
+  logChannelId     BigInt?  @map("log_channel_id")
+  whitelistId      Int?     @map("whitelist_id")
+  panelMessageId   BigInt?  @map("panel_message_id")
   isDefault        Boolean  @default(false) @map("is_default")
   enabled          Boolean  @default(true)
-  tierCategoryId   Int?     @map("tier_category_id")
   showRoleMentions Boolean  @default(true) @map("show_role_mentions")
   createdAt        DateTime @map("created_at")
   updatedAt        DateTime @map("updated_at")
 
-  whitelist      Whitelist?    @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
-  tierCategory   TierCategory? @relation(fields: [tierCategoryId], references: [id], onDelete: SetNull)
+  whitelist        Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
 
   @@map("panels")
-}
-
-model TierCategory {
-  id          Int      @id @default(autoincrement())
-  guildId     BigInt   @map("guild_id")
-  name        String   @db.VarChar(100)
-  description String?  @db.VarChar(500)
-  isDefault   Boolean  @default(false) @map("is_default")
-  createdAt   DateTime @map("created_at")
-  updatedAt   DateTime @map("updated_at")
-
-  entries     TierEntry[]
-  panels      Panel[]
-
-  @@unique([guildId, name])
-  @@map("tier_categories")
-}
-
-model TierEntry {
-  id          Int      @id @default(autoincrement())
-  guildId     BigInt   @map("guild_id")
-  categoryId  Int      @map("category_id")
-  roleId      BigInt   @map("role_id")
-  roleName    String   @map("role_name") @db.VarChar(255)
-  slotLimit   Int      @default(1) @map("slot_limit")
-  displayName String?  @map("display_name") @db.VarChar(100)
-  sortOrder   Int      @default(0) @map("sort_order")
-  isActive    Boolean  @default(true) @map("is_active")
-  isStackable Boolean  @default(false) @map("is_stackable")
-  createdAt   DateTime @map("created_at")
-
-  category    TierCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-
-  @@unique([guildId, categoryId, roleId])
-  @@map("tier_entries")
 }
 
 model PanelRefreshQueue {

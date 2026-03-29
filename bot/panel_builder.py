@@ -38,34 +38,22 @@ async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict
     """Return formatted tier lines for the embed description."""
     tier_lines: list[str] = []
 
-    if panel and panel.get("tier_category_id"):
-        tier_entries = await db.get_tier_entries(guild_id, panel["tier_category_id"])
-        tier_entries = sorted(
-            [te for te in tier_entries if bool(te[6])],  # te[6] = is_active
-            key=lambda te: te[3],  # sort by slot_limit ascending
-        )
-        for te in tier_entries:
-            # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
-            slots = te[3]
-            if show_role_mentions:
-                display = te[4] or f"<@&{te[1]}>"
-            else:
-                display = te[4] or te[2]  # display_name or role_name
-            tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
-    elif wl:
-        role_mappings = await db.get_role_mappings(guild_id, wl["id"])
-        for rm in role_mappings:
-            role_id = rm[0] if isinstance(rm, tuple) else rm.get("role_id")
-            role_name = rm[1] if isinstance(rm, tuple) else rm.get("role_name", "Unknown")
-            slots = rm[2] if isinstance(rm, tuple) else rm.get("slot_limit", 1)
-            is_active = rm[3] if isinstance(rm, tuple) else rm.get("is_active", True)
-            if not is_active:
-                continue
-            if show_role_mentions and role_id:
-                display = f"<@&{role_id}>"
-            else:
-                display = role_name
-            tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
+    if not wl:
+        return tier_lines
+
+    # wl_role tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
+    wl_roles = await db.get_whitelist_roles(guild_id, wl["id"])
+    wl_roles = sorted(
+        [r for r in wl_roles if bool(r[6])],  # r[6] = is_active
+        key=lambda r: r[3],  # sort by slot_limit ascending
+    )
+    for r in wl_roles:
+        slots = r[3]
+        if show_role_mentions:
+            display = r[4] or f"<@&{r[1]}>"
+        else:
+            display = r[4] or r[2]  # display_name or role_name
+        tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
 
     return tier_lines
 

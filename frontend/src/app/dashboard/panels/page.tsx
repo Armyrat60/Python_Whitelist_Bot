@@ -19,9 +19,8 @@ import {
   useUpdatePanel,
   useDeletePanel,
   usePushPanel,
-  useTierCategories,
 } from "@/hooks/use-settings";
-import type { Panel, Whitelist, TierCategory } from "@/lib/types";
+import type { Panel, Whitelist } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +62,6 @@ export default function PanelsPage() {
   const { data: panels, isLoading: panelsLoading } = usePanels();
   const { data: whitelists } = useWhitelists();
   const { data: channels } = useChannels();
-  const { data: tierCategories } = useTierCategories();
   const createPanel = useCreatePanel();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -107,7 +105,6 @@ export default function PanelsPage() {
             panel={panel}
             whitelists={whitelists ?? []}
             channels={channels ?? []}
-            tierCategories={tierCategories ?? []}
           />
         ))}
       </div>
@@ -161,12 +158,10 @@ function PanelCard({
   panel,
   whitelists,
   channels,
-  tierCategories,
 }: {
   panel: Panel;
   whitelists: Whitelist[];
   channels: { id: string; name: string }[];
-  tierCategories: TierCategory[];
 }) {
   const updatePanel = useUpdatePanel();
   const deletePanel = useDeletePanel();
@@ -177,9 +172,6 @@ function PanelCard({
   const [logChannelId, setLogChannelId] = useState(panel.log_channel_id ?? "");
   const [whitelistId, setWhitelistId] = useState(
     panel.whitelist_id?.toString() ?? ""
-  );
-  const [tierCategoryId, setTierCategoryId] = useState(
-    panel.tier_category_id?.toString() ?? ""
   );
   const [panelName, setPanelName] = useState(panel.name);
   const [enabled, setEnabled] = useState(panel.enabled ?? true);
@@ -192,19 +184,6 @@ function PanelCard({
   const wlName =
     whitelists.find((w) => w.id === panel.whitelist_id)?.name ?? "None";
 
-  // Find the selected tier category for this panel
-  const selectedCategory = tierCategories.find(
-    (cat) => cat.id === panel.tier_category_id
-  );
-
-  // Sorted tier entries from the selected category
-  const tierEntries = useMemo(() => {
-    if (!selectedCategory) return [];
-    return [...selectedCategory.entries].sort(
-      (a, b) => a.sort_order - b.sort_order || a.slot_limit - b.slot_limit
-    );
-  }, [selectedCategory]);
-
   const channelOptions: ComboboxOption[] = useMemo(
     () => channels.map((ch) => ({ value: ch.id, label: `#${ch.name}` })),
     [channels]
@@ -215,15 +194,6 @@ function PanelCard({
     [whitelists]
   );
 
-  const tierCategoryOptions: ComboboxOption[] = useMemo(
-    () =>
-      tierCategories.map((cat) => ({
-        value: String(cat.id),
-        label: cat.name,
-      })),
-    [tierCategories]
-  );
-
   function handleSave() {
     updatePanel.mutate(
       {
@@ -232,7 +202,6 @@ function PanelCard({
         channel_id: channelId || null,
         log_channel_id: logChannelId || null,
         whitelist_id: whitelistId ? Number(whitelistId) : null,
-        tier_category_id: tierCategoryId ? Number(tierCategoryId) : null,
         show_role_mentions: showRoleMentions,
       },
       {
@@ -249,7 +218,6 @@ function PanelCard({
     setChannelId(panel.channel_id ?? "");
     setLogChannelId(panel.log_channel_id ?? "");
     setWhitelistId(panel.whitelist_id?.toString() ?? "");
-    setTierCategoryId(panel.tier_category_id?.toString() ?? "");
     setPanelName(panel.name);
     setShowRoleMentions(panel.show_role_mentions ?? true);
     setConfigMode(false);
@@ -320,49 +288,10 @@ function PanelCard({
           {panel.whitelist_id && (
             <Badge variant="outline">{wlName}</Badge>
           )}
-          {selectedCategory && (
-            <Badge
-              variant="outline"
-              style={{
-                borderColor: "color-mix(in srgb, var(--accent-secondary) 30%, transparent)",
-                color: "var(--accent-secondary)",
-              }}
-            >
-              {selectedCategory.name}
-            </Badge>
-          )}
           {!panel.channel_id && !panel.whitelist_id && (
             <span className="text-xs text-muted-foreground">Not configured</span>
           )}
         </div>
-
-        {/* Tier summary from tier category entries -- always visible */}
-        {tierEntries.length > 0 && (
-          <div
-            className="rounded-lg p-2"
-            style={{
-              border: "1px solid color-mix(in srgb, var(--accent-secondary) 20%, transparent)",
-              background: "color-mix(in srgb, var(--accent-secondary) 5%, transparent)",
-            }}
-          >
-            <p
-              className="text-[10px] font-semibold uppercase mb-1"
-              style={{ color: "color-mix(in srgb, var(--accent-secondary) 70%, transparent)" }}
-            >Tiers</p>
-            <div className="flex flex-wrap gap-1">
-              {tierEntries.map((entry) => (
-                <Badge
-                  key={entry.id}
-                  variant="secondary"
-                  className="text-[10px] cursor-help"
-                  title={`Role ID: ${entry.role_id}`}
-                >
-                  @{entry.role_name} = {entry.slot_limit} {entry.slot_limit === 1 ? "slot" : "slots"}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Configure mode: show dropdowns + name field */}
         {configMode && (
@@ -409,18 +338,6 @@ function PanelCard({
                 placeholder="Select whitelist"
                 searchPlaceholder="Search whitelists..."
                 emptyText="No whitelists found."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Tier Category</Label>
-              <Combobox
-                options={tierCategoryOptions}
-                value={tierCategoryId}
-                onValueChange={setTierCategoryId}
-                placeholder="Select tier category"
-                searchPlaceholder="Search categories..."
-                emptyText="No tier categories found."
               />
             </div>
 
