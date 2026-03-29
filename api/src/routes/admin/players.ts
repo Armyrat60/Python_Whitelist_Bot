@@ -59,10 +59,24 @@ export default async function playerRoutes(app: FastifyInstance) {
       take: 50,
     })
 
+    // Search by SquadJS in-game name — find Discord IDs linked via squad_players
+    const bySquadName = await prisma.squadPlayer.findMany({
+      where: {
+        guildId,
+        discordId: { not: null },
+        lastSeenName: { contains: q, mode: "insensitive" },
+      },
+      select: { discordId: true },
+      distinct: ["discordId"],
+      take: 50,
+    })
+    const bySquadNameMapped = bySquadName
+      .filter((r): r is { discordId: bigint } => r.discordId !== null)
+
     // Collect unique discord IDs
     const seen = new Set<bigint>()
     const discordIds: bigint[] = []
-    for (const r of [...byName, ...byDiscordId, ...byIdent]) {
+    for (const r of [...byName, ...byDiscordId, ...byIdent, ...bySquadNameMapped]) {
       if (!seen.has(r.discordId)) {
         seen.add(r.discordId)
         discordIds.push(r.discordId)
@@ -208,5 +222,55 @@ export default async function playerRoutes(app: FastifyInstance) {
       memberships:  membershipData,
       audit_log:    auditData,
     }))
+  })
+
+  // ── GET /api/admin/squad-players ─────────────────────────────────────────
+  // List players synced from SquadJS, with optional search by in-game name
+  // or Steam ID. Results include linked Discord user when known.
+  //
+  // Query params:
+  //   q        — search by last_seen_name or steam_id (min 2 chars)
+  //   page     — 1-based page number (default 1)
+  //   per_page — results per page (default 50, max 200)
+
+  app.get("/squad-players", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const query   = req.query as { q?: string; page?: string; per_page?: string }
+    const q       = query.q?.trim() ?? ""
+    const page    = Math.max(1, parseInt(query.page ?? "1", 10))
+    const perPage = Math.min(200, Math.max(1, parseInt(query.per_page ?? "50", 10)))
+    const skip    = (page - 1) * perPage
+
+    const where = q.length >= 2
+      ? {
+          guildId,
+          OR: [
+            { lastSeenName: { contains: q, mode: "insensitive" as const } },
+            { steamId: { contains: q } },
+          ],
+        }
+      : { guildId }
+
+    const [players, total] = await Promise.all([
+      prisma.squadPlayer.findMany({
+        where,
+        orderBy: { lastSeenAt: "desc" },
+        skip,
+        take: perPage,
+      }),
+      prisma.squadPlayer.count({ where }),
+    ])
+
+    const results = players.map((p) => ({
+      id:             p.id,
+      steam_id:       p.steamId,
+      last_seen_name: p.lastSeenName,
+      server_name:    p.serverName,
+      first_seen_at:  p.firstSeenAt.toISOString(),
+      last_seen_at:   p.lastSeenAt.toISOString(),
+      discord_id:     p.discordId?.toString() ?? null,
+    }))
+
+    return reply.send(toJSON({ players: results, total, page, per_page: perPage }))
   })
 }

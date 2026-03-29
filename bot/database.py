@@ -478,6 +478,22 @@ POSTGRES_MIGRATIONS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_drp_guild ON dashboard_role_permissions (guild_id)",
+    # --- SquadJS bridge: in-game player records synced from SquadJS MySQL ---
+    """
+    CREATE TABLE IF NOT EXISTS squad_players (
+        id             SERIAL PRIMARY KEY,
+        guild_id       BIGINT       NOT NULL,
+        steam_id       VARCHAR(32)  NOT NULL,
+        last_seen_name VARCHAR(255),
+        server_name    VARCHAR(255),
+        first_seen_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+        last_seen_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+        discord_id     BIGINT       NULL,
+        UNIQUE (guild_id, steam_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_squad_players_guild ON squad_players (guild_id)",
+    "CREATE INDEX IF NOT EXISTS idx_squad_players_discord ON squad_players (discord_id) WHERE discord_id IS NOT NULL",
 ]
 
 

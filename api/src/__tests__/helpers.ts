@@ -104,6 +104,15 @@ export function makeMockPrisma() {
       update:     mockFn(),
       delete:     mockFn(),
     },
+    squadPlayer: {
+      findMany:   mockList(),
+      findFirst:  mockFn(),
+      findUnique: mockFn(),
+      create:     mockFn(),
+      upsert:     mockFn(),
+      update:     mockFn(),
+      count:      mockCount(),
+    },
     $transaction: vi.fn().mockImplementation(async (arg: unknown) => {
       if (Array.isArray(arg)) return Promise.all(arg)
       if (typeof arg === 'function') return arg({})

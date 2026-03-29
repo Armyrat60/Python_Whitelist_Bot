@@ -252,3 +252,19 @@ model SteamNameCache {
 
   @@map("steam_name_cache")
 }
+
+model SquadPlayer {
+  id           Int      @id @default(autoincrement())
+  guildId      BigInt   @map("guild_id")
+  steamId      String   @map("steam_id") @db.VarChar(32)
+  lastSeenName String?  @map("last_seen_name") @db.VarChar(255)
+  serverName   String?  @map("server_name") @db.VarChar(255)
+  firstSeenAt  DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
+  discordId    BigInt?  @map("discord_id")
+
+  @@unique([guildId, steamId])
+  @@index([guildId])
+  @@index([discordId])
+  @@map("squad_players")
+}
