@@ -133,32 +133,86 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
   )
 
   // ── GET /role-stats ──────────────────────────────────────────────────────
+  // Returns per-role Discord member count vs. registered whitelist users.
 
   app.get("/role-stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const mappings = await app.prisma.roleMapping.findMany({
-      where: { guildId, isActive: true },
-      include: { whitelist: { select: { slug: true, name: true } } },
+    // Collect all active tier-entry and role-mapping role IDs
+    const [tierEntries, roleMappings] = await Promise.all([
+      app.prisma.tierEntry.findMany({ where: { guildId, isActive: true }, select: { roleId: true, roleName: true } }),
+      app.prisma.roleMapping.findMany({ where: { guildId, isActive: true }, select: { roleId: true, roleName: true } }),
+    ])
+
+    // Build deduplicated role list with stored names as fallback
+    const roleNames = new Map<string, string>()
+    for (const te of tierEntries) roleNames.set(String(te.roleId), te.roleName)
+    for (const rm of roleMappings) roleNames.set(String(rm.roleId), rm.roleName)
+
+    if (!roleNames.size) {
+      return reply.send({ stats: [], gateway_mode: false })
+    }
+
+    // Fetch live role names from Discord
+    try {
+      const liveRoles = await app.discord.fetchRoles(guildId)
+      for (const r of liveRoles) {
+        if (roleNames.has(r.id)) roleNames.set(r.id, r.name)
+      }
+    } catch { /* non-fatal; fall back to stored names */ }
+
+    // Fetch all guild members to count per-role Discord membership
+    let allMembers: Array<{ id: bigint; roles: string[] }> = []
+    try {
+      allMembers = await app.discord.fetchAllMembers(guildId)
+    } catch { /* non-fatal; discord_count will be 0 */ }
+
+    // Count Discord members per role
+    const discordCounts = new Map<string, number>()
+    for (const roleId of roleNames.keys()) discordCounts.set(roleId, 0)
+    for (const member of allMembers) {
+      for (const roleId of member.roles) {
+        if (discordCounts.has(roleId)) {
+          discordCounts.set(roleId, (discordCounts.get(roleId) ?? 0) + 1)
+        }
+      }
+    }
+
+    // Fetch active registered users (distinct discord IDs)
+    const registeredRows = await app.prisma.whitelistUser.findMany({
+      where: { guildId, status: "active" },
+      select: { discordId: true },
+      distinct: ["discordId"],
+    })
+    const registeredIds = new Set(registeredRows.map(u => u.discordId))
+
+    // Count registered per role (how many Discord members with this role are whitelisted)
+    const registeredCounts = new Map<string, number>()
+    for (const roleId of roleNames.keys()) registeredCounts.set(roleId, 0)
+    for (const member of allMembers) {
+      if (!registeredIds.has(member.id)) continue
+      for (const roleId of member.roles) {
+        if (registeredCounts.has(roleId)) {
+          registeredCounts.set(roleId, (registeredCounts.get(roleId) ?? 0) + 1)
+        }
+      }
+    }
+
+    const stats = [...roleNames.keys()].map(roleId => {
+      const discordCount    = discordCounts.get(roleId)    ?? 0
+      const registeredCount = registeredCounts.get(roleId) ?? 0
+      return {
+        role_id:            roleId,
+        role_name:          roleNames.get(roleId) ?? roleId,
+        discord_count:      discordCount,
+        registered_count:   registeredCount,
+        unregistered_count: Math.max(0, discordCount - registeredCount),
+      }
     })
 
-    // Fetch live role names from Discord (non-fatal if unavailable)
-    let liveRoles: Map<string, string> = new Map()
-    try {
-      const roles = await app.discord.fetchRoles(guildId)
-      liveRoles = new Map(roles.map((r) => [r.id, r.name]))
-    } catch { /* non-fatal */ }
+    stats.sort((a, b) => b.discord_count - a.discord_count)
 
-    const stats = mappings.map((m) => ({
-      id:             m.id,
-      role_id:        String(m.roleId),
-      role_name:      liveRoles.get(String(m.roleId)) ?? m.roleName,
-      slot_limit:     m.slotLimit,
-      whitelist_slug: m.whitelist?.slug ?? null,
-      whitelist_name: m.whitelist?.name ?? null,
-    }))
-
-    return reply.send({ role_mappings: stats })
+    return reply.send(toJSON({ stats, gateway_mode: false }))
   })
 
   // ── GET /members/gap ─────────────────────────────────────────────────────
