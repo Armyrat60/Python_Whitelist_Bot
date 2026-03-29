@@ -60,22 +60,20 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
 
   app.decorate("requireAuth", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.session.userId) {
-      reply.code(401).send({ error: "Not authenticated" })
+      return reply.code(401).send({ error: "Not authenticated" })
     }
   })
 
   app.decorate("requireAdmin", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.session.userId) {
-      reply.code(401).send({ error: "Not authenticated" })
-      return
+      return reply.code(401).send({ error: "Not authenticated" })
     }
     if (!req.session.activeGuildId) {
-      reply.code(400).send({ error: "No guild selected" })
-      return
+      return reply.code(400).send({ error: "No guild selected" })
     }
     const guild = req.session.guilds?.find((g) => g.id === req.session.activeGuildId)
     if (!guild?.isAdmin) {
-      reply.code(403).send({ error: "Not an admin of this guild" })
+      return reply.code(403).send({ error: "Not an admin of this guild" })
     }
   })
 })

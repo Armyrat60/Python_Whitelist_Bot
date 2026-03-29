@@ -10,7 +10,7 @@ const steamCache = new Map<string, { name: string; cachedAt: number }>()
 const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
 
 export const steamRoutes: FastifyPluginAsync = async (app) => {
-  app.post<{ Body: { steam_ids?: unknown[] } }>("/steam/names", async (req, reply) => {
+  app.post<{ Body: { steam_ids?: unknown[] } }>("/steam/names", { preHandler: app.requireAuth }, async (req, reply) => {
     const rawIds = req.body?.steam_ids
     if (!rawIds || !Array.isArray(rawIds)) {
       return reply.code(400).send({ error: "steam_ids array required" })
