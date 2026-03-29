@@ -285,6 +285,21 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     const outputs = await syncOutputs(prisma, guildId)
     cache.set(guildId, outputs)
 
+    // Queue refresh for all panels linked to this whitelist
+    try {
+      const panels = await prisma.panel.findMany({
+        where: { guildId, whitelistId: wl.id },
+        select: { id: true },
+      })
+      await Promise.all(panels.map(p =>
+        prisma.panelRefreshQueue.create({
+          data: { guildId, panelId: p.id, reason: "whitelist_toggled", action: "refresh" }
+        })
+      ))
+    } catch (err) {
+      app.log.warn({ err }, "Failed to queue panel refreshes after whitelist toggle")
+    }
+
     return reply.send({ ok: true, type, enabled: newEnabled })
   })
 

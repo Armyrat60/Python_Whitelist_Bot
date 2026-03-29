@@ -74,6 +74,7 @@ model WhitelistUser {
   createdAt          DateTime @map("created_at")
   expiresAt          DateTime? @map("expires_at")
   createdVia         String?  @map("created_via") @db.VarChar(50)
+  notes              String?  @db.VarChar(500)
 
   whitelist          Whitelist @relation(fields: [whitelistId], references: [id])
 

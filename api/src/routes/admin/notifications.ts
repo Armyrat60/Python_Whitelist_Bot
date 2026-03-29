@@ -21,7 +21,16 @@ function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntRe
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const EVENT_TYPES = ["user_join", "user_leave", "user_update", "role_sync", "report"] as const
+const EVENT_TYPES: Record<string, { label: string; description: string }> = {
+  user_joined:      { label: "User Joined",         description: "A member was auto-enrolled in the whitelist via a Discord role" },
+  user_removed:     { label: "User Removed",         description: "A member was manually removed from the whitelist" },
+  user_left_discord:{ label: "User Left Discord",    description: "A member left the server and was removed from the whitelist" },
+  role_lost:        { label: "Role Lost",             description: "A member lost their required Discord role and was disabled" },
+  role_returned:    { label: "Role Returned",         description: "A member regained their Discord role and was re-enabled" },
+  report:           { label: "Whitelist Report",      description: "Periodic summary report of whitelist activity" },
+  bot_alert:        { label: "Bot Alert",             description: "System alerts, errors, and important bot notifications" },
+  admin_action:     { label: "Admin Action",          description: "Manual changes made by admins via the dashboard" },
+}
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 

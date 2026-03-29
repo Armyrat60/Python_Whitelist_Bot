@@ -517,7 +517,7 @@ export function useSaveNotifications() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (routing: Record<string, string>) =>
-      api.put("/api/admin/notifications", { routing }),
+      api.put("/api/admin/notifications", routing),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   });
 }
