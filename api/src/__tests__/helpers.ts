@@ -152,7 +152,7 @@ export async function buildTestApp(
   const app = Fastify({ logger: false })
 
   // ── Decorate with mocked services ─────────────────────────────────────────
-  await app.register(fp(async (instance) => {
+  await app.register(fp(async (instance: FastifyInstance) => {
     instance.decorate('prisma',  mockPrisma  as unknown as import('@prisma/client').PrismaClient)
     instance.decorate('discord', mockDiscord as unknown as import('../lib/discord.js').DiscordRESTClient)
 

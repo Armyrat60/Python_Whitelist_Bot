@@ -6,7 +6,9 @@
 import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
-import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify"
+import ConnectPgSimple from "connect-pg-simple"
+import pg from "pg"
+import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { env } from "../lib/env.js"
 import { createHmac } from "crypto"
 
@@ -41,13 +43,17 @@ function sessionSecret(): string {
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
-const authPlugin: FastifyPluginAsync = fp(async (app) => {
+const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
+
+  const PgStore = ConnectPgSimple(session as unknown as Parameters<typeof ConnectPgSimple>[0])
+  const pool = new pg.Pool({ connectionString: env.DATABASE_URL })
 
   await app.register(cookie)
   await app.register(session, {
     secret: sessionSecret(),
     cookieName: "wl_session",
+    store: new PgStore({ pool, tableName: "sessions", createTableIfMissing: true }),
     cookie: {
       secure: isSecure,
       httpOnly: true,
