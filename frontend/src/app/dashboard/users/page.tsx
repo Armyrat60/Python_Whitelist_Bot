@@ -24,7 +24,9 @@ import {
   ArrowRightLeft,
   Crown,
   RefreshCw,
+  ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 import { useUsers, useWhitelists, useSteamNames, useCategories } from "@/hooks/use-settings";
 import type { WhitelistUser } from "@/lib/types";
 
@@ -1250,8 +1252,16 @@ function UserListView({
                   onCheckedChange={() => onToggleSelect(key)}
                 />
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/85">
-                {user.discord_name}
+              <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate">
+                <span className="truncate text-sm font-medium text-white/85">{user.discord_name}</span>
+                <Link
+                  href={`/dashboard/players/${user.discord_id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+                  title="View profile"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
               </span>
               <span className="flex w-36 items-center">
                 <SlotBar used={usedSlots} total={user.effective_slot_limit} />
@@ -1513,12 +1523,21 @@ function UserCard({
             />
           </span>
           <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
             <CardTitle
               className="cursor-pointer truncate hover:underline"
               onClick={onSelect}
             >
               {user.discord_name}
             </CardTitle>
+            <Link
+              href={`/dashboard/players/${user.discord_id}`}
+              className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+              title="View profile"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+            </div>
             <CardDescription className="font-mono text-[11px]">
               {user.discord_id}
             </CardDescription>

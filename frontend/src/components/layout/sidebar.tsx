@@ -16,6 +16,8 @@ import {
   Check,
   Bell,
   BookUser,
+  UserRound,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -35,11 +37,18 @@ import {
 } from "@/components/ui/command";
 import { useGuild } from "@/hooks/use-guild";
 
-const mainLinks = [
+const dashboardLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/roster", label: "WL Roster", icon: Users },
+];
+
+const rosterLinks = [
+  { href: "/dashboard/roster", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
-  { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
+];
+
+const playerLinks = [
+  { href: "/dashboard/players", label: "Profiles", icon: UserRound },
+  { href: "/dashboard/search", label: "Player Search", icon: Search },
 ];
 
 const manageLinks = [
@@ -51,6 +60,7 @@ const settingsLinks = [
   { href: "/dashboard/settings", label: "Settings", icon: Sliders },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
+  { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
 ];
 
 const userLinks = [
@@ -192,7 +202,31 @@ export function Sidebar() {
           <div className="h-px bg-white/[0.06]" />
         </div>
 
-        {mainLinks.map((link) => (
+        {dashboardLinks.map((link) => (
+          <NavLink
+            key={link.href}
+            href={link.href}
+            label={link.label}
+            icon={link.icon}
+            active={isActive(link.href)}
+          />
+        ))}
+
+        <SectionLabel>Rosters</SectionLabel>
+
+        {rosterLinks.map((link) => (
+          <NavLink
+            key={link.href}
+            href={link.href}
+            label={link.label}
+            icon={link.icon}
+            active={isActive(link.href)}
+          />
+        ))}
+
+        <SectionLabel>Players</SectionLabel>
+
+        {playerLinks.map((link) => (
           <NavLink
             key={link.href}
             href={link.href}
@@ -311,7 +345,9 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
   };
 
   const allLinks = [
-    ...mainLinks,
+    ...dashboardLinks,
+    ...rosterLinks,
+    ...playerLinks,
     ...manageLinks,
     ...settingsLinks,
     ...userLinks,

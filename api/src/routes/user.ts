@@ -86,15 +86,25 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       const steamIds = identifiers.filter((i) => i.idType === "steam64").map((i) => i.idValue)
       const eosIds = identifiers.filter((i) => i.idType === "eosid").map((i) => i.idValue)
 
-      // Only show if user has tier access or existing entries
-      if (tierName || identifiers.length > 0) {
+      // Fetch user record for status / expiry / category
+      const userRecord = await app.prisma.whitelistUser.findUnique({
+        where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
+        include: { category: { select: { name: true } } },
+      })
+
+      // Only show if user has tier access, existing entries, or is on a manual roster
+      if (tierName || identifiers.length > 0 || userRecord) {
         results.push({
           whitelist_slug: wl.slug,
           whitelist_name: wl.name,
+          is_manual: wl.isManual,
           tier_name: tierName,
           effective_slot_limit: slots,
           steam_ids: steamIds,
           eos_ids: eosIds,
+          status: userRecord?.status ?? null,
+          expires_at: userRecord?.expiresAt?.toISOString() ?? null,
+          category_name: userRecord?.category?.name ?? null,
         })
       }
     }

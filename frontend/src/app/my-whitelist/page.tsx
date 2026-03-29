@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { Save, Shield } from "lucide-react";
+import { Save, Shield, Clock, Tag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useGuild } from "@/hooks/use-guild";
@@ -24,10 +24,14 @@ import {
 interface MyWhitelistData {
   whitelist_slug: string;
   whitelist_name: string;
+  is_manual: boolean;
   tier_name: string | null;
   effective_slot_limit: number;
   steam_ids: string[];
   eos_ids: string[];
+  status: string | null;
+  expires_at: string | null;
+  category_name: string | null;
 }
 
 function useMyWhitelists(activeGuildId: string | undefined) {
@@ -63,6 +67,57 @@ function GuildBanner({ guildId, name, icon }: { guildId: string; name: string; i
   );
 }
 
+// ── Status helpers ───────────────────────────────────────────────────────────
+
+function computeStatus(status: string | null, expiresAt: string | null): "active" | "expiring_soon" | "expired" | "inactive" {
+  if (status === "inactive" || status === "deactivated") return "inactive";
+  if (!expiresAt) return status === "active" ? "active" : "inactive";
+  const msLeft = new Date(expiresAt).getTime() - Date.now();
+  if (msLeft <= 0) return "expired";
+  if (msLeft < 7 * 24 * 60 * 60 * 1000) return "expiring_soon"; // < 7 days
+  return "active";
+}
+
+function formatExpiry(expiresAt: string): string {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (diff <= 0) return "Expired";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Expires today";
+  if (days === 1) return "Expires tomorrow";
+  return `Expires in ${days} days`;
+}
+
+function StatusBadge({ status, expiresAt }: { status: string | null; expiresAt: string | null }) {
+  const computed = computeStatus(status, expiresAt);
+  if (computed === "active") {
+    return (
+      <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 border">
+        Active
+      </Badge>
+    );
+  }
+  if (computed === "expiring_soon") {
+    return (
+      <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 border">
+        <Clock className="mr-1 h-3 w-3" />
+        Expiring Soon
+      </Badge>
+    );
+  }
+  if (computed === "expired") {
+    return (
+      <Badge className="bg-red-500/15 text-red-400 border-red-500/30 border">
+        Expired
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary">Inactive</Badge>
+  );
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+
 export default function MyWhitelistPage() {
   const { activeGuild } = useGuild();
   const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
@@ -88,17 +143,10 @@ export default function MyWhitelistPage() {
         {guildBanner}
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">
-            Unable to load your whitelist data
-          </h2>
+          <h2 className="text-lg font-semibold">Unable to load your whitelist data</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Please try again later or contact{" "}
-            {activeGuild ? (
-              <strong>{activeGuild.name}</strong>
-            ) : (
-              "a server administrator"
-            )}{" "}
-            for help.
+            {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} for help.
           </p>
         </div>
       </>
@@ -111,17 +159,10 @@ export default function MyWhitelistPage() {
         {guildBanner}
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">
-            You don&apos;t have whitelist access
-          </h2>
+          <h2 className="text-lg font-semibold">You don&apos;t have whitelist access</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Contact{" "}
-            {activeGuild ? (
-              <strong>{activeGuild.name}</strong>
-            ) : (
-              "a server administrator"
-            )}{" "}
-            to get whitelisted.
+            {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} to get whitelisted.
           </p>
         </div>
       </>
@@ -135,14 +176,83 @@ export default function MyWhitelistPage() {
         Entries here are the same as using{" "}
         <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/whitelist</code> in Discord.
       </p>
-      {data.map((wl) => (
-        <WhitelistCard key={wl.whitelist_slug} data={wl} />
-      ))}
+      {data.map((wl) =>
+        wl.is_manual ? (
+          <ManualRosterCard key={wl.whitelist_slug} data={wl} />
+        ) : (
+          <WhitelistCard key={wl.whitelist_slug} data={wl} />
+        )
+      )}
     </div>
   );
 }
 
-// Auto-detect ID type from value
+// ── Manual Roster card (read-only) ───────────────────────────────────────────
+
+function ManualRosterCard({ data }: { data: MyWhitelistData }) {
+  const allIds = [...(data.steam_ids ?? []), ...(data.eos_ids ?? [])];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>{data.whitelist_name}</CardTitle>
+          <Badge
+            variant="outline"
+            style={{
+              background: "color-mix(in srgb, var(--accent-secondary) 12%, transparent)",
+              color: "var(--accent-secondary)",
+              border: "1px solid color-mix(in srgb, var(--accent-secondary) 30%, transparent)",
+            }}
+          >
+            Manual Roster
+          </Badge>
+          <StatusBadge status={data.status} expiresAt={data.expires_at} />
+        </div>
+        <CardDescription className="flex flex-wrap items-center gap-3 pt-1">
+          {data.category_name && (
+            <span className="flex items-center gap-1">
+              <Tag className="h-3 w-3" />
+              {data.category_name}
+            </span>
+          )}
+          {data.expires_at && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {formatExpiry(data.expires_at)}
+            </span>
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {allIds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No identifiers on file. Contact an admin to add your Steam ID.</p>
+        ) : (
+          <div className="space-y-2">
+            {(data.steam_ids ?? []).map((id) => (
+              <div key={id} className="flex items-center gap-2">
+                <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
+                <code className="text-xs text-muted-foreground">{id}</code>
+              </div>
+            ))}
+            {(data.eos_ids ?? []).map((id) => (
+              <div key={id} className="flex items-center gap-2">
+                <Badge variant="outline" className="text-blue-400 border-blue-500/30 shrink-0">EOS</Badge>
+                <code className="text-xs text-muted-foreground">{id}</code>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          This roster is managed by your server admins. Contact them to update your Steam ID.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Discord Roster card (editable) ───────────────────────────────────────────
+
 function detectIdType(val: string): "steam64" | "eosid" | "steam_url" | "unknown" {
   if (/^7656119\d{10}$/.test(val)) return "steam64";
   if (/^[0-9a-f]{32}$/i.test(val)) return "eosid";
@@ -167,12 +277,7 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   const serverFingerprint = useMemo(
     () =>
       `${data.whitelist_slug}|${data.effective_slot_limit}|${(data.steam_ids ?? []).join(",")}|${(data.eos_ids ?? []).join(",")}`,
-    [
-      data.whitelist_slug,
-      data.effective_slot_limit,
-      data.steam_ids,
-      data.eos_ids,
-    ]
+    [data.whitelist_slug, data.effective_slot_limit, data.steam_ids, data.eos_ids]
   );
 
   const [slots, setSlots] = useState<string[]>(() => buildSlotsFromData(data));
@@ -211,7 +316,6 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   }
 
   function handleBlur(index: number) {
-    // Auto-convert Steam URLs to Steam64 IDs
     const val = slots[index]?.trim();
     if (val && detectIdType(val) === "steam_url") {
       updateSlot(index, extractSteam64FromUrl(val));
@@ -228,14 +332,12 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   }
 
   async function handleSave() {
-    // Normalize and classify
     const steamIds: string[] = [];
     const eosIds: string[] = [];
 
     for (let val of slots) {
       val = val.trim();
       if (!val) continue;
-      // Extract Steam64 from URL
       if (detectIdType(val) === "steam_url") val = extractSteam64FromUrl(val);
       const t = detectIdType(val);
       if (t === "steam64") steamIds.push(val);
@@ -269,8 +371,8 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {data.whitelist_name}
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>{data.whitelist_name}</CardTitle>
           {data.tier_name && (
             <Badge
               variant="secondary"
@@ -283,9 +385,18 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
               {data.tier_name}
             </Badge>
           )}
-        </CardTitle>
-        <CardDescription>
-          {usedSlots} / {totalSlots} slot{totalSlots !== 1 ? "s" : ""} used
+          {data.status && (
+            <StatusBadge status={data.status} expiresAt={data.expires_at} />
+          )}
+        </div>
+        <CardDescription className="flex flex-wrap items-center gap-3 pt-1">
+          <span>{usedSlots} / {totalSlots} slot{totalSlots !== 1 ? "s" : ""} used</span>
+          {data.expires_at && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {formatExpiry(data.expires_at)}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -326,12 +437,12 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
       <CardFooter>
         <Button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !isDirty}
           className="text-black font-semibold"
           style={{ background: "var(--accent-primary)" }}
         >
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          Save
+          {saving ? "Saving…" : "Save"}
         </Button>
       </CardFooter>
     </Card>

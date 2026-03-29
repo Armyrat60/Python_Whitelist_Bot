@@ -582,6 +582,68 @@ export function useSteamNames(users: WhitelistUser[]) {
   return nameMap;
 }
 
+// ─── Player Search & Profile ────────────────────────────────────────────────
+
+export interface PlayerSearchResult {
+  discord_id: string;
+  discord_name: string;
+  steam_ids: string[];
+  eos_ids: string[];
+  memberships: Array<{
+    whitelist_slug: string;
+    whitelist_name: string;
+    is_manual: boolean;
+    status: string;
+    expires_at: string | null;
+    category_name: string | null;
+  }>;
+}
+
+export interface PlayerProfile {
+  discord_id: string;
+  discord_name: string;
+  steam_ids: string[];
+  eos_ids: string[];
+  memberships: Array<{
+    whitelist_slug: string;
+    whitelist_name: string;
+    is_manual: boolean;
+    status: string;
+    expires_at: string | null;
+    created_at: string;
+    notes: string | null;
+    category_id: number | null;
+    category_name: string | null;
+    effective_slot_limit: number;
+    slot_limit_override: number | null;
+    created_via: string | null;
+  }>;
+  audit_log: Array<{
+    id: number;
+    action_type: string;
+    actor_discord_id: string | null;
+    details: string | null;
+    created_at: string;
+  }>;
+}
+
+export function usePlayerSearch(q: string) {
+  return useQuery<{ players: PlayerSearchResult[] }>({
+    queryKey: ["player-search", q],
+    queryFn: () => api.get<{ players: PlayerSearchResult[] }>(`/api/admin/players/search?q=${encodeURIComponent(q)}`),
+    enabled: q.trim().length >= 2,
+    staleTime: 10_000,
+  });
+}
+
+export function usePlayerProfile(discordId: string | null) {
+  return useQuery<PlayerProfile>({
+    queryKey: ["player-profile", discordId],
+    queryFn: () => api.get<PlayerProfile>(`/api/admin/players/${discordId}`),
+    enabled: !!discordId,
+  });
+}
+
 // ─── Notification Routing ───────────────────────────────────────────────────
 
 export interface NotificationEventType {

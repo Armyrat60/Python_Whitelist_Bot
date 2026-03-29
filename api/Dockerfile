@@ -16,6 +16,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY prisma ./prisma
 COPY tsconfig.json ./
+# cache-bust: 2026-03-29-v3
 COPY src ./src
 RUN npx prisma generate
 RUN npm run build

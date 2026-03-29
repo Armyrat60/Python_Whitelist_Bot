@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  ExternalLink,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -723,7 +724,16 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
           {noDiscord ? (
             <span className="italic text-muted-foreground/60">No Discord</span>
           ) : (
-            <span className="font-medium truncate">{entry.discord_name}</span>
+            <span className="flex items-center gap-1">
+              <span className="font-medium truncate">{entry.discord_name}</span>
+              <Link
+                href={`/dashboard/players/${entry.discord_id}`}
+                className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+                title="View profile"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+            </span>
           )}
         </div>
         <div className="font-mono text-[10px] text-muted-foreground/60 truncate">{steamId}</div>
