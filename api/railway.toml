@@ -3,8 +3,8 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npx prisma db execute --file ./prisma/dedup.sql --schema ./prisma/schema.prisma; npx prisma db push --skip-generate --accept-data-loss && node dist/server.js"
+startCommand = "./node_modules/.bin/prisma db push --skip-generate --force-reset && node dist/server.js"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 0
