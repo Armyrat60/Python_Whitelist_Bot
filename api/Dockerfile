@@ -1,5 +1,5 @@
 FROM node:20-alpine AS base
-# Prisma requires OpenSSL on Alpine
+# Prisma requires OpenSSL on Alpine; build 2026-03-29
 RUN apk add --no-cache openssl libc6-compat
 
 # Install dependencies
