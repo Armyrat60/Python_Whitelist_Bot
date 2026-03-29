@@ -37,15 +37,8 @@ DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
 STEAM_API_KEY = os.getenv("STEAM_API_KEY", "")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")  # Optional: Sentry error tracking
 
-WEB_ENABLED = os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}
-WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
-WEB_PORT = int(os.getenv("PORT", "") or os.getenv("WEB_PORT", "8080"))  # Railway injects PORT
-WEB_BASE_PATH = os.getenv("WEB_BASE_PATH", "/").rstrip("/")
-SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
-SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
-WEB_DISK_PATH = os.getenv("WEB_DISK_PATH", "")
-WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # e.g. https://wl.yourdomain.com
-WEB_INTERNAL_URL = os.getenv("WEB_INTERNAL_URL", "").rstrip("/")  # e.g. http://web:8080 (Docker internal)
+WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # Dashboard URL e.g. https://squadwhitelister.com
+WEB_INTERNAL_URL = os.getenv("WEB_INTERNAL_URL", "").rstrip("/")  # TypeScript API internal URL e.g. http://api:8080
 _raw_file_secret = os.getenv("WEB_FILE_SECRET", "")
 if not _raw_file_secret:
     # Auto-generate a stable secret from DISCORD_TOKEN so it survives restarts
@@ -57,19 +50,6 @@ if not _raw_file_secret:
     log.warning("WEB_FILE_SECRET not set — derived from DISCORD_TOKEN. Set WEB_FILE_SECRET explicitly in production.")
 else:
     WEB_FILE_SECRET = _raw_file_secret
-
-DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
-DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
-_raw_session_secret = os.getenv("WEB_SESSION_SECRET", "")
-if not _raw_session_secret or _raw_session_secret == "change-me-to-a-random-secret-key":
-    if os.getenv("WEB_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on", "enabled"}:
-        log.warning(
-            "WEB_SESSION_SECRET is not set or is the default placeholder. "
-            "Sessions will be insecure. Set a strong random value in production."
-        )
-    WEB_SESSION_SECRET = _raw_session_secret or secrets.token_hex(32)
-else:
-    WEB_SESSION_SECRET = _raw_session_secret
 
 STEAM64_RE = re.compile(r"^7656119\d{10}$")
 EOSID_RE = re.compile(r"^[0-9a-fA-F]{32}$")

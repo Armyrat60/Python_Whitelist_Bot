@@ -169,13 +169,12 @@ async def _notify_web_service(guild_id: int) -> None:
         log.debug("Web service sync notification failed for guild %s (web service may be down)", guild_id)
 
 
-async def sync_outputs(db: "Database", guild_id: int, web_server=None, github=None) -> int:
-    """Generate output files and push to web cache + optional GitHub.
+async def sync_outputs(db: "Database", guild_id: int, github=None) -> int:
+    """Generate output files and notify the TypeScript API + optional GitHub.
 
     Args:
         db: Database instance
-        guild_id: Guild to sync (or None for all guilds)
-        web_server: Optional WebServer instance to update cache
+        guild_id: Guild to sync
         github: Optional GithubPublisher instance
 
     Returns:
@@ -185,10 +184,7 @@ async def sync_outputs(db: "Database", guild_id: int, web_server=None, github=No
 
     outputs = await generate_output_files(db, guild_id)
 
-    # Update web server cache (single-process mode)
-    if web_server:
-        web_server.update_cache(guild_id, outputs)
-    elif WEB_INTERNAL_URL:
+    if WEB_INTERNAL_URL:
         # Two-process mode: notify the web service to pull fresh data from DB
         import asyncio
         asyncio.create_task(_notify_web_service(guild_id))

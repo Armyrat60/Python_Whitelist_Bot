@@ -226,7 +226,7 @@ class WhitelistPanelView(discord.ui.View):
 
             # Always recalculate slots from current roles
             panels = await self.bot.db.get_panels(guild_id)
-            panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+            panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("enabled")), None)
             slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
 
             if slots <= 0 and not ids:
@@ -525,7 +525,7 @@ class _UserLookupView(discord.ui.View):
             role_info = ""
             if member:
                 panels = await self.bot.db.get_panels(guild_id)
-                panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("tier_category_id")), None)
+                panel = next((p for p in panels if p.get("whitelist_id") == wl_id and p.get("enabled")), None)
                 slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
                 if slots > 0:
                     role_info = f"\n\nThis user has the **{plan.split(':')[0] if ':' in plan else plan}** role ({slots} slots) but hasn't submitted any IDs yet."

@@ -8,7 +8,7 @@ import discord
 from discord.ext import commands, tasks
 
 from bot.config import (
-    DISCORD_TOKEN, WHITELIST_FILENAME, WEB_ENABLED,
+    DISCORD_TOKEN, WHITELIST_FILENAME,
     GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME,
     SENTRY_DSN, log,
 )
@@ -24,7 +24,6 @@ if SENTRY_DSN:
 from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identifier
 from bot.database import Database
 from bot.github_publisher import GithubPublisher
-from bot.web import WebServer
 
 
 class WhitelistBot(commands.Bot):
@@ -36,7 +35,6 @@ class WhitelistBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.db = Database()
         self.github = GithubPublisher() if all([GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME]) else None
-        self.web = WebServer(self) if WEB_ENABLED else None
         self.panel_views = {}  # keyed by (guild_id, whitelist_id)
         self.write_lock = asyncio.Lock()
         self._sync_pending = False
@@ -55,9 +53,6 @@ class WhitelistBot(commands.Bot):
                 self.github = None
         else:
             log.info("GitHub publishing disabled (no GITHUB_TOKEN configured)")
-        if self.web:
-            await self.web.start()
-
         # Load cog extensions (setup, modtools, search, audit, importexport, admin moved to web dashboard)
         for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications"):
             await self.load_extension(ext)
@@ -102,14 +97,6 @@ class WhitelistBot(commands.Bot):
                     view = WhitelistPanelView(self, wl["slug"], whitelist_id=wl["id"])
                     self.panel_views[key] = view
                     self.add_view(view)
-        # Prime the web cache with current content for all guilds
-        if self.web:
-            for guild in self.guilds:
-                try:
-                    outputs = await self.get_output_contents(guild.id)
-                    self.web.update_cache(guild.id, outputs)
-                except Exception:
-                    log.warning("Could not prime web cache on startup for guild %s", guild.id, exc_info=True)
         await self.log_startup_summary()
         # Refresh all active panels on startup (updates buttons + tier info)
         # Use a semaphore to avoid flooding the Discord API when many panels exist
@@ -157,8 +144,6 @@ class WhitelistBot(commands.Bot):
         log.exception("Unhandled command error in '%s'", ctx.command, exc_info=error)
 
     async def close(self):
-        if self.web:
-            await self.web.stop()
         await super().close()
 
     async def user_is_mod(self, guild_id: int, user: discord.abc.User) -> bool:
@@ -219,10 +204,6 @@ class WhitelistBot(commands.Bot):
         embed.add_field(name="Mod Role", value=f"<@&{mod_role_id}>" if mod_role_id else "`Not set`", inline=True)
         embed.add_field(name="Output Mode", value=f"`{await self.db.get_setting(guild_id, 'output_mode', 'combined')}`", inline=True)
         embed.add_field(name="Retention", value=f"`{await self.db.get_setting(guild_id, 'retention_days', '90')}` days", inline=True)
-        if self.web and self.web.runner:
-            combined_fn = await self.db.get_setting(guild_id, "combined_filename", WHITELIST_FILENAME)
-            wl_url = self.web.get_file_url(guild_id, combined_fn)
-            embed.add_field(name="Whitelist URL", value=f"`{wl_url}`", inline=False)
         groups = await self.db.get_squad_groups(guild_id)
         if groups:
             group_text = " | ".join(f"`{n}`: {p}" for n, p, _ in groups)
@@ -582,9 +563,6 @@ class WhitelistBot(commands.Bot):
             return total
         # Sync specific guild
         outputs = await self.get_output_contents(guild_id)
-        # Update web server cache and optional disk write
-        if self.web:
-            self.web.update_cache(guild_id, outputs)
         # Publish to GitHub if configured
         changed = 0
         if self.github:

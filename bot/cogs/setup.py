@@ -311,7 +311,6 @@ class MainSetupView(discord.ui.View):
 
     async def _build_hub_embed(self, guild: discord.Guild) -> discord.Embed:
         guild_id = guild.id
-        from bot.config import SSL_CERT_PATH, WEB_PORT
         output_mode = await self.bot.db.get_setting(guild_id, "output_mode", "combined")
         combined_fn = await self.bot.db.get_setting(guild_id, "combined_filename", WHITELIST_FILENAME)
         retention = await self.bot.db.get_setting(guild_id, "retention_days", "90")
@@ -319,18 +318,11 @@ class MainSetupView(discord.ui.View):
         mod_role_id = int((await self.bot.db.get_setting(guild_id, "mod_role_id", "")) or 0)
         mod_role_text = f"<@&{mod_role_id}>" if mod_role_id else "`Not set`"
 
-        # Web server status
-        if self.bot.web and self.bot.web.runner:
-            proto = "https" if SSL_CERT_PATH else "http"
-            web_text = f"`{proto}://...:{WEB_PORT}`"
-        else:
-            web_text = "`Off`"
-
         desc_lines = [
             f"\u2699\ufe0f **Global Settings**",
             f"\u2003Mod Role: {mod_role_text}",
             f"\u2003Output: `{output_mode}` \u2192 `{combined_fn}`",
-            f"\u2003Reports: `{frequency}` \u2502 Retention: `{retention}` days \u2502 Web: {web_text}",
+            f"\u2003Reports: `{frequency}` \u2502 Retention: `{retention}` days",
             "",
         ]
 

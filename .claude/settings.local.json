@@ -55,7 +55,23 @@
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://squadwhitelister.com/api/admin/whitelists/1/roles)",
       "Bash(railway run:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(curl -s https://squadwhitelister-api-production.up.railway.app/api/admin/players/search?q=test)",
+      "Bash(npm --version)",
+      "Bash(npm ci:*)",
+      "Bash(npm info:*)",
+      "Bash(python3 -c \"import sys, json; d=json.load\\(sys.stdin\\); print\\(''''peer:'''', d.get\\(''''peerDependencies'''', {}\\)\\); print\\(''''engines:'''', d.get\\(''''engines'''', {}\\)\\)\")",
+      "Bash(node -e \"const d=require\\(''''/dev/stdin''''\\); const p=d.packages[''''node_modules/connect-pg-simple'''']; console.log\\(JSON.stringify\\(p, null, 2\\)\\)\")",
+      "Bash(1 --verbose)",
+      "Bash(node -e \"process.stdin.resume\\(\\); let d=''''''''; process.stdin.on\\(''''data'''',c=>d+=c\\); process.stdin.on\\(''''end'''',\\(\\)=>{const p=JSON.parse\\(d\\); console.log\\(''''peer:'''', JSON.stringify\\(p.peerDependencies\\)\\); console.log\\(''''engines:'''', JSON.stringify\\(p.engines\\)\\);}\\)\")",
+      "Bash(npm view:*)",
+      "Bash(find 'F:\\\\Cursor Projects\\\\Python_Discord_Bot_Whitelister\\\\api\\\\node_modules' -name package.json -path */connect-pg-simple/package.json)",
+      "Bash(grep -c '\"\"node_modules/@fastify/rate-limit\"\"' \"F:\\\\Cursor Projects\\\\Python_Discord_Bot_Whitelister\\\\api\\\\package-lock.json\")",
+      "Bash(grep -c '\"\"node_modules/connect-pg-simple\"\"' \"F:\\\\Cursor Projects\\\\Python_Discord_Bot_Whitelister\\\\api\\\\package-lock.json\")",
+      "Bash(node -e \":*)",
+      "WebSearch"
     ]
   }
 }
