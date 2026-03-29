@@ -4,6 +4,7 @@
  * requireAdmin / requireAuth helpers on the Fastify instance.
  * Sessions survive API restarts — stored in the `sessions` table via Prisma raw queries.
  */
+import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
 import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
@@ -46,8 +47,6 @@ function sessionSecret(): string {
     .slice(0, 32)  // @fastify/session needs at least 32 chars
 }
 
-// ─── Plugin ───────────────────────────────────────────────────────────────────
-
 // ─── Sessions table bootstrap (run AFTER app.listen to never block startup) ──
 // Call this once from server.ts after listen() returns.
 export async function ensureSessionsTable(prisma: FastifyInstance["prisma"]) {
@@ -63,7 +62,6 @@ export async function ensureSessionsTable(prisma: FastifyInstance["prisma"]) {
       `CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)`
     )
   } catch (err: any) {
-    // Log but never crash — table may already exist or DB briefly unavailable
     console.error("[sessions] ensureSessionsTable failed (non-fatal):", err?.message)
   }
 }
@@ -73,28 +71,51 @@ function isTableMissing(err: any): boolean {
   return err?.code === "42P01" || /relation.*does not exist/i.test(err?.message ?? "")
 }
 
-// NOT wrapped with fp() — this plugin is intentionally scoped.
-// Registering it in a child context means session middleware ONLY runs on routes
-// inside that context. Routes registered outside (healthz, files, internal) never
-// touch the session store and have zero DB dependency during healthchecks.
-const authPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
+// ─── Plugin ───────────────────────────────────────────────────────────────────
+//
+// Uses fp() to make session middleware global (applies to all routes).
+// The healthcheck is protected from DB hangs by the 500ms timeout in
+// prismaStore.get() — if the DB is slow, the session is treated as empty
+// and the request proceeds immediately rather than hanging.
+
+const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
   // ─── Prisma-backed session store ───────────────────────────────────────────
-  // Implements the express-session / @fastify/session Store interface directly.
-  // All methods gracefully handle "table not yet created" so startup races
-  // during blue-green deploys don't crash the process.
+  // get() has a 500ms hard timeout so DB slowness during blue-green deploys
+  // never causes healthcheck hangs. If the DB doesn't respond in time, the
+  // session is treated as empty (null) and the request proceeds normally.
 
   const prismaStore = {
     get(sid: string, cb: (err: any, session?: any) => void) {
+      let settled = false
+
+      // Hard timeout — never block a request (including /healthz) longer than 500ms
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          cb(null, null)
+        }
+      }, 500)
+
       app.prisma.$queryRawUnsafe<{ sess: any }[]>(
         `SELECT sess FROM sessions WHERE sid = $1 AND expire > NOW()`,
         sid,
       )
-        .then(([row]) => cb(null, row?.sess ?? null))
+        .then(([row]) => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            cb(null, row?.sess ?? null)
+          }
+        })
         .catch((err) => {
-          if (isTableMissing(err)) return cb(null, null)
-          cb(err)
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            if (isTableMissing(err)) return cb(null, null)
+            cb(err)
+          }
         })
     },
 
@@ -189,6 +210,6 @@ const authPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
       return reply.code(403).send({ error: "Insufficient permissions" })
     }
   })
-}
+})
 
 export default authPlugin
