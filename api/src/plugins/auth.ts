@@ -49,26 +49,38 @@ function sessionSecret(): string {
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
+// ─── Sessions table bootstrap (run AFTER app.listen to never block startup) ──
+// Call this once from server.ts after listen() returns.
+export async function ensureSessionsTable(prisma: FastifyInstance["prisma"]) {
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        sid    VARCHAR(255) NOT NULL PRIMARY KEY,
+        sess   JSON         NOT NULL,
+        expire TIMESTAMP(6) NOT NULL
+      )
+    `)
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)`
+    )
+  } catch (err: any) {
+    // Log but never crash — table may already exist or DB briefly unavailable
+    console.error("[sessions] ensureSessionsTable failed (non-fatal):", err?.message)
+  }
+}
+
+/** Returns true if the error is "table does not exist" (PostgreSQL code 42P01). */
+function isTableMissing(err: any): boolean {
+  return err?.code === "42P01" || /relation.*does not exist/i.test(err?.message ?? "")
+}
+
 const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
-  // ─── Ensure sessions table exists ──────────────────────────────────────────
-  // Uses Prisma's raw query connection — no separate pg pool needed.
-
-  await app.prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      sid  VARCHAR NOT NULL COLLATE "default",
-      sess JSON    NOT NULL,
-      expire TIMESTAMP(6) NOT NULL,
-      CONSTRAINT session_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
-    )
-  `)
-  await app.prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)`
-  )
-
   // ─── Prisma-backed session store ───────────────────────────────────────────
   // Implements the express-session / @fastify/session Store interface directly.
+  // All methods gracefully handle "table not yet created" so startup races
+  // during blue-green deploys don't crash the process.
 
   const prismaStore = {
     get(sid: string, cb: (err: any, session?: any) => void) {
@@ -77,7 +89,10 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
         sid,
       )
         .then(([row]) => cb(null, row?.sess ?? null))
-        .catch(cb)
+        .catch((err) => {
+          if (isTableMissing(err)) return cb(null, null)
+          cb(err)
+        })
     },
 
     set(sid: string, sess: any, cb: (err?: any) => void) {
@@ -92,13 +107,19 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
         expire,
       )
         .then(() => cb())
-        .catch(cb)
+        .catch((err) => {
+          if (isTableMissing(err)) return cb()
+          cb(err)
+        })
     },
 
     destroy(sid: string, cb: (err?: any) => void) {
       app.prisma.$executeRawUnsafe(`DELETE FROM sessions WHERE sid = $1`, sid)
         .then(() => cb())
-        .catch(cb)
+        .catch((err) => {
+          if (isTableMissing(err)) return cb()
+          cb(err)
+        })
     },
 
     touch(sid: string, sess: any, cb: (err?: any) => void) {
@@ -110,7 +131,10 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
         expire,
       )
         .then(() => cb())
-        .catch(cb)
+        .catch((err) => {
+          if (isTableMissing(err)) return cb()
+          cb(err)
+        })
     },
   }
 

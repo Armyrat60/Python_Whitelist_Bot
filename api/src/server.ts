@@ -4,7 +4,7 @@ import rateLimit from "@fastify/rate-limit"
 
 import { env } from "./lib/env.js"
 import prismaPlugin from "./plugins/prisma.js"
-import authPlugin from "./plugins/auth.js"
+import authPlugin, { ensureSessionsTable } from "./plugins/auth.js"
 import { fileRoutes } from "./routes/files.js"
 import { internalRoutes } from "./routes/internal.js"
 import { authRoutes } from "./routes/auth.js"
@@ -108,6 +108,10 @@ async function start() {
   // ─── Start listening immediately so healthcheck passes ───────────────────────
 
   await app.listen({ port: env.PORT, host: env.HOST })
+
+  // ─── Ensure sessions table exists (non-blocking, never crashes startup) ───────
+
+  ensureSessionsTable(app.prisma).catch(() => {})
 
   // ─── Prime Discord guild list (background — must not block listen) ────────────
 
