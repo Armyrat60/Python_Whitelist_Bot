@@ -10,6 +10,7 @@ RUN npm ci
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# cache-bust: 2026-03-29-v1
 COPY . .
 
 # Set build-time env vars
