@@ -1,14 +1,12 @@
 /**
  * Session and auth plugin.
- * Registers @fastify/cookie + @fastify/session (PostgreSQL store) and exposes
+ * Registers @fastify/cookie + @fastify/session (Prisma-backed PostgreSQL store) and exposes
  * requireAdmin / requireAuth helpers on the Fastify instance.
- * Sessions survive API restarts — stored in the `sessions` table.
+ * Sessions survive API restarts — stored in the `sessions` table via Prisma raw queries.
  */
 import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
-import ConnectPgSimple from "connect-pg-simple"
-import { EventEmitter } from "events"
 import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { env } from "../lib/env.js"
 import { createHmac } from "crypto"
@@ -47,23 +45,73 @@ function sessionSecret(): string {
 const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
-  // PostgreSQL session store — sessions survive API restarts
-  // connect-pg-simple requires a session.Store base class; @fastify/session doesn't
-  // export one, so we provide a minimal EventEmitter-based shim.
-  class SessionStoreBase extends EventEmitter {}
-  const PgStore = ConnectPgSimple({ Store: SessionStoreBase } as unknown as Parameters<typeof ConnectPgSimple>[0])
-  const pgStore = new PgStore({
-    conString: env.DATABASE_URL,
-    tableName: "sessions",
-    createTableIfMissing: true,   // auto-creates the table on first run
-    pruneSessionInterval: 60 * 60, // prune expired sessions every hour
-  })
+  // ─── Ensure sessions table exists ──────────────────────────────────────────
+  // Uses Prisma's raw query connection — no separate pg pool needed.
+
+  await app.prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid  VARCHAR NOT NULL COLLATE "default",
+      sess JSON    NOT NULL,
+      expire TIMESTAMP(6) NOT NULL,
+      CONSTRAINT session_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
+    )
+  `)
+  await app.prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)`
+  )
+
+  // ─── Prisma-backed session store ───────────────────────────────────────────
+  // Implements the express-session / @fastify/session Store interface directly.
+
+  const prismaStore = {
+    get(sid: string, cb: (err: any, session?: any) => void) {
+      app.prisma.$queryRawUnsafe<{ sess: any }[]>(
+        `SELECT sess FROM sessions WHERE sid = $1 AND expire > NOW()`,
+        sid,
+      )
+        .then(([row]) => cb(null, row?.sess ?? null))
+        .catch(cb)
+    },
+
+    set(sid: string, sess: any, cb: (err?: any) => void) {
+      const maxAge = sess.cookie?.maxAge ?? 7 * 24 * 60 * 60 * 1000
+      const expire = new Date(Date.now() + maxAge)
+      app.prisma.$executeRawUnsafe(
+        `INSERT INTO sessions (sid, sess, expire)
+         VALUES ($1, $2::json, $3)
+         ON CONFLICT (sid) DO UPDATE SET sess = EXCLUDED.sess, expire = EXCLUDED.expire`,
+        sid,
+        JSON.stringify(sess),
+        expire,
+      )
+        .then(() => cb())
+        .catch(cb)
+    },
+
+    destroy(sid: string, cb: (err?: any) => void) {
+      app.prisma.$executeRawUnsafe(`DELETE FROM sessions WHERE sid = $1`, sid)
+        .then(() => cb())
+        .catch(cb)
+    },
+
+    touch(sid: string, sess: any, cb: (err?: any) => void) {
+      const maxAge = sess.cookie?.maxAge ?? 7 * 24 * 60 * 60 * 1000
+      const expire = new Date(Date.now() + maxAge)
+      app.prisma.$executeRawUnsafe(
+        `UPDATE sessions SET expire = $2 WHERE sid = $1`,
+        sid,
+        expire,
+      )
+        .then(() => cb())
+        .catch(cb)
+    },
+  }
 
   await app.register(cookie)
   await app.register(session, {
     secret: sessionSecret(),
     cookieName: "wl_session",
-    store: pgStore as never,
+    store: prismaStore as never,
     cookie: {
       secure: isSecure,
       httpOnly: true,
