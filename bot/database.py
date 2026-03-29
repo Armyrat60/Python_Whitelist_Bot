@@ -431,6 +431,14 @@ POSTGRES_MIGRATIONS = [
 
     # --- Squad group description column ---
     "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS description VARCHAR(255) NOT NULL DEFAULT ''",
+
+    # --- Per-panel role mention toggle ---
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS show_role_mentions BOOLEAN NOT NULL DEFAULT TRUE",
+
+    # --- Panel refresh queue: action + message coordinates for delete support ---
+    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'refresh'",
+    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS channel_id BIGINT NULL",
+    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS message_id BIGINT NULL",
 ]
 
 
@@ -756,7 +764,8 @@ class Database:
 
     _PANEL_COLUMNS = (
         "id", "guild_id", "name", "channel_id", "log_channel_id",
-        "whitelist_id", "panel_message_id", "is_default", "enabled", "tier_category_id", "created_at", "updated_at",
+        "whitelist_id", "panel_message_id", "is_default", "enabled", "tier_category_id",
+        "show_role_mentions", "created_at", "updated_at",
     )
 
     def _row_to_panel(self, row: tuple) -> Dict[str, Any]:
@@ -764,13 +773,15 @@ class Database:
         d = dict(zip(self._PANEL_COLUMNS, row))
         d["is_default"] = bool(d["is_default"])
         d["enabled"] = bool(d.get("enabled", True))
+        d["show_role_mentions"] = bool(d.get("show_role_mentions", True))
         return d
 
     async def get_panels(self, guild_id: int) -> List[Dict[str, Any]]:
         rows = await self.fetchall(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id,
+                   show_role_mentions, created_at, updated_at
             FROM panels WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
             """,
@@ -782,7 +793,8 @@ class Database:
         row = await self.fetchone(
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
-                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id, created_at, updated_at
+                   whitelist_id, panel_message_id, is_default, enabled, tier_category_id,
+                   show_role_mentions, created_at, updated_at
             FROM panels WHERE id=%s
             """,
             (panel_id,),
@@ -816,8 +828,9 @@ class Database:
         allowed = {
             "name", "channel_id", "log_channel_id", "whitelist_id",
             "panel_message_id", "is_default", "enabled", "tier_category_id",
+            "show_role_mentions",
         }
-        bool_cols = {"is_default", "enabled"}
+        bool_cols = {"is_default", "enabled", "show_role_mentions"}
         parts = []
         params = []
         for key, value in kwargs.items():
@@ -841,11 +854,12 @@ class Database:
 
     # ── Panel refresh queue ──
 
-    async def queue_panel_refresh(self, guild_id: int, panel_id: int, reason: str = "settings_changed"):
-        """Queue a panel for Discord embed refresh."""
+    async def queue_panel_refresh(self, guild_id: int, panel_id: int, reason: str = "settings_changed",
+                                   action: str = "refresh", channel_id: int = None, message_id: int = None):
+        """Queue a panel for Discord embed refresh or message deletion."""
         await self.execute(
-            "INSERT INTO panel_refresh_queue (guild_id, panel_id, reason, created_at) VALUES (%s, %s, %s, %s)",
-            (guild_id, panel_id, reason, utcnow()),
+            "INSERT INTO panel_refresh_queue (guild_id, panel_id, reason, action, channel_id, message_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (guild_id, panel_id, reason, action, channel_id, message_id, utcnow()),
         )
 
     async def queue_panels_for_category(self, guild_id: int, category_id: int, reason: str = "tier_changed"):
@@ -858,9 +872,9 @@ class Database:
             await self.queue_panel_refresh(guild_id, row[0], reason)
 
     async def get_pending_refreshes(self) -> List[tuple]:
-        """Get unprocessed panel refreshes. Returns (id, guild_id, panel_id, reason)."""
+        """Get unprocessed panel refreshes. Returns (id, guild_id, panel_id, reason, action, channel_id, message_id)."""
         return await self.fetchall(
-            "SELECT id, guild_id, panel_id, reason FROM panel_refresh_queue WHERE processed=FALSE ORDER BY created_at LIMIT 50",
+            "SELECT id, guild_id, panel_id, reason, action, channel_id, message_id FROM panel_refresh_queue WHERE processed=FALSE ORDER BY created_at LIMIT 50",
             (),
         )
 

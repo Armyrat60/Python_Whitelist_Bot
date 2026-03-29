@@ -205,6 +205,21 @@ export default async function whitelistRoutes(app: FastifyInstance) {
 
     await triggerSync(app, guildId)
 
+    // Refresh Discord embeds for panels linked to this whitelist
+    try {
+      const panels = await prisma.panel.findMany({
+        where: { guildId, whitelistId: wl.id },
+        select: { id: true },
+      })
+      await Promise.all(panels.map(p =>
+        prisma.panelRefreshQueue.create({
+          data: { guildId, panelId: p.id, reason: "whitelist_updated", action: "refresh" }
+        })
+      ))
+    } catch (err) {
+      app.log.warn({ err }, "Failed to queue panel refreshes after whitelist update")
+    }
+
     return reply.send({ ok: true, id: updated_wl.id, updated })
   })
 

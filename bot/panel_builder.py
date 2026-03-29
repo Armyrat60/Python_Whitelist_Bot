@@ -34,7 +34,7 @@ def _strip_default(name: str) -> str:
     return _DEFAULT_RE.sub("", name).strip() or name
 
 
-async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict) -> list[str]:
+async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict, *, show_role_mentions: bool = True) -> list[str]:
     """Return formatted tier lines for the embed description."""
     tier_lines: list[str] = []
 
@@ -47,17 +47,25 @@ async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict
         for te in tier_entries:
             # te tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active)
             slots = te[3]
-            display = te[4] or te[2]  # display_name or role_name
+            if show_role_mentions:
+                display = te[4] or f"<@&{te[1]}>"
+            else:
+                display = te[4] or te[2]  # display_name or role_name
             tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
     elif wl:
         role_mappings = await db.get_role_mappings(guild_id, wl["id"])
         for rm in role_mappings:
+            role_id = rm[0] if isinstance(rm, tuple) else rm.get("role_id")
             role_name = rm[1] if isinstance(rm, tuple) else rm.get("role_name", "Unknown")
             slots = rm[2] if isinstance(rm, tuple) else rm.get("slot_limit", 1)
             is_active = rm[3] if isinstance(rm, tuple) else rm.get("is_active", True)
             if not is_active:
                 continue
-            tier_lines.append(f"▸ **{role_name}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
+            if show_role_mentions and role_id:
+                display = f"<@&{role_id}>"
+            else:
+                display = role_name
+            tier_lines.append(f"▸ **{display}** — **{slots} {'slot' if slots == 1 else 'slots'}**")
 
     return tier_lines
 
@@ -82,7 +90,8 @@ async def build_panel_embed(db: "Database", guild_id: int, panel: dict | None, w
     raw_title = (panel["name"] if panel else None) or wl["name"]
     title = _strip_default(raw_title)
 
-    tier_lines = await _build_tier_lines(db, guild_id, panel, wl)
+    show_rm = panel.get("show_role_mentions", True) if panel else True
+    tier_lines = await _build_tier_lines(db, guild_id, panel, wl, show_role_mentions=show_rm)
 
     base_url = WEB_BASE_URL or "https://squadwhitelister.com"
     domain = base_url.replace("https://", "").replace("http://", "").rstrip("/")
@@ -101,7 +110,8 @@ async def build_panel_embed_dict(db: "Database", guild_id: int, panel: dict | No
     raw_title = (panel["name"] if panel else None) or wl["name"]
     title = _strip_default(raw_title)
 
-    tier_lines = await _build_tier_lines(db, guild_id, panel, wl)
+    show_rm = panel.get("show_role_mentions", True) if panel else True
+    tier_lines = await _build_tier_lines(db, guild_id, panel, wl, show_role_mentions=show_rm)
 
     base_url = WEB_BASE_URL or "https://squadwhitelister.com"
     domain = base_url.replace("https://", "").replace("http://", "").rstrip("/")

@@ -172,13 +172,16 @@ function ImportTab() {
     if (selected) validateAndSetFile(selected);
   }
 
-  function buildFormData() {
-    const fd = new FormData();
-    if (file) fd.append("file", file);
-    else fd.append("content", pasteContent);
-    fd.append("format", format);
-    fd.append("whitelist_slug", targetWhitelist);
-    return fd;
+  async function readContent(): Promise<string> {
+    if (file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string ?? "");
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsText(file);
+      });
+    }
+    return pasteContent;
   }
 
   async function handlePreview() {
@@ -187,8 +190,12 @@ function ImportTab() {
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setPreviewing(true);
     try {
+      const content = await readContent();
       const res = await fetch("/api/admin/import/preview", {
-        method: "POST", credentials: "include", body: buildFormData(),
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Preview failed");
@@ -209,10 +216,12 @@ function ImportTab() {
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setImporting(true);
     try {
-      const fd = buildFormData();
-      fd.append("duplicate_mode", duplicateMode);
+      const content = await readContent();
       const res = await fetch("/api/admin/import", {
-        method: "POST", credentials: "include", body: fd,
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, duplicate_mode: duplicateMode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");

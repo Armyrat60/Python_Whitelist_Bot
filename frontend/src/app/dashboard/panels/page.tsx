@@ -183,6 +183,7 @@ function PanelCard({
   );
   const [panelName, setPanelName] = useState(panel.name);
   const [enabled, setEnabled] = useState(panel.enabled ?? true);
+  const [showRoleMentions, setShowRoleMentions] = useState(panel.show_role_mentions ?? true);
 
   const channelName =
     channels.find((c) => c.id === panel.channel_id)?.name ?? "None";
@@ -232,6 +233,7 @@ function PanelCard({
         log_channel_id: logChannelId || null,
         whitelist_id: whitelistId ? Number(whitelistId) : null,
         tier_category_id: tierCategoryId ? Number(tierCategoryId) : null,
+        show_role_mentions: showRoleMentions,
       },
       {
         onSuccess: () => {
@@ -249,14 +251,15 @@ function PanelCard({
     setWhitelistId(panel.whitelist_id?.toString() ?? "");
     setTierCategoryId(panel.tier_category_id?.toString() ?? "");
     setPanelName(panel.name);
+    setShowRoleMentions(panel.show_role_mentions ?? true);
     setConfigMode(false);
   }
 
   function handlePush() {
     pushPanel.mutate(panel.id, {
-      onSuccess: () => toast.success("Panel pushed to Discord!"),
+      onSuccess: () => toast.success("Panel refresh queued — Discord will update within 15 seconds"),
       onError: (err: unknown) => {
-        const msg = (err as { message?: string })?.message || "Failed to push panel. Check bot permissions.";
+        const msg = (err as { message?: string })?.message || "Failed to queue panel push.";
         toast.error(msg);
       },
     });
@@ -418,6 +421,17 @@ function PanelCard({
                 placeholder="Select tier category"
                 searchPlaceholder="Search categories..."
                 emptyText="No tier categories found."
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-2">
+              <div>
+                <Label className="text-xs">Show Role Mentions</Label>
+                <p className="text-[10px] text-muted-foreground">Display roles as @mention pills in the panel embed</p>
+              </div>
+              <Switch
+                checked={showRoleMentions}
+                onCheckedChange={setShowRoleMentions}
               />
             </div>
           </>

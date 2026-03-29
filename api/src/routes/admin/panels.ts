@@ -1,5 +1,28 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 
+// ─── Queue helpers ────────────────────────────────────────────────────────────
+
+async function queueRefresh(app: FastifyInstance, guildId: bigint, panelId: number, reason = "settings_changed") {
+  try {
+    await app.prisma.panelRefreshQueue.create({
+      data: { guildId, panelId, reason, action: "refresh" }
+    })
+  } catch (err) {
+    app.log.warn({ err }, "Failed to queue panel refresh")
+  }
+}
+
+async function queueDelete(app: FastifyInstance, guildId: bigint, panelId: number, channelId: bigint | null, messageId: bigint | null) {
+  if (!channelId || !messageId) return
+  try {
+    await app.prisma.panelRefreshQueue.create({
+      data: { guildId, panelId, reason: "panel_deleted", action: "delete", channelId, messageId }
+    })
+  } catch (err) {
+    app.log.warn({ err }, "Failed to queue panel delete")
+  }
+}
+
 // ─── Admin preHandler ─────────────────────────────────────────────────────────
 
 const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -34,15 +57,16 @@ export default async function panelRoutes(app: FastifyInstance) {
     })
 
     const result = panels.map(p => ({
-      id:              p.id,
-      name:            p.name,
-      channel_id:      p.channelId?.toString()      ?? null,
-      log_channel_id:  p.logChannelId?.toString()   ?? null,
-      whitelist_id:    p.whitelistId,
-      panel_message_id: p.panelMessageId?.toString() ?? null,
-      is_default:      p.isDefault,
-      enabled:         p.enabled,
-      tier_category_id: p.tierCategoryId,
+      id:                 p.id,
+      name:               p.name,
+      channel_id:         p.channelId?.toString()      ?? null,
+      log_channel_id:     p.logChannelId?.toString()   ?? null,
+      whitelist_id:       p.whitelistId,
+      panel_message_id:   p.panelMessageId?.toString() ?? null,
+      is_default:         p.isDefault,
+      enabled:            p.enabled,
+      tier_category_id:   p.tierCategoryId,
+      show_role_mentions: p.showRoleMentions,
     }))
 
     return reply.send(safeJson({ panels: result }))
@@ -100,28 +124,32 @@ export default async function panelRoutes(app: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: "Panel not found" })
 
     const body = req.body as {
-      name?:             string
-      channel_id?:       string | null
-      log_channel_id?:   string | null
-      whitelist_id?:     number | null
-      tier_category_id?: number | null
-      enabled?:          boolean
+      name?:               string
+      channel_id?:         string | null
+      log_channel_id?:     string | null
+      whitelist_id?:       number | null
+      tier_category_id?:   number | null
+      enabled?:            boolean
+      show_role_mentions?: boolean
     }
 
     const data: Record<string, unknown> = { updatedAt: new Date() }
 
-    if (body.name             !== undefined) data["name"]           = body.name
-    if (body.enabled          !== undefined) data["enabled"]        = body.enabled
-    if (body.whitelist_id     !== undefined) data["whitelistId"]    = body.whitelist_id
-    if (body.tier_category_id !== undefined) data["tierCategoryId"] = body.tier_category_id
-    if (body.channel_id       !== undefined) {
+    if (body.name               !== undefined) data["name"]             = body.name
+    if (body.enabled            !== undefined) data["enabled"]          = body.enabled
+    if (body.whitelist_id       !== undefined) data["whitelistId"]      = body.whitelist_id
+    if (body.tier_category_id   !== undefined) data["tierCategoryId"]   = body.tier_category_id
+    if (body.show_role_mentions !== undefined) data["showRoleMentions"] = body.show_role_mentions
+    if (body.channel_id         !== undefined) {
       data["channelId"] = body.channel_id ? BigInt(body.channel_id) : null
     }
-    if (body.log_channel_id   !== undefined) {
+    if (body.log_channel_id     !== undefined) {
       data["logChannelId"] = body.log_channel_id ? BigInt(body.log_channel_id) : null
     }
 
     await prisma.panel.update({ where: { id: panelId }, data })
+
+    await queueRefresh(app, guildId, panelId, "dashboard_update")
 
     return reply.send(safeJson({ ok: true, panel_id: panelId }))
   })
@@ -143,15 +171,25 @@ export default async function panelRoutes(app: FastifyInstance) {
     const existing = await prisma.panel.findFirst({ where: { id: panelId, guildId } })
     if (!existing) return reply.code(404).send({ error: "Panel not found" })
 
+    // Queue Discord message deletion before removing the DB record
+    await queueDelete(app, guildId, panelId, existing.channelId, existing.panelMessageId)
+
     await prisma.panel.delete({ where: { id: panelId } })
 
     return reply.send({ ok: true })
   })
 
-  // POST /api/admin/panels/:panelId/push  (stub — requires Discord bot gateway)
-  app.post("/panels/:panelId/push", { preHandler: adminHook }, async (_req, reply) => {
-    return reply
-      .code(503)
-      .send({ ok: false, error: "Panel push requires Discord bot gateway — trigger from Discord bot instead." })
+  // POST /api/admin/panels/:panelId/push
+  app.post("/panels/:panelId/push", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const panelId = parseInt((req.params as { panelId: string }).panelId, 10)
+    if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
+
+    const existing = await prisma.panel.findFirst({ where: { id: panelId, guildId } })
+    if (!existing) return reply.code(404).send({ error: "Panel not found" })
+
+    await queueRefresh(app, guildId, panelId, "manual_push")
+
+    return reply.send({ ok: true, queued: true })
   })
 }

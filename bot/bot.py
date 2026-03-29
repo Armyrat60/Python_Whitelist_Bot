@@ -988,16 +988,37 @@ class WhitelistBot(commands.Bot):
         try:
             pending = await self.db.get_pending_refreshes()
             for row in pending:
-                refresh_id, guild_id, panel_id, reason = row[0], int(row[1]), int(row[2]), row[3]
+                refresh_id, guild_id, panel_id, reason = int(row[0]), int(row[1]), int(row[2]), row[3]
+                action     = row[4] if len(row) > 4 else "refresh"
+                channel_id = int(row[5]) if len(row) > 5 and row[5] else None
+                message_id = int(row[6]) if len(row) > 6 and row[6] else None
                 try:
-                    panel = await self.db.get_panel_by_id(panel_id)
-                    if panel and panel.get("whitelist_id"):
-                        wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
-                        if wl:
-                            await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
-                            log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
+                    if action == "delete":
+                        if channel_id and message_id:
+                            ch = self.get_channel(channel_id)
+                            if ch is None:
+                                try:
+                                    ch = await self.fetch_channel(channel_id)
+                                except Exception:
+                                    pass
+                            if ch:
+                                try:
+                                    msg = await ch.fetch_message(message_id)
+                                    await msg.delete()
+                                    log.info("Deleted panel message %s in channel %s (panel=%s)", message_id, channel_id, panel_id)
+                                except discord.NotFound:
+                                    pass  # already gone
+                                except Exception:
+                                    log.exception("Failed to delete panel message %s", message_id)
+                    else:
+                        panel = await self.db.get_panel_by_id(panel_id)
+                        if panel and panel.get("whitelist_id"):
+                            wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
+                            if wl:
+                                await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
+                                log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
                 except Exception:
-                    log.exception("Failed to auto-refresh panel %s (guild=%s)", panel_id, guild_id)
+                    log.exception("Failed to process panel queue entry %s (panel=%s action=%s)", refresh_id, panel_id, action)
                 await self.db.mark_refresh_processed(refresh_id)
         except Exception:
             pass  # DB might not be ready yet

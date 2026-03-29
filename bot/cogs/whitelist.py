@@ -213,11 +213,12 @@ class WhitelistPanelView(discord.ui.View):
 
     async def _manage_whitelist_callback(self, interaction: discord.Interaction):
         """Show user's whitelist info with an Edit button to modify their IDs."""
+        await interaction.response.defer(ephemeral=True)
         try:
             guild_id = interaction.guild.id
             wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
             if not wl:
-                await interaction.response.send_message("Whitelist not found.", ephemeral=True)
+                await interaction.followup.send("Whitelist not found.", ephemeral=True)
                 return
             wl_id = wl["id"]
             member = interaction.guild.get_member(interaction.user.id)
@@ -229,7 +230,7 @@ class WhitelistPanelView(discord.ui.View):
             slots, plan = await self.bot.calculate_user_slots(guild_id, member, wl_id, wl=wl, panel=panel)
 
             if slots <= 0 and not ids:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "You don't have a whitelist role. Contact your server admin to get access.",
                     ephemeral=True,
                 )
@@ -257,7 +258,7 @@ class WhitelistPanelView(discord.ui.View):
                     )
                     embed.set_footer(text="Selecting 'No' will start a fresh registration")
                     claim_view = _ClaimOrphanView(self.bot, self.whitelist_type, wl_id, orphan_id, slots, orphan_ids)
-                    await interaction.response.send_message(embed=embed, view=claim_view, ephemeral=True)
+                    await interaction.followup.send(embed=embed, view=claim_view, ephemeral=True)
                     return
 
             tier_name = plan.split(":")[0] if ":" in plan else plan
@@ -305,15 +306,12 @@ class WhitelistPanelView(discord.ui.View):
 
             # Add Edit (opens full modal) and slot selector for individual edits
             edit_view = _EditIDsView(self.bot, self.whitelist_type, wl_id, slots, ids)
-            await interaction.response.send_message(embed=embed, view=edit_view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=edit_view, ephemeral=True)
         except Exception:
             from bot.config import log
             log.exception("Error in manage whitelist callback for %s", interaction.user)
             try:
-                if interaction.response.is_done():
-                    await interaction.followup.send("Something went wrong. Please try again.", ephemeral=True)
-                else:
-                    await interaction.response.send_message("Something went wrong. Please try again.", ephemeral=True)
+                await interaction.followup.send("Something went wrong. Please try again.", ephemeral=True)
             except Exception:
                 pass
 

@@ -39,6 +39,7 @@ export interface Panel {
   panel_message_id: string | null;
   is_default: boolean;
   enabled: boolean;
+  show_role_mentions: boolean;
 }
 
 export interface TierCategory {

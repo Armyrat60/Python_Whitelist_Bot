@@ -19,6 +19,24 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
 function bigIntReplacer(_: string, v: unknown) { return typeof v === "bigint" ? v.toString() : v }
 function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntReplacer)) }
 
+// ─── Queue helper ─────────────────────────────────────────────────────────────
+
+async function queuePanelsForCategory(app: FastifyInstance, guildId: bigint, categoryId: number, reason: string) {
+  try {
+    const panels = await app.prisma.panel.findMany({
+      where: { guildId, tierCategoryId: categoryId },
+      select: { id: true },
+    })
+    await Promise.all(panels.map(p =>
+      app.prisma.panelRefreshQueue.create({
+        data: { guildId, panelId: p.id, reason, action: "refresh" }
+      })
+    ))
+  } catch (err) {
+    app.log.warn({ err }, "Failed to queue panel refreshes for category")
+  }
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export default async function tierRoutes(app: FastifyInstance) {
@@ -184,6 +202,8 @@ export default async function tierRoutes(app: FastifyInstance) {
       },
     })
 
+    await queuePanelsForCategory(app, guildId, categoryId, "tier_entry_added")
+
     return reply.code(201).send(toJSON({
       ok:           true,
       id:           entry.id,
@@ -224,6 +244,8 @@ export default async function tierRoutes(app: FastifyInstance) {
 
     await prisma.tierEntry.update({ where: { id: entryId }, data })
 
+    await queuePanelsForCategory(app, guildId, categoryId, "tier_entry_updated")
+
     return reply.send({ ok: true, entry_id: entryId })
   })
 
@@ -240,6 +262,8 @@ export default async function tierRoutes(app: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: "Entry not found" })
 
     await prisma.tierEntry.delete({ where: { id: entryId } })
+
+    await queuePanelsForCategory(app, guildId, categoryId, "tier_entry_removed")
 
     return reply.send({ ok: true, deleted_entry_id: entryId })
   })
