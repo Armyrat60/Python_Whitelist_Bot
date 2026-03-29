@@ -1,0 +1,5 @@
+{
+  "name": "squadwhitelister",
+  "private": true,
+  "workspaces": ["api", "frontend", "packages/*"]
+}
