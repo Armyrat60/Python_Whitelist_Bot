@@ -8,6 +8,7 @@ import fp from "fastify-plugin"
 import cookie from "@fastify/cookie"
 import session from "@fastify/session"
 import ConnectPgSimple from "connect-pg-simple"
+import { EventEmitter } from "events"
 import type { FastifyPluginAsync, FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { env } from "../lib/env.js"
 import { createHmac } from "crypto"
@@ -47,7 +48,10 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
   const isSecure = env.WEB_BASE_URL.startsWith("https") || env.NODE_ENV === "production"
 
   // PostgreSQL session store — sessions survive API restarts
-  const PgStore = ConnectPgSimple(session as unknown as Parameters<typeof ConnectPgSimple>[0])
+  // connect-pg-simple requires a session.Store base class; @fastify/session doesn't
+  // export one, so we provide a minimal EventEmitter-based shim.
+  class SessionStoreBase extends EventEmitter {}
+  const PgStore = ConnectPgSimple({ Store: SessionStoreBase } as unknown as Parameters<typeof ConnectPgSimple>[0])
   const pgStore = new PgStore({
     conString: env.DATABASE_URL,
     tableName: "sessions",
