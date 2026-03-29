@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   Check,
   Bell,
+  BookUser,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -37,6 +38,7 @@ import { useGuild } from "@/hooks/use-guild";
 const mainLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/roster", label: "WL Roster", icon: Users },
+  { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
   { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
 ];
 

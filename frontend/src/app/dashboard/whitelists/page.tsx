@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -11,15 +11,9 @@ import {
   Check,
   X,
   RefreshCw,
-  BookUser,
-  ChevronDown,
-  ChevronRight,
-  Users,
-  UserPlus,
-  UserMinus,
-  Pencil,
-  ChevronLeft,
 } from "lucide-react";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 import {
   useWhitelists,
   useGroups,
@@ -27,20 +21,11 @@ import {
   useCreateWhitelist,
   useDeleteWhitelist,
   useCategories,
-  useCreateCategory,
-  useUpdateCategory,
-  useDeleteCategory,
-  useCategoryManagers,
-  useAddCategoryManager,
-  useRemoveCategoryManager,
-  useCategoryEntries,
-  useAddCategoryEntry,
-  useRemoveCategoryEntry,
 } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
-import type { Whitelist, SquadGroup, WhitelistCategory, CategoryEntry } from "@/lib/types";
+import type { Whitelist, SquadGroup } from "@/lib/types";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -88,20 +73,6 @@ import type { ComboboxOption } from "@/components/ui/combobox";
 
 function slugify(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
-}
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "2-digit",
-  });
-}
-
-function isExpiredOrSoon(dateStr: string | null | undefined): boolean {
-  if (!dateStr) return false;
-  const exp = new Date(dateStr);
-  const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  return exp <= soon;
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -323,6 +294,7 @@ export default function WhitelistsPage() {
               <ManualRosterCard
                 key={wl.id}
                 whitelist={wl}
+                groups={groups ?? []}
                 onToggle={() =>
                   toggleWhitelist.mutate(wl.slug, {
                     onSuccess: () => toast.success(`Roster ${wl.enabled ? "disabled" : "enabled"}`),
@@ -478,10 +450,12 @@ function WhitelistCard({
 
 function ManualRosterCard({
   whitelist,
+  groups,
   onToggle,
   onDelete,
 }: {
   whitelist: Whitelist;
+  groups: SquadGroup[];
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -550,6 +524,10 @@ function ManualRosterCard({
           <span className="font-medium">{whitelist.squad_group || "—"}</span>
         </div>
         <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Output File</span>
+          <span className="font-medium font-mono text-xs">{whitelist.output_filename || "—"}</span>
+        </div>
+        <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Categories</span>
           <span className="font-medium">{categories?.length ?? "—"}</span>
         </div>
@@ -564,7 +542,10 @@ function ManualRosterCard({
           <span className="text-xs text-muted-foreground">{whitelist.enabled ? "On" : "Off"}</span>
         </div>
         <div className="ml-auto flex gap-2">
-          <ManualRosterSheet whitelist={whitelist} />
+          <ManualRosterConfigSheet whitelist={whitelist} groups={groups} />
+          <Link href="/dashboard/manual-roster" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            Manage Roster →
+          </Link>
           <AlertDialog>
             <AlertDialogTrigger
               render={
@@ -593,521 +574,108 @@ function ManualRosterCard({
   );
 }
 
-// ─── ManualRosterSheet ────────────────────────────────────────────────────────
+// ─── ManualRosterConfigSheet ──────────────────────────────────────────────────
 
-type SheetView = "categories" | "entries";
+function ManualRosterConfigSheet({
+  whitelist,
+  groups,
+}: {
+  whitelist: Whitelist;
+  groups: SquadGroup[];
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(whitelist.name);
+  const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
 
-function ManualRosterSheet({ whitelist }: { whitelist: Whitelist }) {
-  const { data: categories, isLoading: catsLoading } = useCategories(whitelist.id);
-  const createCategory = useCreateCategory(whitelist.id);
-  const updateCategory = useUpdateCategory(whitelist.id);
-  const deleteCategory = useDeleteCategory(whitelist.id);
+  const autoFilename = `${slugify(name)}.txt`;
+  const [filenameOverride, setFilenameOverride] = useState<string | null>(null);
+  const outputFilename = filenameOverride ?? autoFilename;
+  const isAutoFilename = filenameOverride === null;
 
-  const [view, setView] = useState<SheetView>("categories");
-  const [selectedCat, setSelectedCat] = useState<WhitelistCategory | null>(null);
-
-  // Category form state
-  const [newCatName, setNewCatName] = useState("");
-  const [newCatSlotLimit, setNewCatSlotLimit] = useState("");
-  const [addCatOpen, setAddCatOpen] = useState(false);
-  const [editingCatId, setEditingCatId] = useState<number | null>(null);
-  const [editCatName, setEditCatName] = useState("");
-  const [editCatSlotLimit, setEditCatSlotLimit] = useState("");
-
-  // Entry list state (entries view)
-  const [entryPage, setEntryPage] = useState(1);
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [addEntryOpen, setAddEntryOpen] = useState(false);
-
-  // Debounce search
-  useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput), 300);
-    return () => clearTimeout(t);
-  }, [searchInput]);
-
-  // Reset entry page when search changes
-  useEffect(() => { setEntryPage(1); }, [search, selectedCat?.id]);
-
-  const { data: entriesData, isLoading: entriesLoading } = useCategoryEntries(
-    whitelist.id,
-    selectedCat?.id ?? null,
-    entryPage,
-    search || undefined
+  const groupOptions: ComboboxOption[] = useMemo(
+    () => groups.map((g) => ({ value: g.group_name, label: g.group_name })),
+    [groups]
   );
 
-  const addEntry   = useAddCategoryEntry(whitelist.id, selectedCat?.id ?? 0);
-  const removeEntry = useRemoveCategoryEntry(whitelist.id, selectedCat?.id ?? 0);
-
-  // Add entry form
-  const [steamId, setSteamId] = useState("");
-  const [discordId, setDiscordId] = useState("");
-  const [discordName, setDiscordName] = useState("");
-  const [entryNotes, setEntryNotes] = useState("");
-  const [entryExpiry, setEntryExpiry] = useState("");
-
-  function handleAddCategory() {
-    if (!newCatName.trim()) return;
-    createCategory.mutate(
-      { name: newCatName.trim(), slot_limit: newCatSlotLimit ? parseInt(newCatSlotLimit, 10) : null },
-      {
-        onSuccess: () => {
-          toast.success("Category created");
-          setNewCatName("");
-          setNewCatSlotLimit("");
-          setAddCatOpen(false);
-        },
-        onError: () => toast.error("Failed to create category"),
-      }
-    );
+  async function handleSave() {
+    try {
+      await api.put(`/api/admin/whitelists/${whitelist.id}`, {
+        name,
+        squad_group: squadGroup,
+        ...(filenameOverride !== null ? { output_filename: filenameOverride } : {}),
+      });
+      toast.success("Roster updated");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    } catch {
+      toast.error("Failed to update roster");
+    }
   }
-
-  function startEditCat(cat: WhitelistCategory) {
-    setEditingCatId(cat.id);
-    setEditCatName(cat.name);
-    setEditCatSlotLimit(cat.slot_limit != null ? String(cat.slot_limit) : "");
-  }
-
-  function handleSaveCat(cat: WhitelistCategory) {
-    updateCategory.mutate(
-      {
-        id: cat.id,
-        name: editCatName.trim() || cat.name,
-        slot_limit: editCatSlotLimit ? parseInt(editCatSlotLimit, 10) : null,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Category updated");
-          setEditingCatId(null);
-        },
-        onError: () => toast.error("Failed to update category"),
-      }
-    );
-  }
-
-  function handleAddEntry() {
-    if (!steamId.trim()) return;
-    addEntry.mutate(
-      {
-        steam_id:     steamId.trim(),
-        discord_id:   discordId.trim() || undefined,
-        discord_name: discordName.trim() || undefined,
-        notes:        entryNotes.trim() || undefined,
-        expires_at:   entryExpiry || null,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Entry added");
-          setSteamId("");
-          setDiscordId("");
-          setDiscordName("");
-          setEntryNotes("");
-          setEntryExpiry("");
-          setAddEntryOpen(false);
-        },
-        onError: (err: unknown) => {
-          const msg = err instanceof Error ? err.message : "Failed to add entry";
-          toast.error(msg.includes("full") ? "Category is full" : "Failed to add entry");
-        },
-      }
-    );
-  }
-
-  const entryTotalPages = entriesData ? Math.ceil(entriesData.total / entriesData.per_page) : 0;
 
   return (
     <Sheet>
       <SheetTrigger render={<Button size="sm" variant="outline" />}>
-        <BookUser className="mr-1.5 h-3.5 w-3.5" />
-        Manage
+        Configure
       </SheetTrigger>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-
-        {view === "categories" ? (
-          <>
-            <SheetHeader>
-              <SheetTitle>{whitelist.name} — Roster</SheetTitle>
-              <SheetDescription>Manage categories and their members.</SheetDescription>
-            </SheetHeader>
-
-            <div className="space-y-3 p-4">
-              {catsLoading ? (
-                <div className="space-y-2">
-                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
-                </div>
-              ) : !categories || categories.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.08] py-10 text-center">
-                  <p className="text-sm font-medium">No categories yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Add a category to start building this roster.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {categories.map((cat) => (
-                    <div key={cat.id} className="rounded-lg border border-white/[0.06] overflow-hidden">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.02]">
-                        {editingCatId === cat.id ? (
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            <Input
-                              value={editCatName}
-                              onChange={(e) => setEditCatName(e.target.value)}
-                              className="h-6 text-sm py-0 flex-1 min-w-0"
-                              autoFocus
-                            />
-                            <Input
-                              type="number"
-                              min={1}
-                              value={editCatSlotLimit}
-                              onChange={(e) => setEditCatSlotLimit(e.target.value)}
-                              className="h-6 text-xs py-0 w-20 shrink-0"
-                              placeholder="slots"
-                            />
-                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={() => handleSaveCat(cat)}>
-                              <Check className="h-3 w-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={() => setEditingCatId(null)}>
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <>
-                            <span className="text-sm font-medium flex-1 min-w-0 truncate">{cat.name}</span>
-                            <div className="flex items-center gap-1.5 shrink-0 text-[10px] text-muted-foreground">
-                              {cat.slot_limit != null
-                                ? <span>{cat.user_count}/{cat.slot_limit}</span>
-                                : <span>{cat.user_count} entries</span>
-                              }
-                              {cat.manager_count > 0 && (
-                                <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                  {cat.manager_count} mgr
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEditCat(cat)}>
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger render={
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive" />
-                                }>
-                                  <Trash2 className="h-3 w-3" />
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Deleting this category removes all managers. Existing members will be unassigned (not deleted).
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction variant="destructive" onClick={() =>
-                                      deleteCategory.mutate(cat.id, {
-                                        onSuccess: () => toast.success("Category deleted"),
-                                        onError:   () => toast.error("Failed to delete category"),
-                                      })
-                                    }>Delete</AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 px-2 text-xs shrink-0"
-                                onClick={() => { setSelectedCat(cat); setView("entries"); }}
-                              >
-                                Manage
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {addCatOpen ? (
-                <div className="rounded-lg border border-white/[0.08] p-3 space-y-2">
-                  <p className="text-sm font-medium">New Category</p>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Name</Label>
-                    <Input
-                      value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                      placeholder="e.g. [SquadName]"
-                      onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
-                      autoFocus
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Slot Limit <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={newCatSlotLimit}
-                      onChange={(e) => setNewCatSlotLimit(e.target.value)}
-                      placeholder="Leave blank for unlimited"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={handleAddCategory}
-                      disabled={createCategory.isPending || !newCatName.trim()}
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => { setAddCatOpen(false); setNewCatName(""); setNewCatSlotLimit(""); }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setAddCatOpen(true)}
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Configure {whitelist.name}</SheetTitle>
+          <SheetDescription>Edit roster settings and output configuration.</SheetDescription>
+        </SheetHeader>
+        <div className="space-y-4 p-4">
+          <div className="space-y-2">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Squad Group</Label>
+            <Combobox
+              options={groupOptions}
+              value={squadGroup}
+              onValueChange={setSquadGroup}
+              placeholder="Select group"
+              searchPlaceholder="Search groups..."
+              emptyText="No groups found."
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Output Filename</Label>
+              {!isAutoFilename && (
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                  onClick={() => setFilenameOverride(null)}
                 >
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Add Category
-                </Button>
+                  Reset to auto
+                </button>
               )}
             </div>
-          </>
-        ) : (
-          /* ─ Entries view ─ */
-          <>
-            <SheetHeader>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 shrink-0"
-                  onClick={() => { setView("categories"); setSearchInput(""); setSearch(""); setEntryPage(1); setAddEntryOpen(false); }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="min-w-0">
-                  <SheetTitle className="truncate">{selectedCat?.name}</SheetTitle>
-                  <SheetDescription>
-                    {selectedCat?.slot_limit != null
-                      ? `${entriesData?.total ?? selectedCat.user_count} / ${selectedCat.slot_limit} slots`
-                      : `${entriesData?.total ?? selectedCat?.user_count ?? 0} entries`
-                    }
-                  </SheetDescription>
-                </div>
-              </div>
-            </SheetHeader>
-
-            <div className="space-y-3 p-4">
-              {/* Search */}
-              <Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search by name…"
-                className="h-8 text-xs"
-              />
-
-              {/* Entry list */}
-              {entriesLoading ? (
-                <div className="space-y-2">
-                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
-                </div>
-              ) : !entriesData || entriesData.entries.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.08] py-8 text-center">
-                  <p className="text-sm font-medium">No entries yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Add a member below to get started.</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {entriesData.entries.map((entry) => (
-                    <EntryRow
-                      key={entry.discord_id}
-                      entry={entry}
-                      onRemove={() =>
-                        removeEntry.mutate(entry.discord_id, {
-                          onSuccess: () => toast.success("Entry removed"),
-                          onError:   () => toast.error("Failed to remove entry"),
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Pagination */}
-              {entryTotalPages > 1 && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    onClick={() => setEntryPage(p => Math.max(1, p - 1))}
-                    disabled={entryPage <= 1}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    Prev
-                  </Button>
-                  <span>Page {entryPage} of {entryTotalPages}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    onClick={() => setEntryPage(p => Math.min(entryTotalPages, p + 1))}
-                    disabled={entryPage >= entryTotalPages}
-                  >
-                    Next
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Add entry toggle */}
-              {addEntryOpen ? (
-                <div className="rounded-lg border border-white/[0.08] p-3 space-y-2">
-                  <p className="text-sm font-medium">Add Entry</p>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Steam ID <span className="text-red-400">*</span></Label>
-                    <Input
-                      value={steamId}
-                      onChange={(e) => setSteamId(e.target.value)}
-                      placeholder="76561198..."
-                      className="font-mono text-xs"
-                      autoFocus
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Discord ID <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input
-                      value={discordId}
-                      onChange={(e) => setDiscordId(e.target.value)}
-                      placeholder="123456789012345678"
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Discord Name <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input
-                      value={discordName}
-                      onChange={(e) => setDiscordName(e.target.value)}
-                      placeholder="Username"
-                      className="text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Notes <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input
-                      value={entryNotes}
-                      onChange={(e) => setEntryNotes(e.target.value)}
-                      placeholder="Internal note"
-                      className="text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Expiry Date <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input
-                      type="date"
-                      value={entryExpiry}
-                      onChange={(e) => setEntryExpiry(e.target.value)}
-                      className="text-xs"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={handleAddEntry}
-                      disabled={addEntry.isPending || !steamId.trim()}
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setAddEntryOpen(false);
-                        setSteamId("");
-                        setDiscordId("");
-                        setDiscordName("");
-                        setEntryNotes("");
-                        setEntryExpiry("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setAddEntryOpen(true)}
-                >
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Add Entry
-                </Button>
-              )}
-            </div>
-          </>
-        )}
+            <Input
+              value={outputFilename}
+              onChange={(e) => setFilenameOverride(e.target.value)}
+              placeholder="e.g. roster.txt"
+              className={isAutoFilename ? "text-muted-foreground" : ""}
+            />
+            {isAutoFilename && (
+              <p className="text-[10px] text-muted-foreground">Auto-derived from name. Edit above to override.</p>
+            )}
+          </div>
+          <Button onClick={handleSave} className="w-full">
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            Save
+          </Button>
+          <div className="border-t border-white/[0.06] pt-4">
+            <p className="text-xs text-muted-foreground">
+              To manage categories and entries, use the{" "}
+              <Link href="/dashboard/manual-roster" className="underline hover:text-foreground">
+                Manual Roster
+              </Link>{" "}
+              page.
+            </p>
+          </div>
+        </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-// ─── EntryRow ─────────────────────────────────────────────────────────────────
-
-function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => void }) {
-  const steamId   = entry.steam_ids?.[0] ?? "—";
-  const noDiscord = entry.discord_name === "[No Discord]" || entry.created_via === "manual_steam_only";
-  const expiredSoon = isExpiredOrSoon(entry.expires_at);
-
-  return (
-    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 bg-white/[0.02] hover:bg-white/[0.04] text-xs">
-      <div className="flex-1 min-w-0 space-y-0.5">
-        <div className="flex items-center gap-2 min-w-0">
-          {noDiscord ? (
-            <span className="italic text-muted-foreground/60">No Discord</span>
-          ) : (
-            <span className="truncate font-medium">{entry.discord_name}</span>
-          )}
-        </div>
-        <div className="font-mono text-[10px] text-muted-foreground/60 truncate">{steamId}</div>
-      </div>
-      <div className="shrink-0 text-right space-y-0.5">
-        <div className="text-[10px] text-muted-foreground">{formatDate(entry.created_at)}</div>
-        {entry.expires_at && (
-          <div className={`text-[10px] ${expiredSoon ? "text-red-400" : "text-muted-foreground"}`}>
-            exp {formatDate(entry.expires_at)}
-          </div>
-        )}
-      </div>
-      <AlertDialog>
-        <AlertDialogTrigger render={
-          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0" />
-        }>
-          <Trash2 className="h-3 w-3" />
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove entry?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Remove {noDiscord ? steamId : entry.discord_name} from this category? This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={onRemove}>Remove</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
   );
 }
 
