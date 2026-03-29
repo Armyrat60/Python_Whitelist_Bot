@@ -84,41 +84,40 @@ async function build() {
 async function start() {
   const app = await build()
 
-  // ─── Prime Discord guild list ────────────────────────────────────────────────
+  // ─── Start listening immediately so healthcheck passes ───────────────────────
+
+  await app.listen({ port: env.PORT, host: env.HOST })
+
+  // ─── Prime Discord guild list (background — must not block listen) ────────────
 
   const discord = app.discord
-  await discord.fetchGuilds()
-  app.log.info(`Discord REST client ready — ${discord.guildCount()} guild(s)`)
-
-  // ─── Prime file cache for all guilds ────────────────────────────────────────
-
-  for (const guild of discord.getGuilds()) {
-    try {
-      const outputs = await syncOutputs(app.prisma, guild.id)
-      cache.set(guild.id, outputs)
-      app.log.info(`Primed cache for guild ${guild.name} (${guild.id})`)
-    } catch (err) {
-      app.log.error({ err, guildId: guild.id }, "Failed to prime cache at startup")
-    }
-  }
-
-  // ─── Heartbeat: refresh cache every 5 minutes ───────────────────────────────
 
   const HEARTBEAT_MS = 5 * 60 * 1000
-  setInterval(async () => {
+
+  async function refreshAll() {
+    try {
+      await discord.fetchGuilds()
+      app.log.info(`Discord REST client ready — ${discord.guildCount()} guild(s)`)
+    } catch (err) {
+      app.log.error({ err }, "Failed to fetch Discord guilds")
+    }
     for (const guild of discord.getGuilds()) {
       try {
         const outputs = await syncOutputs(app.prisma, guild.id)
         cache.set(guild.id, outputs)
+        app.log.info(`Primed cache for guild ${guild.name} (${guild.id})`)
       } catch (err) {
-        app.log.debug({ err, guildId: guild.id }, "Heartbeat cache refresh failed")
+        app.log.error({ err, guildId: guild.id }, "Failed to prime cache at startup")
       }
     }
+  }
+
+  // Run immediately in background, then on heartbeat
+  refreshAll().catch(() => {})
+
+  setInterval(() => {
+    refreshAll().catch(() => {})
   }, HEARTBEAT_MS).unref()
-
-  // ─── Start listening ─────────────────────────────────────────────────────────
-
-  await app.listen({ port: env.PORT, host: env.HOST })
 }
 
 // ─── Type augmentation for discord on FastifyInstance ────────────────────────
