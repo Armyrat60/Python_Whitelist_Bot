@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
 import { getFileToken } from "../../services/token.js"
+import { warmSteamCache } from "../../lib/steamNames.js"
 
 // ─── Auth preHandlers ─────────────────────────────────────────────────────────
 
@@ -385,6 +386,7 @@ export default async function userRoutes(app: FastifyInstance) {
     })
 
     await triggerSync(app, guildId)
+    warmSteamCache(body.steam_ids ?? [], app.prisma)
 
     return reply.code(201).send(toJSON({
       ok:           true,

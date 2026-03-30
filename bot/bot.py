@@ -508,6 +508,12 @@ class WhitelistBot(commands.Bot):
             )
             await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_id, submitted)
 
+        # Warm Steam name cache for any new Steam IDs (fire and forget)
+        new_steam_ids = [v for t, v, *_ in submitted if t == "steam64"]
+        if new_steam_ids:
+            from bot.utils import resolve_steam_names
+            asyncio.create_task(resolve_steam_names(new_steam_ids, db=self.db))
+
             # Post-save verification: read back and confirm
             saved_ids = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
             if len(saved_ids) != len(submitted):
