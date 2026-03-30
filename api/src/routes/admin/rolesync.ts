@@ -437,6 +437,6 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({ ok: true, updated })
+    return reply.send({ ok: true, updated, total_active: activeUsers.length })
   })
 }

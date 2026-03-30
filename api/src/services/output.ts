@@ -52,12 +52,13 @@ export async function syncOutputs(
   // ── Active export rows ────────────────────────────────────────────────────
   const rows = await prisma.$queryRaw<ExportRow[]>`
     SELECT
-      w.slug          AS "wlSlug",
-      w.output_filename AS "outputFilename",
-      u.discord_id    AS "discordId",
-      u.discord_name  AS "discordName",
-      i.id_type       AS "idType",
-      i.id_value      AS "idValue"
+      w.slug             AS "wlSlug",
+      w.output_filename  AS "outputFilename",
+      u.discord_id       AS "discordId",
+      u.discord_name     AS "discordName",
+      u.effective_slot_limit AS "slotLimit",
+      i.id_type          AS "idType",
+      i.id_value         AS "idValue"
     FROM whitelist_users u
     JOIN whitelists w ON w.id = u.whitelist_id
     JOIN whitelist_identifiers i
@@ -100,9 +101,17 @@ export async function syncOutputs(
   // Build slug -> whitelist lookup
   const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
 
+  // Track how many IDs have been exported per user per whitelist (for slot limit enforcement)
+  const userIdCounts = new Map<string, number>()
+
   for (const row of rows) {
     const wl = wlBySlug[row.wlSlug]
     if (!wl || !wl.enabled) continue
+
+    // Enforce slot limit — skip IDs beyond the user's effective_slot_limit
+    const userKey = `${row.wlSlug}:${String(row.discordId)}`
+    const exported = userIdCounts.get(userKey) ?? 0
+    if (row.slotLimit > 0 && exported >= row.slotLimit) continue
 
     const groupName = wl.squadGroup || "Whitelist"
     const line      = buildLine(row.idType, row.idValue, row.discordName, groupName)
@@ -117,6 +126,7 @@ export async function syncOutputs(
       perWlLines[slug].push(line)
       perWlSeen[slug].add(dedupKey)
       perWlGroups[slug].add(groupName)
+      userIdCounts.set(userKey, exported + 1)
     }
   }
 
@@ -136,12 +146,13 @@ export async function syncOutputs(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 interface ExportRow {
-  wlSlug:      string
+  wlSlug:         string
   outputFilename: string
-  discordId:   bigint
-  discordName: string
-  idType:      string
-  idValue:     string
+  discordId:      bigint
+  discordName:    string
+  slotLimit:      number
+  idType:         string
+  idValue:        string
 }
 
 function toBool(val: string): boolean {

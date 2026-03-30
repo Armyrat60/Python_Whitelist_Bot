@@ -296,7 +296,19 @@ function TempChip({ expiresAt, createdAt }: { expiresAt?: string | null; created
 
 /** Slot visualization — dot + count + slim progress bar */
 function SlotBar({ used, total }: { used: number; total: number }) {
-  const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+  if (total === 0) {
+    return (
+      <div className="flex items-center gap-2">
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: "#F87171", boxShadow: "0 0 5px rgba(248,113,113,0.5)" }}
+        />
+        <span className="text-[11px] font-medium text-red-400">No Access</span>
+      </div>
+    );
+  }
+
+  const pct = Math.min((used / total) * 100, 100);
   const isOver = used > total;
   const barColor = isOver ? "#F87171" : "var(--accent-primary)";
   const glowColor = isOver ? "rgba(248,113,113,0.5)" : "color-mix(in srgb, var(--accent-primary) 50%, transparent)";
@@ -2058,8 +2070,8 @@ function UserDetailSheet({
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Slots</Label>
-          <p className="text-sm">
-            {usedSlots} / {user.effective_slot_limit}
+          <p className={cn("text-sm", user.effective_slot_limit === 0 ? "text-red-400 font-medium" : "")}>
+            {user.effective_slot_limit === 0 ? "No Access" : `${usedSlots} / ${user.effective_slot_limit}`}
           </p>
         </div>
         <div className="space-y-1">
@@ -2118,9 +2130,14 @@ function UserDetailSheet({
           <Button variant="outline" size="sm" onClick={addSlot}>
             <Plus className="mr-1 h-3 w-3" /> Add Slot
           </Button>
-          {usedSlots > user.effective_slot_limit && (
+          {user.effective_slot_limit === 0 && (
+            <span className="text-[11px] text-red-400">
+              No slots — user has no whitelist access
+            </span>
+          )}
+          {user.effective_slot_limit > 0 && usedSlots > user.effective_slot_limit && (
             <span className="text-[11px] text-amber-400">
-              Over slot limit ({usedSlots}/{user.effective_slot_limit}) — extra slots will be temporary
+              Over limit ({usedSlots} saved, {user.effective_slot_limit} exported) — only the first {user.effective_slot_limit} ID{user.effective_slot_limit !== 1 ? "s" : ""} will appear in the whitelist file
             </span>
           )}
         </div>
