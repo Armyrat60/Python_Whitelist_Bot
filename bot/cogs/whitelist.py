@@ -281,24 +281,9 @@ class WhitelistPanelView(discord.ui.View):
             embed.add_field(name="Slots", value=f"{len(ids)} / {slots} used", inline=True)
 
             # Resolve Steam names for display
-            from bot.config import STEAM_API_KEY
-            steam_names = {}
+            from bot.utils import resolve_steam_names
             steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
-            if steam64_ids and STEAM_API_KEY:
-                try:
-                    import aiohttp as _aiohttp
-                    ids_param = ",".join(steam64_ids)
-                    async with _aiohttp.ClientSession() as http:
-                        async with http.get(
-                            f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids_param}",
-                            timeout=_aiohttp.ClientTimeout(total=5),
-                        ) as resp:
-                            if resp.status == 200:
-                                data = await resp.json()
-                                for player in data.get("response", {}).get("players", []):
-                                    steam_names[player["steamid"]] = player.get("personaname", "")
-                except Exception:
-                    pass  # Steam API failed, show IDs without names
+            steam_names = await resolve_steam_names(steam64_ids)
 
             if ids:
                 id_lines = []
@@ -547,23 +532,9 @@ class _UserLookupView(discord.ui.View):
             return
 
         # Resolve Steam names
-        from bot.config import STEAM_API_KEY
-        steam_names = {}
+        from bot.utils import resolve_steam_names
         steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
-        if steam64_ids and STEAM_API_KEY:
-            try:
-                import aiohttp as _aiohttp
-                async with _aiohttp.ClientSession() as http:
-                    async with http.get(
-                        f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={','.join(steam64_ids)}",
-                        timeout=_aiohttp.ClientTimeout(total=5),
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            for player in data.get("response", {}).get("players", []):
-                                steam_names[player["steamid"]] = player.get("personaname", "")
-            except Exception:
-                pass
+        steam_names = await resolve_steam_names(steam64_ids)
 
         embed = discord.Embed(title=f"Whitelist: {target.display_name}", color=0xF97316)
         embed.set_thumbnail(url=target.display_avatar.url)

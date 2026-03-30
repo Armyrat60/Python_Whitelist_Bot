@@ -29,6 +29,57 @@ _STEAM_PROFILE_RE = re.compile(r'steamcommunity\.com/profiles/(\d{17})', re.IGNO
 _STEAM_VANITY_RE = re.compile(r'steamcommunity\.com/id/([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
 
+async def resolve_steam_names(steam64_ids: list[str]) -> dict[str, str]:
+    """Resolve Steam64 IDs to persona names.
+
+    Tries the internal API proxy first (requires BOT_INTERNAL_SECRET + WEB_INTERNAL_URL),
+    then falls back to calling the Steam API directly (requires STEAM_API_KEY).
+    Returns a dict of {steam64_id: persona_name}.
+    """
+    if not steam64_ids:
+        return {}
+
+    from bot.config import BOT_INTERNAL_SECRET, WEB_INTERNAL_URL, STEAM_API_KEY
+    import aiohttp
+
+    # Try internal API proxy first
+    if BOT_INTERNAL_SECRET and WEB_INTERNAL_URL:
+        try:
+            async with aiohttp.ClientSession() as http:
+                async with http.post(
+                    f"{WEB_INTERNAL_URL}/api/internal/steam-names",
+                    json={"steam_ids": steam64_ids},
+                    headers={"x-bot-secret": BOT_INTERNAL_SECRET, "Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {k: v for k, v in data.get("names", {}).items() if v}
+        except Exception:
+            pass  # Fall through to direct Steam API
+
+    # Fall back to direct Steam API
+    if STEAM_API_KEY:
+        try:
+            ids_param = ",".join(steam64_ids)
+            async with aiohttp.ClientSession() as http:
+                async with http.get(
+                    f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids_param}",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            p["steamid"]: p.get("personaname", "")
+                            for p in data.get("response", {}).get("players", [])
+                            if p.get("personaname")
+                        }
+        except Exception:
+            pass
+
+    return {}
+
+
 async def resolve_steam_vanity(vanity_name: str) -> str | None:
     """Resolve a Steam vanity URL name to a Steam64 ID using the Steam API.
 

@@ -35,6 +35,7 @@ WHITELIST_FILENAME = os.getenv("WHITELIST_FILENAME", "whitelist.txt")
 
 DEFAULT_MOD_ROLE_ID = int(os.getenv("BOOTSTRAP_MOD_ROLE_ID", "0") or 0)
 STEAM_API_KEY = os.getenv("STEAM_API_KEY", "")
+BOT_INTERNAL_SECRET = os.getenv("BOT_INTERNAL_SECRET", "")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")  # Optional: Sentry error tracking
 
 WEB_BASE_URL = os.getenv("WEB_BASE_URL", "").rstrip("/")  # Dashboard URL e.g. https://squadwhitelister.com

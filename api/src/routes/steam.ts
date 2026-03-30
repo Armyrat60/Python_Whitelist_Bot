@@ -14,7 +14,61 @@ const STEAM_ID_RE  = /^https?:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/
 const steamCache = new Map<string, { name: string; cachedAt: number }>()
 const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
 
+// Shared resolution logic used by both endpoints
+async function resolveSteamNames(steamIds: string[]): Promise<Record<string, string>> {
+  const now = Date.now()
+  const results: Record<string, string> = {}
+  const uncached: string[] = []
+
+  for (const sid of steamIds) {
+    const cached = steamCache.get(sid)
+    if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
+      results[sid] = cached.name
+    } else {
+      uncached.push(sid)
+    }
+  }
+
+  const STEAM_API_KEY = process.env["STEAM_API_KEY"] ?? ""
+  if (uncached.length > 0 && STEAM_API_KEY) {
+    try {
+      const idsParam = uncached.join(",")
+      const url = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${STEAM_API_KEY}&steamids=${idsParam}`
+      const resp = await fetch(url)
+      if (resp.ok) {
+        const data = await resp.json() as { response?: { players?: Array<{ steamid: string; personaname: string }> } }
+        for (const player of data.response?.players ?? []) {
+          if (player.steamid) {
+            results[player.steamid] = player.personaname ?? ""
+            steamCache.set(player.steamid, { name: player.personaname ?? "", cachedAt: now })
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  for (const sid of steamIds) {
+    if (!(sid in results)) results[sid] = ""
+  }
+
+  return results
+}
+
 export const steamRoutes: FastifyPluginAsync = async (app) => {
+  // ── POST /api/internal/steam-names — bot-to-API proxy (no session required) ──
+  app.post<{ Body: { steam_ids?: unknown[] } }>("/internal/steam-names", async (req, reply) => {
+    const secret = process.env["BOT_INTERNAL_SECRET"] ?? ""
+    if (!secret || req.headers["x-bot-secret"] !== secret) {
+      return reply.code(401).send({ error: "Unauthorized" })
+    }
+    const rawIds = req.body?.steam_ids
+    if (!rawIds || !Array.isArray(rawIds)) {
+      return reply.code(400).send({ error: "steam_ids array required" })
+    }
+    const names = await resolveSteamNames(rawIds.slice(0, 100).map(String))
+    return reply.send({ names })
+  })
+
   app.post<{ Body: { steam_ids?: unknown[] } }>("/steam/names", { preHandler: app.requireAuth }, async (req, reply) => {
     const rawIds = req.body?.steam_ids
     if (!rawIds || !Array.isArray(rawIds)) {
@@ -22,43 +76,8 @@ export const steamRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const steamIds = rawIds.slice(0, 100).map((id) => String(id))
-    const now = Date.now()
-    const results: Record<string, string> = {}
-    const uncached: string[] = []
-
-    for (const sid of steamIds) {
-      const cached = steamCache.get(sid)
-      if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
-        results[sid] = cached.name
-      } else {
-        uncached.push(sid)
-      }
-    }
-
-    const STEAM_API_KEY = process.env["STEAM_API_KEY"] ?? ""
-    if (uncached.length > 0 && STEAM_API_KEY) {
-      try {
-        const idsParam = uncached.join(",")
-        const url = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${STEAM_API_KEY}&steamids=${idsParam}`
-        const resp = await fetch(url)
-        if (resp.ok) {
-          const data = await resp.json() as { response?: { players?: Array<{ steamid: string; personaname: string }> } }
-          for (const player of data.response?.players ?? []) {
-            if (player.steamid) {
-              results[player.steamid] = player.personaname ?? ""
-              steamCache.set(player.steamid, { name: player.personaname ?? "", cachedAt: now })
-            }
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
-
-    // Fill in blanks for unresolved IDs
-    for (const sid of steamIds) {
-      if (!(sid in results)) results[sid] = ""
-    }
-
-    return reply.send({ names: results })
+    const names = await resolveSteamNames(steamIds)
+    return reply.send({ names })
   })
 
   // ── GET /api/steam/verify — redirect to Steam OpenID ────────────────────────
