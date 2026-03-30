@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Shield, Clock, Tag, BadgeCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -123,6 +124,32 @@ function StatusBadge({ status, expiresAt }: { status: string | null; expiresAt: 
 export default function MyWhitelistPage() {
   const { activeGuild } = useGuild();
   const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
+  const searchParams = useSearchParams();
+
+  // Show toast based on Steam verification redirect result
+  useEffect(() => {
+    const result = searchParams.get("steam_verify");
+    if (!result) return;
+    const steamId = searchParams.get("steam_id");
+    if (result === "success") {
+      toast.success(`Steam ID ${steamId} verified!`);
+    } else if (result === "cancelled") {
+      toast.info("Steam verification cancelled.");
+    } else {
+      const reason = searchParams.get("reason");
+      if (reason === "id_not_registered") {
+        toast.error(`Steam ID ${steamId} isn't one of your registered IDs. Add it first, then verify.`);
+      } else {
+        toast.error("Steam verification failed. Please try again.");
+      }
+    }
+    // Clean the URL params without re-navigating
+    const url = new URL(window.location.href);
+    url.searchParams.delete("steam_verify");
+    url.searchParams.delete("steam_id");
+    url.searchParams.delete("reason");
+    window.history.replaceState({}, "", url.toString());
+  }, [searchParams]);
 
   if (isLoading) {
     return (
