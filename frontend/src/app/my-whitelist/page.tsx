@@ -471,6 +471,18 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
                   <BadgeCheck className="h-4 w-4 text-emerald-400 shrink-0" />
                 </span>
               )}
+              {val && status.type === "Steam64" && !(
+                (data.verified_steam_ids ?? []).includes(val) ||
+                (data.verified_steam_ids ?? []).includes(val.toLowerCase())
+              ) && (
+                <a
+                  href="/api/steam/verify"
+                  className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:text-emerald-400 hover:underline"
+                  title="Verify this Steam ID is yours via Steam login"
+                >
+                  Verify
+                </a>
+              )}
             </div>
           );
         })}

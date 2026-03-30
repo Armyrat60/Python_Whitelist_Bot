@@ -113,7 +113,7 @@ export default function RoleHistoryPage() {
         </div>
 
         {/* Whitelist filter */}
-        <Select value={whitelistSlug || "__all"} onValueChange={(v) => setWhitelistSlug(v === "__all" ? "" : v)}>
+        <Select value={whitelistSlug || "__all"} onValueChange={(v) => setWhitelistSlug(!v || v === "__all" ? "" : v)}>
           <SelectTrigger className="h-8 w-44 text-xs">
             <SelectValue placeholder="All whitelists" />
           </SelectTrigger>
