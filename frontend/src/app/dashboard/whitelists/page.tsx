@@ -23,6 +23,7 @@ import { api } from "@/lib/api";
 import type { Whitelist, SquadGroup } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -289,6 +290,9 @@ function WhitelistCard({
             </span>
           )}
           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {whitelist.is_default && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Default</Badge>
+            )}
             <span className="text-[10px] font-mono text-muted-foreground/40 select-all" title="Whitelist ID">
               #{whitelist.id}
             </span>
@@ -322,28 +326,30 @@ function WhitelistCard({
         </div>
         <div className="ml-auto flex gap-2">
           <WhitelistConfigSheet whitelist={whitelist} groups={groups} />
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={
-                <Button size="sm" variant="destructive">
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  Delete
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete {whitelist.name}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently remove this whitelist and all associated data. This cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={onDelete}>Continue</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {!whitelist.is_default && (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button size="sm" variant="destructive">
+                    <Trash2 className="mr-1 h-3 w-3" />
+                    Delete
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {whitelist.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove this whitelist and all associated data. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={onDelete}>Continue</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </CardFooter>
     </Card>

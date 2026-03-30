@@ -321,6 +321,10 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     })
     if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
 
+    if (wl.isDefault) {
+      return reply.code(400).send({ error: "Cannot delete the default whitelist" })
+    }
+
     const [userCount, identifierCount] = await Promise.all([
       prisma.whitelistUser.count({ where: { whitelistId: wl.id } }),
       prisma.whitelistIdentifier.count({ where: { whitelistId: wl.id } }),
