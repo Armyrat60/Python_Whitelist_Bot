@@ -17,6 +17,19 @@ async def setup_autocomplete(interaction: discord.Interaction, current: str):
     return [app_commands.Choice(name=item, value=item) for item in slugs if current.lower() in item][:25]
 
 
+def _parse_role_names(plan: str | None) -> list[str]:
+    """Extract role names from a plan string like 'Solo:1 + Duo:2' → ['Solo', 'Duo']."""
+    if not plan:
+        return []
+    names = []
+    for part in plan.split(" + "):
+        part = part.strip()
+        name = part.split(":")[0].strip() if ":" in part else part
+        if name and name.lower() != "default":
+            names.append(name)
+    return names
+
+
 def _name_similarity(a: str, b: str) -> float:
     """Return 0–1 similarity between two display names (case-insensitive)."""
     a, b = a.lower().strip(), b.lower().strip()
@@ -261,9 +274,10 @@ class WhitelistPanelView(discord.ui.View):
                     await interaction.followup.send(embed=embed, view=claim_view, ephemeral=True)
                     return
 
-            tier_name = plan.split(":")[0] if ":" in plan else plan
+            role_names = _parse_role_names(plan)
+            role_display = "\n".join(f"• {r}" for r in role_names) if role_names else "—"
             embed = discord.Embed(title=f"My {wl['name']} Whitelist", color=0xF97316)
-            embed.add_field(name="Tier", value=tier_name, inline=True)
+            embed.add_field(name="Role" + ("s" if len(role_names) > 1 else ""), value=role_display, inline=True)
             embed.add_field(name="Slots", value=f"{len(ids)} / {slots} used", inline=True)
 
             # Resolve Steam names for display
@@ -557,7 +571,9 @@ class _UserLookupView(discord.ui.View):
             embed.add_field(name="Status", value=row[1], inline=True)
             embed.add_field(name="Slots", value=f"{len(ids)} / {row[3]}", inline=True)
             if row[4]:
-                embed.add_field(name="Tier", value=row[4].split(":")[0] if ":" in str(row[4]) else row[4], inline=True)
+                role_names = _parse_role_names(str(row[4]))
+                role_display = "\n".join(f"• {r}" for r in role_names) if role_names else str(row[4])
+                embed.add_field(name="Role" + ("s" if len(role_names) > 1 else ""), value=role_display, inline=True)
         if ids:
             id_lines = []
             for i, (t, v, *_) in enumerate(ids, 1):
