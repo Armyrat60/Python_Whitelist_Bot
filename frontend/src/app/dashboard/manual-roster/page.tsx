@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import {
   useWhitelists,
+  useGroups,
+  useUpdateWhitelist,
   useCategories,
   useCreateCategory,
   useUpdateCategory,
@@ -80,6 +82,45 @@ function isExpiredOrSoon(dateStr: string | null | undefined): boolean {
   const exp = new Date(dateStr);
   const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   return exp <= soon;
+}
+
+// ─── Squad Group Selector ─────────────────────────────────────────────────────
+
+function RosterGroupSelector({ whitelist }: { whitelist: Whitelist }) {
+  const { data: groups } = useGroups();
+  const update = useUpdateWhitelist();
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2 bg-white/[0.02]">
+      <span className="text-xs text-muted-foreground shrink-0">Squad Group</span>
+      <Select
+        value={whitelist.squad_group || ""}
+        onValueChange={(val) => {
+          if (!val || val === whitelist.squad_group) return;
+          update.mutate(
+            { id: whitelist.id, squad_group: val },
+            { onSuccess: () => toast.success("Group updated"), onError: () => toast.error("Failed to update group") }
+          );
+        }}
+      >
+        <SelectTrigger className="h-7 w-44 text-xs">
+          <SelectValue placeholder="No group" />
+        </SelectTrigger>
+        <SelectContent>
+          {(groups ?? []).map((g) => (
+            <SelectItem key={g.group_name} value={g.group_name}>
+              {g.group_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {whitelist.squad_group && (
+        <span className="text-[11px] font-mono text-muted-foreground">
+          → {whitelist.squad_group}:{(groups ?? []).find(g => g.group_name === whitelist.squad_group)?.permissions ?? "reserve"}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -177,6 +218,11 @@ export default function ManualRosterPage() {
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {/* ─── Squad Group selector ──────────────────────────────────── */}
+          {selectedWhitelist && (
+            <RosterGroupSelector whitelist={selectedWhitelist} />
           )}
 
           {/* ─── Content ───────────────────────────────────────────────── */}

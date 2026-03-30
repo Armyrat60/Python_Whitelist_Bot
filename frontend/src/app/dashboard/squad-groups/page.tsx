@@ -332,8 +332,14 @@ export default function SquadGroupsPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">Group=name:permissions</code>{" "}
             lines in your Squad server config.
           </p>
+          <p className={`mt-1 text-xs font-medium ${(groups?.length ?? 0) >= 10 ? "text-red-400" : "text-muted-foreground"}`}>
+            {groups?.length ?? 0} / 10 groups used
+          </p>
         </div>
-        <CreateGroupDialog available={available} />
+        {(groups?.length ?? 0) < 10 && <CreateGroupDialog available={available} />}
+        {(groups?.length ?? 0) >= 10 && (
+          <span className="text-xs text-red-400">Group limit reached</span>
+        )}
       </div>
 
       {(!groups || groups.length === 0) ? (
@@ -341,7 +347,7 @@ export default function SquadGroupsPage() {
           <p className="text-sm text-muted-foreground">No groups yet. Create one to get started.</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 items-start">
           {groups.map((g) => (
             <GroupCard key={g.group_name} group={g} available={available} />
           ))}

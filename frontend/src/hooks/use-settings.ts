@@ -284,6 +284,17 @@ export function useCreateWhitelist() {
   });
 }
 
+export function useUpdateWhitelist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; squad_group?: string; output_filename?: string }) =>
+      api.put(`/api/admin/whitelists/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+}
+
 export function useDeleteWhitelist() {
   const qc = useQueryClient();
   return useMutation({
