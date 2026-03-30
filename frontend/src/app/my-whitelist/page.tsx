@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { Save, Shield, Clock, Tag } from "lucide-react";
+import { Save, Shield, Clock, Tag, BadgeCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useGuild } from "@/hooks/use-guild";
@@ -29,6 +29,8 @@ interface MyWhitelistData {
   effective_slot_limit: number;
   steam_ids: string[];
   eos_ids: string[];
+  verified_steam_ids: string[];
+  verified_eos_ids: string[];
   status: string | null;
   expires_at: string | null;
   category_name: string | null;
@@ -429,6 +431,14 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
                 >
                   {status.type}
                 </Badge>
+              )}
+              {val && (
+                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val.toLowerCase()) ||
+                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val)
+              ) && (
+                <span title="Bridge Verified">
+                  <BadgeCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                </span>
               )}
             </div>
           );

@@ -647,4 +647,51 @@ export default async function userRoutes(app: FastifyInstance) {
 
     return reply.send({ ok: true, moved, skipped })
   })
+
+  // ── GET /api/admin/role-loss ─────────────────────────────────────────────────
+  // Returns users who lost their Discord role in the last N days.
+
+  app.get("/role-loss", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const query = req.query as { days?: string; whitelist_slug?: string }
+    const days = Math.min(Math.max(parseInt(query.days ?? "90", 10), 1), 365)
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
+    const where: Record<string, unknown> = {
+      guildId,
+      status: "disabled_role_lost",
+      updatedAt: { gte: since },
+    }
+
+    if (query.whitelist_slug) {
+      const wl = await prisma.whitelist.findUnique({
+        where: { guildId_slug: { guildId, slug: query.whitelist_slug } },
+      })
+      if (wl) where.whitelistId = wl.id
+    }
+
+    const users = await prisma.whitelistUser.findMany({
+      where,
+      include: {
+        whitelist: { select: { name: true, slug: true, isManual: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+    })
+
+    const filtered = users.filter(u => !(u as unknown as { whitelist: { isManual: boolean } }).whitelist.isManual)
+
+    return reply.send(toJSON({
+      users: filtered.map(u => ({
+        discord_id: u.discordId.toString(),
+        discord_name: u.discordName,
+        whitelist_slug: (u as unknown as { whitelist: { slug: string } }).whitelist.slug,
+        whitelist_name: (u as unknown as { whitelist: { name: string } }).whitelist.name,
+        lost_at: u.updatedAt.toISOString(),
+        added_at: u.createdAt.toISOString(),
+        last_plan_name: u.lastPlanName,
+        effective_slot_limit: u.effectiveSlotLimit,
+      })),
+    }))
+  })
 }

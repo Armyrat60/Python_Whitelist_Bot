@@ -19,6 +19,7 @@ import {
   UserRound,
   Search,
   Database,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -46,6 +47,7 @@ const dashboardLinks = [
 const rosterLinks = [
   { href: "/dashboard/roster", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
+  { href: "/dashboard/role-history", label: "Role History", icon: History },
 ];
 
 const playerLinks = [

@@ -52,6 +52,53 @@ async function triggerSync(app: FastifyInstance, guildId: bigint) {
   }
 }
 
+async function pullMembersForRole(
+  app: FastifyInstance,
+  guildId: bigint,
+  roleId: bigint,
+  panelWhitelistId: number,
+) {
+  try {
+    const wl = await app.prisma.whitelist.findUnique({ where: { id: panelWhitelistId } })
+    if (!wl) return
+
+    const members = await app.discord.fetchMembersWithRole(guildId, roleId)
+    const now = new Date()
+    let added = 0
+
+    for (const member of members) {
+      const existing = await app.prisma.whitelistUser.findUnique({
+        where: { guildId_discordId_whitelistId: { guildId, discordId: member.id, whitelistId: wl.id } },
+      })
+      if (existing) continue
+
+      const panelRole = await app.prisma.panelRole.findFirst({
+        where: { guildId, roleId, isActive: true },
+      })
+
+      await app.prisma.whitelistUser.create({
+        data: {
+          guildId,
+          discordId: member.id,
+          whitelistId: wl.id,
+          discordName: member.name,
+          status: "active",
+          effectiveSlotLimit: panelRole?.slotLimit ?? wl.defaultSlotLimit,
+          createdVia: "role_sync",
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      added++
+    }
+
+    if (added > 0) await triggerSync(app, guildId)
+    app.log.info({ guildId: guildId.toString(), roleId: roleId.toString(), added }, "Auto-pull on panel role save")
+  } catch (err) {
+    app.log.error({ err, guildId: guildId.toString(), roleId: roleId.toString() }, "Auto-pull after panel role save failed")
+  }
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 export default async function panelRoleRoutes(app: FastifyInstance) {
@@ -114,7 +161,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
       const panelId = parseInt(req.params.panelId, 10)
       if (isNaN(panelId)) return reply.code(400).send({ error: "Invalid panelId" })
 
-      const panel = await prisma.panel.findFirst({ where: { id: panelId, guildId } })
+      const panel = await prisma.panel.findFirst({ where: { id: panelId, guildId }, select: { id: true, whitelistId: true } })
       if (!panel) return reply.code(404).send({ error: "Panel not found" })
 
       const body = req.body as {
@@ -161,6 +208,10 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
 
       await queuePanelRefresh(app, guildId, panelId, "role_added")
       triggerSync(app, guildId).catch(() => {})
+
+      if (panel.whitelistId) {
+        pullMembersForRole(app, guildId, roleId, panel.whitelistId).catch(() => {})
+      }
 
       return reply.code(201).send(safeJson({ ok: true, id: role.id }))
     }

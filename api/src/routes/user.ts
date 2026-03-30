@@ -85,12 +85,21 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       })
       const steamIds = identifiers.filter((i) => i.idType === "steam64").map((i) => i.idValue)
       const eosIds = identifiers.filter((i) => i.idType === "eosid").map((i) => i.idValue)
+      const verifiedSteamIds = identifiers.filter((i) => i.idType === "steam64" && i.isVerified).map((i) => i.idValue)
+      const verifiedEosIds = identifiers.filter((i) => i.idType === "eosid" && i.isVerified).map((i) => i.idValue)
 
       // Fetch user record for status / expiry / category
       const userRecord = await app.prisma.whitelistUser.findUnique({
         where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
         include: { category: { select: { name: true } } },
       })
+
+      // Fallback: if live Discord role lookup yielded no match but the bot previously
+      // stored an effective slot limit (written on Discord /whitelist usage), trust that.
+      if (slots <= wl.defaultSlotLimit && !tierName && userRecord?.effectiveSlotLimit && userRecord.effectiveSlotLimit > wl.defaultSlotLimit) {
+        slots = userRecord.effectiveSlotLimit
+        tierName = userRecord.lastPlanName ?? null
+      }
 
       // Only show if user has tier access, existing entries, or is on a manual roster
       if (tierName || identifiers.length > 0 || userRecord) {
@@ -102,6 +111,8 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
           effective_slot_limit: slots,
           steam_ids: steamIds,
           eos_ids: eosIds,
+          verified_steam_ids: verifiedSteamIds,
+          verified_eos_ids: verifiedEosIds,
           status: userRecord?.status ?? null,
           expires_at: userRecord?.expiresAt?.toISOString() ?? null,
           category_name: userRecord?.category?.name ?? null,
