@@ -2363,11 +2363,13 @@ function SyncTiersButton({ onDone }: { onDone: () => void }) {
   async function handleSync() {
     setRunning(true);
     try {
-      const res = await api.post<{ ok: boolean; updated: number; total_active: number }>(
+      const res = await api.post<{ ok: boolean; updated: number; disabled: number; total_active: number }>(
         "/api/admin/backfill/tiers",
         {}
       );
-      toast.success(`Tier sync complete — updated ${res.updated} of ${res.total_active} active users`);
+      const parts = [`${res.updated} updated`];
+      if (res.disabled) parts.push(`${res.disabled} disabled (no role)`);
+      toast.success(`Sync complete — ${parts.join(", ")} of ${res.total_active} active users`);
       onDone();
     } catch {
       toast.error("Tier sync failed");

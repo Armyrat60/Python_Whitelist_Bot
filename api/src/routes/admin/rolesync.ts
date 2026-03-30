@@ -392,10 +392,10 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
     })
 
     let updated = 0
+    let disabled = 0
 
     for (const user of activeUsers) {
       const roles = memberRoles.get(user.discordId) ?? []
-      if (!roles.length) continue
 
       const stackable:    Array<{ name: string; slots: number }> = []
       const nonStackable: Array<{ name: string; slots: number }> = []
@@ -407,7 +407,21 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
         else nonStackable.push({ name: entry.name, slots: entry.slots })
       }
 
-      if (!stackable.length && !nonStackable.length) continue
+      // No matching panel role → 0 slots, disable the user
+      if (!stackable.length && !nonStackable.length) {
+        await app.prisma.whitelistUser.update({
+          where: {
+            guildId_discordId_whitelistId: {
+              guildId,
+              discordId:   user.discordId,
+              whitelistId: user.whitelistId,
+            },
+          },
+          data: { effectiveSlotLimit: 0, status: "disabled_role_lost", lastPlanName: null, updatedAt: new Date() },
+        })
+        disabled++
+        continue
+      }
 
       let tierLabel: string | null = null
       let totalSlots = 0
@@ -422,21 +436,19 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
         tierLabel = tierLabel ? `${tierLabel}+${best.name}:${best.slots}` : `${best.name}:${best.slots}`
       }
 
-      if (tierLabel) {
-        await app.prisma.whitelistUser.update({
-          where: {
-            guildId_discordId_whitelistId: {
-              guildId,
-              discordId:   user.discordId,
-              whitelistId: user.whitelistId,
-            },
+      await app.prisma.whitelistUser.update({
+        where: {
+          guildId_discordId_whitelistId: {
+            guildId,
+            discordId:   user.discordId,
+            whitelistId: user.whitelistId,
           },
-          data: { lastPlanName: tierLabel, effectiveSlotLimit: totalSlots, updatedAt: new Date() },
-        })
-        updated++
-      }
+        },
+        data: { lastPlanName: tierLabel, effectiveSlotLimit: totalSlots, updatedAt: new Date() },
+      })
+      updated++
     }
 
-    return reply.send({ ok: true, updated, total_active: activeUsers.length })
+    return reply.send({ ok: true, updated, disabled, total_active: activeUsers.length })
   })
 }

@@ -364,10 +364,9 @@ class WhitelistBot(commands.Bot):
                      guild_id, member.id, member.display_name, total, plan)
             return total, plan
 
-        default = int(wl.get("default_slot_limit", 0))
-        log.info("Slot calc: guild=%s user=%s (%s) → DEFAULT %d slots (no tier match)",
-                 guild_id, member.id, member.display_name, default)
-        return default, f"default:{default}"
+        log.info("Slot calc: guild=%s user=%s (%s) → NO ROLE MATCH — 0 slots",
+                 guild_id, member.id, member.display_name)
+        return 0, "no_role"
 
     async def start_whitelist_flow(self, interaction: discord.Interaction, whitelist_type: str):
         """Start the whitelist submission flow. whitelist_type is a slug string (for cog compat)."""
