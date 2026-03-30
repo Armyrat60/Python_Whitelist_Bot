@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, Shield, BookUser, Clock, Tag, UserRound } from "lucide-react";
+import { Search, Shield, BookUser, Clock, Tag, UserRound, BadgeCheck } from "lucide-react";
 import { usePlayerSearch } from "@/hooks/use-settings";
 import type { PlayerSearchResult } from "@/hooks/use-settings";
 import { Input } from "@/components/ui/input";
@@ -54,6 +54,9 @@ function PlayerCard({ player }: { player: PlayerSearchResult }) {
         {/* Name + ID */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-sm text-white/90">{player.discord_name}</span>
+          {player.is_verified && (
+            <BadgeCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" title="Bridge Verified" />
+          )}
           <span className="text-[10px] font-mono text-muted-foreground">{player.discord_id}</span>
         </div>
 

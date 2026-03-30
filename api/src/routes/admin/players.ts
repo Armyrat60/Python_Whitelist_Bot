@@ -97,13 +97,14 @@ export default async function playerRoutes(app: FastifyInstance) {
     // Fetch all identifiers
     const identifiers = await prisma.whitelistIdentifier.findMany({
       where: { guildId, discordId: { in: discordIds } },
-      select: { discordId: true, idType: true, idValue: true },
+      select: { discordId: true, idType: true, idValue: true, isVerified: true },
     })
 
     // Group by discordId
     const playerMap = new Map<string, {
       discord_id: string
       discord_name: string
+      is_verified: boolean
       memberships: unknown[]
       steam_ids: string[]
       eos_ids: string[]
@@ -112,7 +113,7 @@ export default async function playerRoutes(app: FastifyInstance) {
     for (const m of memberships) {
       const id = m.discordId.toString()
       if (!playerMap.has(id)) {
-        playerMap.set(id, { discord_id: id, discord_name: m.discordName, memberships: [], steam_ids: [], eos_ids: [] })
+        playerMap.set(id, { discord_id: id, discord_name: m.discordName, is_verified: false, memberships: [], steam_ids: [], eos_ids: [] })
       }
       playerMap.get(id)!.memberships.push({
         whitelist_slug: m.whitelist.slug,
@@ -130,6 +131,7 @@ export default async function playerRoutes(app: FastifyInstance) {
       if (!p) continue
       if (ident.idType === "steamid" || ident.idType === "steam64") p.steam_ids.push(ident.idValue)
       if (ident.idType === "eosid") p.eos_ids.push(ident.idValue)
+      if (ident.isVerified) p.is_verified = true
     }
 
     return reply.send(toJSON({ players: [...playerMap.values()] }))
@@ -195,21 +197,27 @@ export default async function playerRoutes(app: FastifyInstance) {
       created_via:          m.createdVia ?? null,
     }))
 
-    // Deduplicate identifiers across whitelists
-    const steamSeen = new Set<string>()
+    // Deduplicate identifiers across whitelists, tracking per-ID verification
+    const steamSeen = new Map<string, boolean>() // value → isVerified
     const eosSeen   = new Set<string>()
     const steam_ids: string[] = []
     const eos_ids:   string[] = []
     for (const ident of identifiers) {
       if ((ident.idType === "steamid" || ident.idType === "steam64") && !steamSeen.has(ident.idValue)) {
-        steamSeen.add(ident.idValue)
+        steamSeen.set(ident.idValue, ident.isVerified)
         steam_ids.push(ident.idValue)
+      }
+      // A later record for the same steam_id can upgrade isVerified to true
+      if ((ident.idType === "steamid" || ident.idType === "steam64") && ident.isVerified) {
+        steamSeen.set(ident.idValue, true)
       }
       if (ident.idType === "eosid" && !eosSeen.has(ident.idValue)) {
         eosSeen.add(ident.idValue)
         eos_ids.push(ident.idValue)
       }
     }
+    const verified_steam_ids = steam_ids.filter(id => steamSeen.get(id) === true)
+    const is_verified = verified_steam_ids.length > 0
 
     const auditData = auditEntries.map(e => ({
       id:               e.id,
@@ -227,13 +235,15 @@ export default async function playerRoutes(app: FastifyInstance) {
     }))
 
     return reply.send(toJSON({
-      discord_id:    discordId.toString(),
-      discord_name:  discordName,
+      discord_id:         discordId.toString(),
+      discord_name:       discordName,
+      is_verified,
+      verified_steam_ids,
       steam_ids,
       eos_ids,
-      memberships:   membershipData,
-      audit_log:     auditData,
-      squad_players: squadData,
+      memberships:        membershipData,
+      audit_log:          auditData,
+      squad_players:      squadData,
     }))
   })
 

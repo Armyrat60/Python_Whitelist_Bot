@@ -12,6 +12,7 @@ import {
   BookUser,
   AlertCircle,
   Gamepad2,
+  BadgeCheck,
 } from "lucide-react";
 import { usePlayerProfile } from "@/hooks/use-settings";
 import { Badge } from "@/components/ui/badge";
@@ -106,7 +107,15 @@ export default function PlayerProfilePage() {
           <User className="h-7 w-7" style={{ color: "var(--accent-primary)" }} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white/90">{player.discord_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-white/90">{player.discord_name}</h1>
+            {player.is_verified && (
+              <span title="Bridge Verified — Steam ID confirmed in-game" className="flex items-center gap-1 text-xs font-medium text-emerald-400">
+                <BadgeCheck className="h-5 w-5" />
+                Verified
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground font-mono mt-0.5">{player.discord_id}</p>
         </div>
       </div>
@@ -120,20 +129,28 @@ export default function PlayerProfilePage() {
           {player.steam_ids.length === 0 && player.eos_ids.length === 0 && (
             <p className="text-sm text-muted-foreground">No identifiers on file.</p>
           )}
-          {player.steam_ids.map((id) => (
-            <div key={id} className="flex items-center gap-3">
-              <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
-              <code className="text-xs text-white/70 flex-1">{id}</code>
-              <a
-                href={`https://steamcommunity.com/profiles/${id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-white/80 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-          ))}
+          {player.steam_ids.map((id) => {
+            const verified = player.verified_steam_ids?.includes(id);
+            return (
+              <div key={id} className="flex items-center gap-3">
+                <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
+                <code className="text-xs text-white/70 flex-1">{id}</code>
+                {verified && (
+                  <span title="Confirmed in-game via SquadJS bridge" className="text-emerald-400">
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                  </span>
+                )}
+                <a
+                  href={`https://steamcommunity.com/profiles/${id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-white/80 transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            );
+          })}
           {player.eos_ids.map((id) => (
             <div key={id} className="flex items-center gap-3">
               <Badge variant="outline" className="text-blue-400 border-blue-500/30 shrink-0">EOS</Badge>

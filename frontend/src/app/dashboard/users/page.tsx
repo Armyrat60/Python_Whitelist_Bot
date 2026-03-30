@@ -25,6 +25,7 @@ import {
   Crown,
   RefreshCw,
   ExternalLink,
+  BadgeCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useUsers, useWhitelists, useSteamNames, useCategories } from "@/hooks/use-settings";
@@ -1255,6 +1256,9 @@ function UserListView({
               </span>
               <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate">
                 <span className="truncate text-sm font-medium text-white/85">{user.discord_name}</span>
+                {user.is_verified && (
+                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" title="Bridge Verified" />
+                )}
                 <Link
                   href={`/dashboard/players/${user.discord_id}`}
                   onClick={(e) => e.stopPropagation()}

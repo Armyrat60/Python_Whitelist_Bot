@@ -139,22 +139,27 @@ export default async function userRoutes(app: FastifyInstance) {
     const identifiers = discordIds.length > 0
       ? await prisma.whitelistIdentifier.findMany({
           where: { guildId, discordId: { in: discordIds } },
-          select: { discordId: true, whitelistId: true, idType: true, idValue: true },
+          select: { discordId: true, whitelistId: true, idType: true, idValue: true, isVerified: true },
         })
       : []
 
-    // Group identifiers by discordId + whitelistId
-    const identMap = new Map<string, { steam_ids: string[]; eos_ids: string[] }>()
+    // Group identifiers by discordId + whitelistId; track per-user verification
+    const identMap = new Map<string, { steam_ids: string[]; eos_ids: string[]; is_verified: boolean }>()
+    const verifiedByDiscord = new Set<string>()
     for (const ident of identifiers) {
       const key = `${ident.discordId}:${ident.whitelistId}`
-      if (!identMap.has(key)) identMap.set(key, { steam_ids: [], eos_ids: [] })
+      if (!identMap.has(key)) identMap.set(key, { steam_ids: [], eos_ids: [], is_verified: false })
       const entry = identMap.get(key)!
-      if (ident.idType === "steamid") entry.steam_ids.push(ident.idValue)
+      if (ident.idType === "steamid" || ident.idType === "steam64") entry.steam_ids.push(ident.idValue)
       if (ident.idType === "eosid")   entry.eos_ids.push(ident.idValue)
+      if (ident.isVerified) {
+        entry.is_verified = true
+        verifiedByDiscord.add(ident.discordId.toString())
+      }
     }
 
     const result = users.map(u => {
-      const idents = identMap.get(`${u.discordId}:${u.whitelistId}`) ?? { steam_ids: [], eos_ids: [] }
+      const idents = identMap.get(`${u.discordId}:${u.whitelistId}`) ?? { steam_ids: [], eos_ids: [], is_verified: false }
       return {
         discord_id:           u.discordId.toString(),
         discord_name:         u.discordName,
@@ -173,6 +178,7 @@ export default async function userRoutes(app: FastifyInstance) {
         category_name:        u.category?.name ?? null,
         steam_ids:            idents.steam_ids,
         eos_ids:              idents.eos_ids,
+        is_verified:          idents.is_verified,
       }
     })
 

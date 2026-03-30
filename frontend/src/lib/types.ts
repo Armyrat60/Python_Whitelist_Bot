@@ -146,6 +146,7 @@ export interface WhitelistUser {
   created_at: string;
   /** How this user was first added: self_register | role_sync | import | web_dashboard | admin_web | admin | orphan */
   registration_source?: string;
+  is_verified?: boolean;
   category_id?: number | null;
   category_name?: string | null;
   created_via?: string | null;

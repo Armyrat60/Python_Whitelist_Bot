@@ -589,6 +589,7 @@ export function useSteamNames(users: WhitelistUser[]) {
 // ─── Player Search & Profile ────────────────────────────────────────────────
 
 export interface PlayerSearchResult {
+  is_verified: boolean;
   discord_id: string;
   discord_name: string;
   steam_ids: string[];
@@ -606,6 +607,8 @@ export interface PlayerSearchResult {
 export interface PlayerProfile {
   discord_id: string;
   discord_name: string;
+  is_verified: boolean;
+  verified_steam_ids: string[];
   steam_ids: string[];
   eos_ids: string[];
   memberships: Array<{

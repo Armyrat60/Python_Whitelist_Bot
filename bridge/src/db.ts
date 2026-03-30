@@ -107,11 +107,23 @@ export async function upsertPlayers(
         [guildId, p.steamId],
       )
       if (ident.rows.length > 0) {
+        const linkedDiscordId = ident.rows[0].discord_id
         await client.query(
           `UPDATE squad_players
            SET discord_id = $1
            WHERE guild_id = $2 AND steam_id = $3`,
-          [ident.rows[0].discord_id, guildId, p.steamId],
+          [linkedDiscordId, guildId, p.steamId],
+        )
+        // Mark the identifier as bridge-verified: we've seen this Steam ID in-game
+        await client.query(
+          `UPDATE whitelist_identifiers
+           SET is_verified = TRUE, verification_source = 'squadjs_bridge'
+           WHERE guild_id = $1
+             AND discord_id = $2
+             AND id_type IN ('steam64', 'steamid')
+             AND id_value = $3
+             AND is_verified = FALSE`,
+          [guildId, linkedDiscordId, p.steamId],
         )
         linked++
       }
