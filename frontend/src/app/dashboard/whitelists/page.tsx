@@ -368,7 +368,6 @@ function WhitelistConfigSheet({
   const qc = useQueryClient();
   const [name, setName] = useState(whitelist.name);
   const [squadGroup, setSquadGroup] = useState(whitelist.squad_group);
-  const [defaultSlots, setDefaultSlots] = useState(String(whitelist.default_slot_limit ?? 1));
   const [showNewUrl, setShowNewUrl] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -389,7 +388,6 @@ function WhitelistConfigSheet({
       await api.put(`/api/admin/whitelists/${whitelist.id}`, {
         name,
         squad_group: squadGroup,
-        default_slot_limit: Math.max(0, parseInt(defaultSlots, 10) || 0),
         ...(filenameOverride !== null ? { output_filename: filenameOverride } : {}),
       });
       toast.success("Whitelist updated");
@@ -441,19 +439,6 @@ function WhitelistConfigSheet({
               searchPlaceholder="Search groups..."
               emptyText="No groups found."
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Default Slots</Label>
-            <Input
-              type="number"
-              min={0}
-              value={defaultSlots}
-              onChange={(e) => setDefaultSlots(e.target.value)}
-              className="w-24"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Slots granted to users with <em>no matching panel role</em>. Set to <strong>0</strong> to require a role for any access.
-            </p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">

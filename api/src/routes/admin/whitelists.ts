@@ -241,21 +241,20 @@ export default async function whitelistRoutes(app: FastifyInstance) {
     if (!body || typeof body !== "object") return reply.code(400).send({ error: "Body must be a non-empty JSON object." })
 
     const ALLOWED = new Set(["name", "slug", "enabled", "panelChannelId", "panelMessageId", "logChannelId",
-      "outputFilename", "stackRoles", "defaultSlotLimit", "squadGroup"])
+      "outputFilename", "stackRoles", "squadGroup"])
     const FIELD_MAP: Record<string, string> = {
       output_filename:   "outputFilename",
       stack_roles:       "stackRoles",
-      default_slot_limit: "defaultSlotLimit",
       squad_group:       "squadGroup",
       panel_channel_id:  "panelChannelId",
       log_channel_id:    "logChannelId",
       panel_message_id:  "panelMessageId",
       github_filename:   "outputFilename", // legacy alias
     }
-    const DROPPED = new Set(["github_enabled", "input_mode"])
+    const DROPPED = new Set(["github_enabled", "input_mode", "default_slot_limit", "defaultSlotLimit"])
     const BOOL_FIELDS = new Set(["enabled", "stackRoles", "stack_roles"])
-    const INT_FIELDS = new Set(["defaultSlotLimit", "panelChannelId", "logChannelId", "panelMessageId",
-      "default_slot_limit", "panel_channel_id", "log_channel_id", "panel_message_id"])
+    const INT_FIELDS = new Set(["panelChannelId", "logChannelId", "panelMessageId",
+      "panel_channel_id", "log_channel_id", "panel_message_id"])
 
     const data: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(body)) {
