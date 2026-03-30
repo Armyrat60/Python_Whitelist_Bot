@@ -47,7 +47,7 @@ export default async function auditRoutes(app: FastifyInstance) {
   app.get("/stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const [activeCount, identCount, recentAudit, orphanCount, whitelists] = await Promise.all([
+    const [activeCount, identCount, recentAudit, orphanCount, whitelists, totalRegistered, disabledRoleLostCount, noAccessCount] = await Promise.all([
       prisma.whitelistUser.count({ where: { guildId, status: "active" } }),
       prisma.whitelistIdentifier.count({ where: { guildId } }),
       prisma.auditLog.count({
@@ -58,6 +58,9 @@ export default async function auditRoutes(app: FastifyInstance) {
         where:   { guildId, enabled: true },
         select:  { id: true, slug: true, name: true },
       }),
+      prisma.whitelistUser.count({ where: { guildId } }),
+      prisma.whitelistUser.count({ where: { guildId, status: "disabled_role_lost" } }),
+      prisma.whitelistUser.count({ where: { guildId, status: "active", effectiveSlotLimit: 0 } }),
     ])
 
     // Per-whitelist breakdown: active users, identifier count, slot capacity
@@ -125,12 +128,15 @@ export default async function auditRoutes(app: FastifyInstance) {
     }
 
     return reply.send(toJSON({
-      total_active_users: activeCount,
-      total_identifiers:  identCount,
-      recent_audit_count: recentAudit,
-      orphan_count:       orphanCount,
+      total_active_users:       activeCount,
+      total_identifiers:        identCount,
+      recent_audit_count:       recentAudit,
+      orphan_count:             orphanCount,
+      total_registered:         totalRegistered,
+      disabled_role_lost_count: disabledRoleLostCount,
+      no_access_count:          noAccessCount,
       per_type,
-      daily_submissions:  days,
+      daily_submissions:        days,
     }))
   })
 

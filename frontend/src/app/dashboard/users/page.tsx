@@ -26,7 +26,7 @@ import {
   BadgeCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { useUsers, useWhitelists, useSteamNames, useCategories } from "@/hooks/use-settings";
+import { useUsers, useWhitelists, useSteamNames, useCategories, useRoleStats, useStats } from "@/hooks/use-settings";
 import { useIsAdmin } from "@/hooks/use-session";
 import type { WhitelistUser } from "@/lib/types";
 
@@ -140,7 +140,7 @@ function parsePlanTiers(plan: string | null | undefined): { name: string; slots:
   if (!plan) return [];
   // Ignore system strings like "error:no_member", "default:1"
   if (plan.startsWith("error:")) return [];
-  return plan.split(" + ").map((part) => {
+  return plan.split("+").map((part) => {
     const colonIdx = part.lastIndexOf(":");
     if (colonIdx !== -1) {
       const name = part.slice(0, colonIdx).trim();
@@ -781,9 +781,24 @@ export default function UsersPage() {
   const perPage = 24; // divisible by 1, 2, 3 for grid
   const { data, isLoading, isError } = useUsers(page, perPage, search, filters);
   const { data: whitelists } = useWhitelists();
+  const { data: roleStatsData } = useRoleStats();
+  const { data: statsData } = useStats();
   const selectedWl = whitelists?.find(wl => wl.slug === filters.whitelist);
   const { data: categories } = useCategories(selectedWl?.id ?? null);
   const allTierOptions: { label: string; value: string }[] = [];
+
+  // Deduplicated role names from panel roles for the role filter
+  const roleOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { label: string; value: string }[] = [];
+    for (const r of roleStatsData?.stats ?? []) {
+      if (!seen.has(r.role_name)) {
+        seen.add(r.role_name);
+        opts.push({ label: r.role_name, value: r.role_name });
+      }
+    }
+    return opts;
+  }, [roleStatsData]);
   const [showGapReport, setShowGapReport] = useState(false);
   const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
@@ -867,6 +882,26 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
+      {/* ---- Stats Banner ---- */}
+      {statsData && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: "Total Registered", value: statsData.total_registered, color: "text-white/80" },
+            { label: "Active", value: statsData.total_active_users, color: "text-emerald-400" },
+            { label: "No Access", value: statsData.no_access_count, color: "text-red-400" },
+            { label: "Role Lost", value: statsData.disabled_role_lost_count, color: "text-amber-400" },
+          ].map(({ label, value, color }) => (
+            <div
+              key={label}
+              className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+            >
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+              <span className={`text-2xl font-semibold tabular-nums ${color}`}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ---- Toolbar ---- */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1">
@@ -945,14 +980,11 @@ export default function UsersPage() {
           </Select>
         )}
 
-        {allTierOptions.length > 0 && (
+        {roleOptions.length > 0 && (
           <Select
-            value={filters.tier ?? ""}
+            value={filters.role_name ?? ""}
             onValueChange={(v) => {
-              setFilters((prev) => ({
-                ...prev,
-                tier: v === "__all__" ? "" : (v ?? ""),
-              }));
+              setFilters((prev) => ({ ...prev, role_name: v === "__all__" ? "" : (v ?? "") }));
               setPage(1);
             }}
           >
@@ -961,10 +993,8 @@ export default function UsersPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All roles</SelectItem>
-              {allTierOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
+              {roleOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1002,33 +1032,6 @@ export default function UsersPage() {
           Verified
         </Button>
 
-        {/* Linked / Unlinked toggle */}
-        <div className="flex rounded-md border border-border text-xs">
-          <Button
-            variant={!filters.unlinked ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-r-none px-3 h-8"
-            onClick={() => { setFilters((p) => ({ ...p, unlinked: "" })); setPage(1); }}
-          >
-            All
-          </Button>
-          <Button
-            variant={filters.unlinked === "true" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-l-none px-3 h-8"
-            onClick={() => { setFilters((p) => ({ ...p, unlinked: "true" })); setPage(1); }}
-            title="Show only entries with no Discord account linked"
-          >
-            Unlinked
-          </Button>
-        </div>
-
-        {filters.unlinked === "true" && (
-          <>
-            <RematchOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
-            <PurgeOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
-          </>
-        )}
 
         {/* Export All */}
         <a href={`/api/admin/users/export?${new URLSearchParams(
@@ -1254,7 +1257,6 @@ function UserListView({
         <span className="w-36">Slots</span>
         <span className="w-32 text-center">Whitelist</span>
         <span className="w-28 text-center">Role</span>
-        <span className="hidden w-24 text-center lg:block">Source</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
       </div>
@@ -1310,9 +1312,6 @@ function UserListView({
               </span>
               <span className="hidden w-28 justify-center sm:flex">
                 <TierChip tier={user.last_plan_name} />
-              </span>
-              <span className="hidden w-24 justify-center lg:flex">
-                <RegSourceChip source={user.registration_source} />
               </span>
               <span className="flex w-20 flex-col items-center gap-0.5">
                 <StatusBadge status={user.status} />

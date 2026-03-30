@@ -72,6 +72,7 @@ export default async function userRoutes(app: FastifyInstance) {
       category_id?: string
       unlinked?:    string   // "true" → orphan entries (discordId < 0)
       verified?:    string   // "true" → users with at least one verified identifier
+      role_name?:   string   // filter by panel role display name (matches lastPlanName)
     }
 
     const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
@@ -112,6 +113,7 @@ export default async function userRoutes(app: FastifyInstance) {
     }
     if (query.unlinked === "true") where.discordId = { lt: 0n }
     if (query.verified === "true") where.identifiers = { some: { isVerified: true } }
+    if (query.role_name) where.lastPlanName = { contains: `${query.role_name}:`, mode: "insensitive" }
     if (allowedCategoryIds !== undefined) {
       // Roster manager: restrict to their assigned categories
       const catId = query.category_id ? parseInt(query.category_id, 10) : NaN

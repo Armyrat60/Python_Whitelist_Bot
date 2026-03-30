@@ -174,6 +174,9 @@ export interface Stats {
   per_type: Record<string, { active_users: number; total_ids: number; slots_used: number; capacity: number }>;
   daily_submissions: { day: string; date: string; count: number }[];
   orphan_count: number;
+  total_registered: number;
+  disabled_role_lost_count: number;
+  no_access_count: number;
 }
 
 export interface BridgeConfig {
