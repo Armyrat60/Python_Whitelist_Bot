@@ -131,7 +131,7 @@ export default async function whitelistRoutes(app: FastifyInstance) {
         enabled:          false,
         squadGroup:       body.squad_group       ?? "Whitelist",
         outputFilename:   body.output_filename   ?? `${slug}.txt`,
-        defaultSlotLimit: body.default_slot_limit ?? 1,
+        defaultSlotLimit: body.default_slot_limit ?? 0,
         stackRoles:       false,
         isDefault:        false,
         isManual:         body.is_manual         ?? false,

@@ -364,7 +364,7 @@ class WhitelistBot(commands.Bot):
                      guild_id, member.id, member.display_name, total, plan)
             return total, plan
 
-        default = int(wl.get("default_slot_limit", 1))
+        default = int(wl.get("default_slot_limit", 0))
         log.info("Slot calc: guild=%s user=%s (%s) → DEFAULT %d slots (no tier match)",
                  guild_id, member.id, member.display_name, default)
         return default, f"default:{default}"

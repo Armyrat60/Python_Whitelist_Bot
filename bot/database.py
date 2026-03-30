@@ -626,7 +626,7 @@ class Database:
                     enabled=False,
                     squad_group="reserve",
                     output_filename="whitelist.txt",
-                    default_slot_limit=1,
+                    default_slot_limit=0,
                     stack_roles=False,
                     is_default=True,
                 )
@@ -703,7 +703,7 @@ class Database:
         log_channel_id = kwargs.get("log_channel_id", None)
         squad_group = kwargs.get("squad_group", "Whitelist")
         output_filename = kwargs.get("output_filename", "whitelist.txt")
-        default_slot_limit = kwargs.get("default_slot_limit", 1)
+        default_slot_limit = kwargs.get("default_slot_limit", 0)
         stack_roles = kwargs.get("stack_roles", False)
         is_default = kwargs.get("is_default", False)
 
