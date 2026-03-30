@@ -19,6 +19,7 @@ import {
   useTestBridgeConnection,
   useSyncNow,
   useJobStatus,
+  useBridgeJobs,
 } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ export default function BridgePage() {
   const save    = useSaveBridgeConfig();
   const remove  = useDeleteBridgeConfig();
   const test    = useTestBridgeConnection();
+  const { data: jobsData } = useBridgeJobs();
 
   const syncNow  = useSyncNow();
   const existing = data?.config ?? null;
@@ -404,6 +406,38 @@ export default function BridgePage() {
           </AlertDialog>
         )}
       </div>
+
+      {/* Sync history */}
+      {existing && jobsData && jobsData.jobs.length > 0 && (
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-white/80">Sync History</h2>
+          <div className="space-y-2">
+            {jobsData.jobs.map((job) => (
+              <div key={job.id} className="flex items-start justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  {job.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />}
+                  {job.status === "failed" && <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />}
+                  {(job.status === "pending" || job.status === "running") && (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
+                  )}
+                  <span className={`truncate ${
+                    job.status === "done" ? "text-white/70" :
+                    job.status === "failed" ? "text-red-400/80" : "text-muted-foreground"
+                  }`}>
+                    {job.status === "done" && (job.result?.summary ?? "Sync complete")}
+                    {job.status === "failed" && (job.error ?? "Sync failed")}
+                    {job.status === "running" && "Syncing…"}
+                    {job.status === "pending" && "Queued"}
+                  </span>
+                </div>
+                <span className="text-muted-foreground shrink-0">
+                  {new Date(job.created_at).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Info */}
       <p className="text-xs text-muted-foreground leading-relaxed">

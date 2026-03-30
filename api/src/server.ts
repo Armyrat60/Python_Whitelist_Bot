@@ -117,6 +117,23 @@ async function start() {
 
   ensureSessionsTable(app.prisma).catch(() => {})
 
+  // ─── Stale job cleanup: mark running jobs older than 10 min as failed ────────
+  // Guards against bridge worker crashes leaving jobs stuck in 'running' state.
+
+  app.prisma.jobQueue.updateMany({
+    where: {
+      status:    "running",
+      startedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
+    },
+    data: {
+      status:       "failed",
+      completedAt:  new Date(),
+      error:        "Job timed out (worker crashed or restarted)",
+    },
+  }).then(({ count }) => {
+    if (count > 0) app.log.warn(`Cleaned up ${count} stale running job(s)`)
+  }).catch(() => {})
+
   // ─── Prime Discord guild list (background — must not block listen) ────────────
 
   const discord = app.discord

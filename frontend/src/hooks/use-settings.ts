@@ -629,6 +629,12 @@ export interface PlayerProfile {
     details: string | null;
     created_at: string;
   }>;
+  squad_players: Array<{
+    steam_id: string;
+    last_seen_name: string | null;
+    server_name: string | null;
+    last_seen_at: string;
+  }>;
 }
 
 export function usePlayerSearch(q: string) {
@@ -788,6 +794,28 @@ export function useTestBridgeConnection() {
         "/api/admin/bridge-config/test",
         data,
       ),
+  });
+}
+
+export function useBridgeJobs() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{
+    jobs: Array<{
+      id: number;
+      job_type: string;
+      status: string;
+      created_at: string;
+      started_at: string | null;
+      completed_at: string | null;
+      result: { summary?: string } | null;
+      error: string | null;
+    }>;
+  }>({
+    queryKey: ["bridge-jobs", guildId],
+    queryFn: () => api.get("/api/admin/jobs?type=bridge_sync&limit=10"),
+    enabled: !!guildId,
+    refetchInterval: 30_000,
   });
 }
 

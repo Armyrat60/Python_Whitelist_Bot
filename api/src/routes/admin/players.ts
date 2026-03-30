@@ -148,7 +148,7 @@ export default async function playerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid discord ID" })
     }
 
-    const [memberships, identifiers, auditEntries] = await Promise.all([
+    const [memberships, identifiers, auditEntries, squadPlayers] = await Promise.all([
       prisma.whitelistUser.findMany({
         where: { guildId, discordId },
         include: {
@@ -166,6 +166,11 @@ export default async function playerRoutes(app: FastifyInstance) {
         where: { guildId, targetDiscordId: discordId },
         orderBy: { createdAt: "desc" },
         take: 20,
+      }),
+      prisma.squadPlayer.findMany({
+        where: { guildId, discordId },
+        select: { steamId: true, lastSeenName: true, serverName: true, lastSeenAt: true },
+        orderBy: { lastSeenAt: "desc" },
       }),
     ])
 
@@ -214,13 +219,21 @@ export default async function playerRoutes(app: FastifyInstance) {
       created_at:       e.createdAt.toISOString(),
     }))
 
+    const squadData = squadPlayers.map(p => ({
+      steam_id:      p.steamId,
+      last_seen_name: p.lastSeenName ?? null,
+      server_name:   p.serverName ?? null,
+      last_seen_at:  p.lastSeenAt.toISOString(),
+    }))
+
     return reply.send(toJSON({
-      discord_id:   discordId.toString(),
-      discord_name: discordName,
+      discord_id:    discordId.toString(),
+      discord_name:  discordName,
       steam_ids,
       eos_ids,
-      memberships:  membershipData,
-      audit_log:    auditData,
+      memberships:   membershipData,
+      audit_log:     auditData,
+      squad_players: squadData,
     }))
   })
 

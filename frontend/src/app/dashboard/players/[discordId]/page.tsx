@@ -11,6 +11,7 @@ import {
   Shield,
   BookUser,
   AlertCircle,
+  Gamepad2,
 } from "lucide-react";
 import { usePlayerProfile } from "@/hooks/use-settings";
 import { Badge } from "@/components/ui/badge";
@@ -141,6 +142,36 @@ export default function PlayerProfilePage() {
           ))}
         </CardContent>
       </Card>
+
+      {/* SquadJS in-game names */}
+      {player.squad_players && player.squad_players.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Gamepad2 className="h-4 w-4" />
+              In-Game Names
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {player.squad_players.map((sp) => (
+              <div key={sp.steam_id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white/80 truncate">
+                    {sp.last_seen_name ?? <span className="text-muted-foreground italic">Unknown</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">{sp.steam_id}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  {sp.server_name && (
+                    <p className="text-xs text-muted-foreground">{sp.server_name}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">{relativeTime(sp.last_seen_at)}</p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Whitelist memberships */}
       <Card>

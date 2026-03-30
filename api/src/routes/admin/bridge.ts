@@ -132,6 +132,14 @@ export default async function bridgeRoutes(app: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: "No bridge config saved" })
     if (!existing.enabled) return reply.code(400).send({ error: "Bridge is disabled — enable it first" })
 
+    // Skip if a sync is already pending or running for this guild
+    const existing_job = await app.prisma.jobQueue.findFirst({
+      where: { guildId, jobType: "bridge_sync", status: { in: ["pending", "running"] } },
+    })
+    if (existing_job) {
+      return reply.send({ ok: true, job_id: existing_job.id, queued: false, message: "Sync already in progress" })
+    }
+
     const job = await app.prisma.jobQueue.create({
       data: {
         guildId,
