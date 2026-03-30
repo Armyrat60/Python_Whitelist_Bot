@@ -449,6 +449,8 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       updated++
     }
 
+    await triggerSync(app, guildId)
+
     return reply.send({ ok: true, updated, disabled, total_active: activeUsers.length })
   })
 }
