@@ -455,6 +455,7 @@ export default async function reconcileRoutes(app: FastifyInstance) {
         actionType:    "admin_purge_orphans",
         actorDiscordId: actorId,
         details:       `Purged ${orphanIds.length} orphan entries`,
+        createdAt:     new Date(),
       },
     })
 
