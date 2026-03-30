@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import timedelta
 from typing import Optional, List, Tuple, Dict, Any
@@ -36,6 +37,37 @@ def _to_pg_params(query: str) -> str:
 
 # ─── Database adapter ────────────────────────────────────────────────────────
 
+_DB_RETRIES = 3
+_DB_RETRY_DELAY = 0.5  # seconds between retries (doubles each attempt)
+
+
+async def _db_retry(fn, *args, **kwargs):
+    """Retry a coroutine on transient DB errors (timeout, connection lost).
+
+    Covers Railway postgres waking from idle and brief network blips.
+    Raises on the final attempt.
+    """
+    import asyncpg
+    _transient = (
+        asyncio.TimeoutError,
+        asyncpg.exceptions.TooManyConnectionsError,
+        asyncpg.exceptions.ConnectionDoesNotExistError,
+        asyncpg.exceptions.ConnectionFailureError,
+        asyncpg.exceptions.CannotConnectNowError,
+    )
+    delay = _DB_RETRY_DELAY
+    for attempt in range(_DB_RETRIES):
+        try:
+            return await fn(*args, **kwargs)
+        except _transient as exc:
+            if attempt == _DB_RETRIES - 1:
+                raise
+            log.warning("DB transient error (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt + 1, _DB_RETRIES, exc, delay)
+            await asyncio.sleep(delay)
+            delay *= 2
+
+
 class _PostgresAdapter:
     """Adapter for asyncpg (PostgreSQL)."""
 
@@ -71,37 +103,46 @@ class _PostgresAdapter:
 
     async def execute(self, query: str, params: tuple = ()) -> int:
         pg_query = _to_pg_params(query)
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(pg_query, *params)
-            # asyncpg returns "INSERT 0 1" / "UPDATE 3" / "DELETE 2" etc.
-            parts = result.split() if result else []
-            return int(parts[-1]) if parts and parts[-1].isdigit() else 0
+        async def _run():
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(pg_query, *params)
+                parts = result.split() if result else []
+                return int(parts[-1]) if parts and parts[-1].isdigit() else 0
+        return await _db_retry(_run)
 
     async def execute_returning(self, query: str, params: tuple = ()) -> Optional[tuple]:
         """Execute an INSERT ... RETURNING and return the row."""
         pg_query = _to_pg_params(query)
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(pg_query, *params)
-            return tuple(row.values()) if row else None
+        async def _run():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(pg_query, *params)
+                return tuple(row.values()) if row else None
+        return await _db_retry(_run)
 
     async def fetchone(self, query: str, params: tuple = ()) -> Optional[tuple]:
         pg_query = _to_pg_params(query)
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(pg_query, *params)
-            return tuple(row.values()) if row else None
+        async def _run():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(pg_query, *params)
+                return tuple(row.values()) if row else None
+        return await _db_retry(_run)
 
     async def fetchall(self, query: str, params: tuple = ()) -> List[tuple]:
         pg_query = _to_pg_params(query)
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(pg_query, *params)
-            return [tuple(r.values()) for r in rows]
+        async def _run():
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(pg_query, *params)
+                return [tuple(r.values()) for r in rows]
+        return await _db_retry(_run)
 
     async def execute_transaction(self, queries: List[Tuple[str, tuple]]):
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                for query, params in queries:
-                    pg_query = _to_pg_params(query)
-                    await conn.execute(pg_query, *params)
+        async def _run():
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    for query, params in queries:
+                        pg_query = _to_pg_params(query)
+                        await conn.execute(pg_query, *params)
+        return await _db_retry(_run)
 
 
 # ─── Schema ──────────────────────────────────────────────────────────────────
