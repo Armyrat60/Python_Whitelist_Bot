@@ -84,6 +84,7 @@ async function pullMembersForRole(
           discordName: member.name,
           status: "active",
           effectiveSlotLimit: panelRole?.slotLimit ?? wl.defaultSlotLimit,
+          lastPlanName: panelRole ? `${panelRole.roleName}:${panelRole.slotLimit}` : null,
           createdVia: "role_sync",
           createdAt: now,
           updatedAt: now,

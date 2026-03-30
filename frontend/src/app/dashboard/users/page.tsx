@@ -945,10 +945,10 @@ export default function UsersPage() {
             }}
           >
             <SelectTrigger className="w-36">
-              <SelectValue placeholder="All tiers" />
+              <SelectValue placeholder="All roles" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">All tiers</SelectItem>
+              <SelectItem value="__all__">All roles</SelectItem>
               {allTierOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
@@ -1241,7 +1241,7 @@ function UserListView({
         <span className="flex-1">Discord Name</span>
         <span className="w-36">Slots</span>
         <span className="w-32 text-center">Whitelist</span>
-        <span className="w-28 text-center">Tier</span>
+        <span className="w-28 text-center">Role</span>
         <span className="hidden w-24 text-center lg:block">Source</span>
         <span className="w-20 text-center">Status</span>
         <span className="w-6" />
@@ -1431,7 +1431,7 @@ function ListRowDetail({
           </p>
           {user.last_plan_name && (
             <p className="text-xs flex items-center gap-1.5">
-              <span className="text-muted-foreground">Tier:</span>
+              <span className="text-muted-foreground">Role:</span>
               <TierChip tier={user.last_plan_name} />
             </p>
           )}
@@ -2024,7 +2024,7 @@ function UserDetailSheet({
           <Badge variant="outline">{user.whitelist_name}</Badge>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Tier / Plan</Label>
+          <Label className="text-xs text-muted-foreground">Role / Plan</Label>
           <Select
             value={plan}
             onValueChange={(v) => {
