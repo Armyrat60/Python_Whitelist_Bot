@@ -247,21 +247,37 @@ export default function AuditPage() {
                           <span className="text-muted-foreground text-xs">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="text-xs">
                         {entry.actor_discord_id ? (
                           <button
-                            className="hover:underline text-accent"
+                            className="hover:underline text-left"
                             onClick={() => setFilter("actor", entry.actor_discord_id!)}
-                            title="Filter by this actor"
+                            title={`Filter by ${entry.actor_discord_id}`}
                           >
-                            {entry.actor_discord_id}
+                            <span className="text-white/80">{entry.actor_discord_name ?? entry.actor_discord_id}</span>
+                            {entry.actor_discord_name && (
+                              <span className="block font-mono text-[10px] text-muted-foreground">{entry.actor_discord_id}</span>
+                            )}
                           </button>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {entry.target_discord_id ?? <span className="text-muted-foreground">—</span>}
+                      <TableCell className="text-xs">
+                        {entry.target_discord_id ? (
+                          <button
+                            className="hover:underline text-left"
+                            onClick={() => setFilter("actor", entry.target_discord_id!)}
+                            title={`Filter by ${entry.target_discord_id}`}
+                          >
+                            <span className="text-white/80">{entry.target_discord_name ?? entry.target_discord_id}</span>
+                            {entry.target_discord_name && (
+                              <span className="block font-mono text-[10px] text-muted-foreground">{entry.target_discord_id}</span>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
                         {entry.details ?? "—"}

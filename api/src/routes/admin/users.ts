@@ -69,6 +69,8 @@ export default async function userRoutes(app: FastifyInstance) {
       whitelist?:   string
       status?:      string
       category_id?: string
+      unlinked?:    string   // "true" → orphan entries (discordId < 0)
+      verified?:    string   // "true" → users with at least one verified identifier
     }
 
     const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
@@ -107,6 +109,8 @@ export default async function userRoutes(app: FastifyInstance) {
     if (search) {
       where.discordName = { contains: search, mode: "insensitive" }
     }
+    if (query.unlinked === "true") where.discordId = { lt: 0n }
+    if (query.verified === "true") where.identifiers = { some: { isVerified: true } }
     if (allowedCategoryIds !== undefined) {
       // Roster manager: restrict to their assigned categories
       const catId = query.category_id ? parseInt(query.category_id, 10) : NaN
@@ -189,6 +193,90 @@ export default async function userRoutes(app: FastifyInstance) {
       per_page: perPage,
       pages:    Math.ceil(total / perPage),
     }))
+  })
+
+  // ── GET /api/admin/users/export ─────────────────────────────────────────────
+
+  app.get("/users/export", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const query   = req.query as {
+      search?:      string
+      whitelist?:   string
+      status?:      string
+      category_id?: string
+      unlinked?:    string
+      verified?:    string
+    }
+
+    const status = query.status ?? "all"
+    let whitelistId: number | undefined
+    if (query.whitelist) {
+      const wl = await prisma.whitelist.findUnique({
+        where: { guildId_slug: { guildId, slug: query.whitelist } },
+        select: { id: true },
+      })
+      if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
+      whitelistId = wl.id
+    }
+
+    const where: Record<string, unknown> = { guildId }
+    if (status !== "all") where.status = status
+    if (whitelistId !== undefined) where.whitelistId = whitelistId
+    if (query.search?.trim()) where.discordName = { contains: query.search.trim(), mode: "insensitive" }
+    if (query.unlinked === "true") where.discordId = { lt: 0n }
+    if (query.verified === "true") where.identifiers = { some: { isVerified: true } }
+    if (query.category_id) {
+      const catId = parseInt(query.category_id, 10)
+      if (!isNaN(catId)) where.categoryId = catId
+    }
+
+    const users = await prisma.whitelistUser.findMany({
+      where,
+      include: { whitelist: { select: { slug: true, name: true } } },
+      orderBy: { discordName: "asc" },
+      take:    5000,
+    })
+    const discordIds = users.map(u => u.discordId)
+    const identifiers = discordIds.length > 0
+      ? await prisma.whitelistIdentifier.findMany({
+          where:  { guildId, discordId: { in: discordIds } },
+          select: { discordId: true, whitelistId: true, idType: true, idValue: true, isVerified: true },
+        })
+      : []
+
+    const identMap = new Map<string, { steam_ids: string[]; eos_ids: string[]; is_verified: boolean }>()
+    for (const id of identifiers) {
+      const key = `${id.discordId}:${id.whitelistId}`
+      if (!identMap.has(key)) identMap.set(key, { steam_ids: [], eos_ids: [], is_verified: false })
+      const entry = identMap.get(key)!
+      if (id.idType === "steamid" || id.idType === "steam64") entry.steam_ids.push(id.idValue)
+      if (id.idType === "eosid") entry.eos_ids.push(id.idValue)
+      if (id.isVerified) entry.is_verified = true
+    }
+
+    const header = "discord_id,discord_name,whitelist,status,tier,expires_at,steam_ids,eos_ids,slot_limit,is_verified,notes"
+    const rows = users.map(u => {
+      const idents = identMap.get(`${u.discordId}:${u.whitelistId}`) ?? { steam_ids: [], eos_ids: [], is_verified: false }
+      const escape = (s: string | null | undefined) => `"${(s ?? "").replace(/"/g, '""')}"`
+      return [
+        u.discordId.toString(),
+        escape(u.discordName),
+        u.whitelist?.slug ?? "",
+        u.status,
+        escape(u.lastPlanName),
+        u.expiresAt?.toISOString().slice(0, 10) ?? "",
+        idents.steam_ids.join(";"),
+        idents.eos_ids.join(";"),
+        u.effectiveSlotLimit,
+        idents.is_verified ? "true" : "false",
+        escape(u.notes),
+      ].join(",")
+    })
+
+    const csv = [header, ...rows].join("\n")
+    reply.header("Content-Type", "text/csv")
+    reply.header("Content-Disposition", 'attachment; filename="roster-export.csv"')
+    return reply.send(csv)
   })
 
   // ── POST /api/admin/users ────────────────────────────────────────────────────

@@ -47,21 +47,91 @@ export default async function auditRoutes(app: FastifyInstance) {
   app.get("/stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const [activeCount, identCount, recentAudit, orphanCount] = await Promise.all([
+    const [activeCount, identCount, recentAudit, orphanCount, whitelists] = await Promise.all([
       prisma.whitelistUser.count({ where: { guildId, status: "active" } }),
       prisma.whitelistIdentifier.count({ where: { guildId } }),
       prisma.auditLog.count({
         where: { guildId, createdAt: { gte: new Date(Date.now() - 7 * 86400000) } },
       }),
       prisma.whitelistUser.count({ where: { guildId, discordId: { lt: 0n } } }),
+      prisma.whitelist.findMany({
+        where:   { guildId, enabled: true },
+        select:  { id: true, slug: true, name: true },
+      }),
     ])
 
-    return reply.send({
-      total_active_users:  activeCount,
-      total_identifiers:   identCount,
-      recent_audit_count:  recentAudit,
-      orphan_count:        orphanCount,
-    })
+    // Per-whitelist breakdown: active users, identifier count, slot capacity
+    const whitelistIds = whitelists.map(w => w.id)
+
+    const [perTypeUsers, perTypeIdents, panelRoles, slotSums] = await Promise.all([
+      prisma.whitelistUser.groupBy({
+        by:    ["whitelistId"],
+        where: { guildId, whitelistId: { in: whitelistIds }, status: "active" },
+        _count: { discordId: true },
+      }),
+      prisma.whitelistIdentifier.groupBy({
+        by:    ["whitelistId"],
+        where: { guildId, whitelistId: { in: whitelistIds } },
+        _count: { idValue: true },
+      }),
+      prisma.panelRole.findMany({
+        where:  { guildId, panel: { whitelistId: { in: whitelistIds } }, isActive: true },
+        select: { slotLimit: true, panel: { select: { whitelistId: true } } },
+      }),
+      prisma.whitelistUser.groupBy({
+        by:    ["whitelistId"],
+        where: { guildId, whitelistId: { in: whitelistIds }, status: "active" },
+        _sum:  { effectiveSlotLimit: true },
+      }),
+    ])
+
+    // Build capacity map: whitelist_id -> sum of role slot limits
+    const capacityMap = new Map<number, number>()
+    for (const pr of panelRoles) {
+      const wid = pr.panel.whitelistId
+      if (wid !== null) capacityMap.set(wid, (capacityMap.get(wid) ?? 0) + pr.slotLimit)
+    }
+
+    const per_type: Record<string, {
+      active_users: number; total_ids: number; slots_used: number; capacity: number
+    }> = {}
+
+    for (const wl of whitelists) {
+      const users    = perTypeUsers.find(r => r.whitelistId === wl.id)?._count.discordId ?? 0
+      const ids      = perTypeIdents.find(r => r.whitelistId === wl.id)?._count.idValue   ?? 0
+      const slotsSum = slotSums.find(r => r.whitelistId === wl.id)?._sum.effectiveSlotLimit ?? 0
+      per_type[wl.slug] = {
+        active_users: users,
+        total_ids:    ids,
+        slots_used:   slotsSum,
+        capacity:     capacityMap.get(wl.id) ?? 0,
+      }
+    }
+
+    // Daily submissions (new whitelist_user rows) for last 7 days
+    const days: { day: string; date: string; count: number }[] = []
+    for (let i = 6; i >= 0; i--) {
+      const d     = new Date(Date.now() - i * 86400000)
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+      const end   = new Date(start.getTime() + 86400000)
+      const count = await prisma.whitelistUser.count({
+        where: { guildId, createdAt: { gte: start, lt: end } },
+      })
+      days.push({
+        day:   d.toLocaleDateString("en-US", { weekday: "short" }),
+        date:  start.toISOString().slice(0, 10),
+        count,
+      })
+    }
+
+    return reply.send(toJSON({
+      total_active_users: activeCount,
+      total_identifiers:  identCount,
+      recent_audit_count: recentAudit,
+      orphan_count:       orphanCount,
+      per_type,
+      daily_submissions:  days,
+    }))
   })
 
   // ── GET /api/admin/audit ─────────────────────────────────────────────────────
@@ -72,7 +142,9 @@ export default async function auditRoutes(app: FastifyInstance) {
       page?:      string
       per_page?:  string
       whitelist?: string
+      type?:      string   // alias for whitelist (frontend uses "type")
       action?:    string
+      actor?:     string   // filter by actor Discord ID
       date_from?: string
       date_to?:   string
     }
@@ -80,12 +152,12 @@ export default async function auditRoutes(app: FastifyInstance) {
     const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
     const perPage = Math.min(200, Math.max(1, parseInt(query.per_page ?? "50", 10)))
 
-    // Build where filters
     const where: Record<string, unknown> = { guildId }
 
-    if (query.whitelist) {
+    const whitelistSlug = query.whitelist ?? query.type
+    if (whitelistSlug) {
       const wl = await prisma.whitelist.findUnique({
-        where: { guildId_slug: { guildId, slug: query.whitelist } },
+        where: { guildId_slug: { guildId, slug: whitelistSlug } },
         select: { id: true },
       })
       if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
@@ -93,6 +165,10 @@ export default async function auditRoutes(app: FastifyInstance) {
     }
 
     if (query.action) where.actionType = query.action
+
+    if (query.actor) {
+      try { where.actorDiscordId = BigInt(query.actor) } catch { /* ignore invalid ID */ }
+    }
 
     const createdAt: Record<string, Date> = {}
     if (query.date_from) createdAt.gte = new Date(query.date_from)
@@ -109,15 +185,30 @@ export default async function auditRoutes(app: FastifyInstance) {
       }),
     ])
 
+    // Resolve actor/target names from whitelist_users in batch
+    const actorIds = [...new Set(
+      entries.flatMap(e => [e.actorDiscordId, e.targetDiscordId].filter(Boolean) as bigint[])
+    )]
+    const knownUsers = actorIds.length > 0
+      ? await prisma.whitelistUser.findMany({
+          where:   { guildId, discordId: { in: actorIds } },
+          select:  { discordId: true, discordName: true },
+          distinct: ["discordId"],
+        })
+      : []
+    const nameMap = new Map(knownUsers.map(u => [u.discordId.toString(), u.discordName]))
+
     const result = entries.map(e => ({
-      id:               e.id,
-      guild_id:         e.guildId.toString(),
-      whitelist_id:     e.whitelistId,
-      action_type:      e.actionType,
-      actor_discord_id: e.actorDiscordId?.toString() ?? null,
-      target_discord_id: e.targetDiscordId?.toString() ?? null,
-      details:          e.details,
-      created_at:       e.createdAt,
+      id:                  e.id,
+      guild_id:            e.guildId.toString(),
+      whitelist_id:        e.whitelistId,
+      action_type:         e.actionType,
+      actor_discord_id:    e.actorDiscordId?.toString()  ?? null,
+      actor_discord_name:  e.actorDiscordId ? (nameMap.get(e.actorDiscordId.toString()) ?? null) : null,
+      target_discord_id:   e.targetDiscordId?.toString() ?? null,
+      target_discord_name: e.targetDiscordId ? (nameMap.get(e.targetDiscordId.toString()) ?? null) : null,
+      details:             e.details,
+      created_at:          e.createdAt,
     }))
 
     return reply.send(toJSON({
@@ -134,60 +225,126 @@ export default async function auditRoutes(app: FastifyInstance) {
   app.get("/health", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const alerts: Array<{ level: "warning" | "info"; message: string }> = []
+    const alerts: Array<{ level: "warning" | "info" | "error"; message: string }> = []
 
-    // Check for panels with no channel configured
-    const panelsWithNoChannel = await prisma.panel.count({
-      where: { guildId, channelId: null, enabled: true },
-    })
+    const [
+      panelsWithNoChannel,
+      duplicateSteamRows,
+      orphanCount,
+      bridgeConfig,
+      recentFailedJob,
+      whitelists,
+    ] = await Promise.all([
+      prisma.panel.count({ where: { guildId, channelId: null, enabled: true } }),
+      // Duplicate Steam IDs: same value under two or more distinct Discord users
+      prisma.whitelistIdentifier.groupBy({
+        by:    ["idValue"],
+        where: { guildId, idType: { in: ["steamid", "steam64"] } },
+        _count: { discordId: true },
+        having: { discordId: { _count: { gt: 1 } } },
+      }),
+      prisma.whitelistUser.count({ where: { guildId, discordId: { lt: 0n } } }),
+      prisma.bridgeConfig.findUnique({ where: { guildId }, select: { lastSyncStatus: true, lastSyncAt: true, enabled: true } }),
+      prisma.jobQueue.findFirst({
+        where:   { guildId, jobType: "bridge_sync", status: "failed" },
+        orderBy: { completedAt: "desc" },
+        select:  { completedAt: true, error: true },
+      }),
+      prisma.whitelist.findMany({ where: { guildId, enabled: true }, select: { id: true, name: true } }),
+    ])
+
     if (panelsWithNoChannel > 0) {
+      alerts.push({ level: "warning", message: `${panelsWithNoChannel} panel(s) have no channel configured` })
+    }
+
+    if (duplicateSteamRows.length > 0) {
       alerts.push({
         level:   "warning",
-        message: `${panelsWithNoChannel} panel(s) have no channel configured`,
+        message: `${duplicateSteamRows.length} Steam ID(s) are registered to multiple users — check for duplicate accounts`,
       })
     }
 
-    // Check for duplicate Steam IDs across users
-    const steamIdRows = await prisma.whitelistIdentifier.groupBy({
-      by:    ["idValue"],
-      where: { guildId, idType: "steamid" },
-      _count: { idValue: true },
-      having: { idValue: { _count: { gt: 1 } } },
-    })
-    if (steamIdRows.length > 0) {
-      alerts.push({
-        level:   "warning",
-        message: `${steamIdRows.length} Steam ID(s) are assigned to multiple users`,
-      })
+    if (orphanCount > 0) {
+      alerts.push({ level: "info", message: `${orphanCount} imported user(s) could not be matched to a Discord account` })
     }
 
-    // Info: whitelists with no users
-    const whitelists = await prisma.whitelist.findMany({
-      where:   { guildId, enabled: true },
-      select:  { id: true, name: true },
-    })
+    if (bridgeConfig?.enabled && bridgeConfig.lastSyncStatus === "error") {
+      const when = bridgeConfig.lastSyncAt
+        ? `(last attempt: ${bridgeConfig.lastSyncAt.toLocaleString()})`
+        : ""
+      alerts.push({ level: "error", message: `SquadJS bridge last sync failed ${when} — check your MySQL credentials` })
+    }
+
+    if (recentFailedJob && !bridgeConfig?.lastSyncStatus) {
+      alerts.push({ level: "warning", message: "A recent bridge sync job failed" })
+    }
+
+    // Info: whitelists with no active users
     for (const wl of whitelists) {
       const userCount = await prisma.whitelistUser.count({
         where: { guildId, whitelistId: wl.id, status: "active" },
       })
       if (userCount === 0) {
-        alerts.push({
-          level:   "info",
-          message: `Whitelist "${wl.name}" is enabled but has no active users`,
-        })
+        alerts.push({ level: "info", message: `Whitelist "${wl.name}" is enabled but has no active users` })
       }
     }
 
     return reply.send({ alerts })
   })
 
+  // ── GET /api/admin/health/duplicate-ids ──────────────────────────────────────
+  // Returns details on which Steam IDs are duplicated and who holds them.
+
+  app.get("/health/duplicate-ids", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const rows = await prisma.whitelistIdentifier.groupBy({
+      by:    ["idValue"],
+      where: { guildId, idType: { in: ["steamid", "steam64"] } },
+      _count: { discordId: true },
+      having: { discordId: { _count: { gt: 1 } } },
+    })
+
+    if (rows.length === 0) return reply.send({ duplicates: [] })
+
+    const duplicateValues = rows.map(r => r.idValue)
+
+    const identifiers = await prisma.whitelistIdentifier.findMany({
+      where:   { guildId, idType: { in: ["steamid", "steam64"] }, idValue: { in: duplicateValues } },
+      select:  { idValue: true, discordId: true },
+      distinct: ["idValue", "discordId"],
+    })
+
+    // Resolve discord names
+    const discordIds = [...new Set(identifiers.map(i => i.discordId))]
+    const users = await prisma.whitelistUser.findMany({
+      where:   { guildId, discordId: { in: discordIds } },
+      select:  { discordId: true, discordName: true },
+      distinct: ["discordId"],
+    })
+    const nameMap = new Map(users.map(u => [u.discordId.toString(), u.discordName]))
+
+    const grouped = new Map<string, Array<{ discord_id: string; discord_name: string | null }>>()
+    for (const ident of identifiers) {
+      const id = ident.discordId.toString()
+      if (!grouped.has(ident.idValue)) grouped.set(ident.idValue, [])
+      grouped.get(ident.idValue)!.push({ discord_id: id, discord_name: nameMap.get(id) ?? null })
+    }
+
+    const duplicates = [...grouped.entries()].map(([steam_id, holders]) => ({
+      steam_id,
+      holder_count: holders.length,
+      holders,
+    }))
+
+    return reply.send(toJSON({ duplicates }))
+  })
+
   // ── POST /api/admin/resync ───────────────────────────────────────────────────
 
   app.post("/resync", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
-
     await triggerSync(app, guildId)
-
     return reply.send({ ok: true, message: "Whitelist sync triggered" })
   })
 

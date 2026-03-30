@@ -426,4 +426,38 @@ export default async function reconcileRoutes(app: FastifyInstance) {
     scored.sort((a, b) => b.score - a.score)
     return reply.send({ orphan_name: orphanName, suggestions: scored.slice(0, limit) })
   })
+
+  // POST /reconcile/purge-orphans
+  // Permanently delete all orphan entries (discordId < 0) for this guild.
+  app.post("/reconcile/purge-orphans", { preHandler: adminHook }, async (req, reply) => {
+    const guildId     = BigInt(req.session.activeGuildId!)
+    const actorId     = req.session.userId ? BigInt(req.session.userId) : null
+
+    const orphans = await app.prisma.whitelistUser.findMany({
+      where: { guildId, discordId: { lt: 0n } },
+      select: { discordId: true },
+      distinct: ["discordId"],
+    })
+    const orphanIds = orphans.map(o => o.discordId)
+
+    if (orphanIds.length === 0) {
+      return reply.send({ ok: true, purged: 0 })
+    }
+
+    await app.prisma.$transaction([
+      app.prisma.whitelistIdentifier.deleteMany({ where: { guildId, discordId: { in: orphanIds } } }),
+      app.prisma.whitelistUser.deleteMany({ where: { guildId, discordId: { in: orphanIds } } }),
+    ])
+
+    await app.prisma.auditLog.create({
+      data: {
+        guildId,
+        actionType:    "admin_purge_orphans",
+        actorDiscordId: actorId,
+        details:       `Purged ${orphanIds.length} orphan entries`,
+      },
+    })
+
+    return reply.send({ ok: true, purged: orphanIds.length })
+  })
 }

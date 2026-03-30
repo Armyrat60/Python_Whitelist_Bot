@@ -155,26 +155,46 @@ export default function DashboardPage() {
                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                       Whitelist Breakdown
                     </p>
-                    <div className="space-y-2">
-                      {Object.entries(stats.per_type).map(([slug, s]) => (
-                        <div key={slug} className="flex items-center gap-3 text-sm">
-                          <span className="w-28 truncate text-white/70 capitalize">{slug.replace(/-/g, " ")}</span>
-                          <div className="flex flex-1 items-center gap-2">
-                            <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div className="space-y-3">
+                      {Object.entries(stats.per_type).map(([slug, s]) => {
+                        const slotPct = s.capacity > 0 ? Math.min((s.slots_used / s.capacity) * 100, 100) : null;
+                        const slotColor = slotPct === null ? "var(--accent-primary)"
+                          : slotPct >= 90 ? "#f87171"
+                          : slotPct >= 70 ? "#fbbf24"
+                          : "var(--accent-primary)";
+                        return (
+                          <div key={slug} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-white/70 capitalize font-medium">{slug.replace(/-/g, " ")}</span>
+                              <span className="text-muted-foreground">
+                                {s.active_users} users · {s.total_ids} IDs
+                                {s.capacity > 0 && (
+                                  <span className="ml-2" style={{ color: slotColor }}>
+                                    {s.slots_used}/{s.capacity} slots
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                               <div
-                                className="absolute inset-y-0 left-0 rounded-full"
+                                className="absolute inset-y-0 left-0 rounded-full transition-all"
                                 style={{
                                   width: `${Math.min((s.active_users / Math.max(stats.total_active_users, 1)) * 100, 100)}%`,
                                   background: "var(--accent-primary)",
                                 }}
                               />
                             </div>
-                            <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
-                              {s.active_users} users · {s.total_ids} IDs
-                            </span>
+                            {s.capacity > 0 && (
+                              <div className="relative h-1 rounded-full bg-white/[0.04] overflow-hidden">
+                                <div
+                                  className="absolute inset-y-0 left-0 rounded-full transition-all"
+                                  style={{ width: `${slotPct}%`, background: slotColor }}
+                                />
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

@@ -55,7 +55,7 @@ function PlayerCard({ player }: { player: PlayerSearchResult }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-sm text-white/90">{player.discord_name}</span>
           {player.is_verified && (
-            <BadgeCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" title="Bridge Verified" />
+            <span title="Bridge Verified"><BadgeCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" /></span>
           )}
           <span className="text-[10px] font-mono text-muted-foreground">{player.discord_id}</span>
         </div>

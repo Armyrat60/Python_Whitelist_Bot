@@ -127,6 +127,7 @@ export interface Settings {
   timezone: string;
   bot_status_message: string;
   retention_days: string;
+  role_sync_interval_hours: string;
   duplicate_output_dedupe: string;
 }
 
@@ -158,7 +159,9 @@ export interface AuditEntry {
   id: number;
   action_type: string;
   actor_discord_id: string | null;
+  actor_discord_name: string | null;
   target_discord_id: string | null;
+  target_discord_name: string | null;
   whitelist_name: string | null;
   details: string | null;
   created_at: string;
@@ -168,7 +171,7 @@ export interface Stats {
   total_active_users: number;
   total_identifiers: number;
   recent_audit_count: number;
-  per_type: Record<string, { active_users: number; total_ids: number }>;
+  per_type: Record<string, { active_users: number; total_ids: number; slots_used: number; capacity: number }>;
   daily_submissions: { day: string; date: string; count: number }[];
   orphan_count: number;
 }

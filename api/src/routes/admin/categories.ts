@@ -547,4 +547,97 @@ export default async function categoryRoutes(app: FastifyInstance) {
       return reply.send({ ok: true })
     }
   )
+
+  // ── POST /api/admin/whitelists/:whitelistId/categories/:categoryId/entries/import
+  // Bulk CSV import. Body: { csv: string } — rows: steam_id,discord_id,discord_name,notes,expires_at
+
+  app.post<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries/import",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const [category, wl] = await Promise.all([
+        prisma.whitelistCategory.findFirst({ where: { id: categoryId, whitelistId, guildId } }),
+        prisma.whitelist.findFirst({ where: { id: whitelistId, guildId } }),
+      ])
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+      if (!wl)       return reply.code(404).send({ error: "Whitelist not found" })
+
+      const body = req.body as { csv?: string }
+      if (!body.csv?.trim()) return reply.code(400).send({ error: "csv field is required" })
+
+      // Parse CSV: first line may be a header
+      const lines = body.csv.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      if (lines.length === 0) return reply.code(400).send({ error: "No rows in CSV" })
+
+      // Detect header by checking if first cell looks like a column name
+      const firstCell = lines[0].split(",")[0].trim().toLowerCase()
+      const hasHeader = ["steam_id", "steamid", "steam64", "id"].includes(firstCell)
+      const dataLines = hasHeader ? lines.slice(1) : lines
+
+      if (dataLines.length === 0) return reply.code(400).send({ error: "No data rows found (only header)" })
+      if (dataLines.length > 500) return reply.code(400).send({ error: "Too many rows — max 500 per import" })
+
+      const results = { added: 0, updated: 0, errors: [] as { row: number; message: string }[] }
+      const now = new Date()
+
+      for (let i = 0; i < dataLines.length; i++) {
+        const [col0, col1, col2, col3, col4] = dataLines[i].split(",").map(c => c.trim().replace(/^"|"$/g, "").trim())
+        const steamId = col0
+        if (!steamId) { results.errors.push({ row: i + 1, message: "Missing steam_id" }); continue }
+
+        const discordIdStr  = col1 ?? ""
+        const discordName   = col2?.trim() || "[No Discord]"
+        const notes         = col3?.trim() || null
+        const expiresAtStr  = col4?.trim() || null
+
+        let discordId: bigint
+        if (discordIdStr) {
+          try { discordId = BigInt(discordIdStr) }
+          catch { results.errors.push({ row: i + 1, message: `Invalid discord_id: ${discordIdStr}` }); continue }
+        } else {
+          discordId = BigInt("1" + steamId.slice(-16).padStart(16, "0"))
+        }
+
+        const expiresAt = expiresAtStr ? (() => { try { const d = new Date(expiresAtStr); return isNaN(d.getTime()) ? null : d } catch { return null } })() : null
+        const createdVia = discordIdStr ? "admin" : "manual_steam_only"
+
+        try {
+          const existing = await prisma.whitelistUser.findUnique({
+            where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+          })
+
+          await prisma.$transaction(async (tx) => {
+            await tx.whitelistUser.upsert({
+              where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+              update: { discordName, categoryId, notes, expiresAt, updatedAt: now },
+              create: {
+                guildId, discordId, whitelistId, discordName, categoryId,
+                status: "active", effectiveSlotLimit: wl.defaultSlotLimit,
+                notes, expiresAt, createdVia, createdAt: now, updatedAt: now,
+              },
+            })
+            await tx.whitelistIdentifier.upsert({
+              where: { guildId_discordId_whitelistId_idType_idValue: { guildId, discordId, whitelistId, idType: "steamid", idValue: steamId } },
+              update: { updatedAt: now },
+              create: { guildId, discordId, whitelistId, idType: "steamid", idValue: steamId, isVerified: false, createdAt: now, updatedAt: now },
+            })
+          })
+
+          if (existing) results.updated++ ; else results.added++
+        } catch (err) {
+          app.log.warn({ err, row: i + 1 }, "CSV import row failed")
+          results.errors.push({ row: i + 1, message: "Database error — row skipped" })
+        }
+      }
+
+      return reply.send(safeJson({ ok: true, ...results }))
+    }
+  )
 }

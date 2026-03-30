@@ -431,6 +431,22 @@ export function useRemoveCategoryEntry(whitelistId: number, categoryId: number) 
   });
 }
 
+export function useImportCategoryEntries(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (csv: string) =>
+      api.post<{ ok: boolean; added: number; updated: number; errors: { row: number; message: string }[] }>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries/import`,
+        { csv }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-entries", whitelistId, categoryId] });
+      qc.invalidateQueries({ queryKey: ["categories", whitelistId] });
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
 export function useCreatePanel() {
   const qc = useQueryClient();
   return useMutation({

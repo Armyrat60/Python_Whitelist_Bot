@@ -181,6 +181,7 @@ export default function SettingsPage() {
   const [allowDuplicates, setAllowDuplicates]   = useState("true");
   const [botStatusMsg, setBotStatusMsg]          = useState("");
   const [retentionDays, setRetentionDays] = useState("90");
+  const [roleSyncInterval, setRoleSyncInterval] = useState("24");
   const [dedupe, setDedupe] = useState("true");
 
   /* ── Notifications form state ── */
@@ -206,6 +207,7 @@ export default function SettingsPage() {
     setNotifChannelId(botSettings.notification_channel_id ?? "");
     setTimezone(botSettings.timezone ?? "UTC");
     setRetentionDays(botSettings.retention_days ?? "90");
+    setRoleSyncInterval(botSettings.role_sync_interval_hours ?? "24");
     setDedupe(botSettings.duplicate_output_dedupe ?? "true");
     setModRoleIds(
       botSettings.mod_role_id
@@ -230,10 +232,11 @@ export default function SettingsPage() {
       allow_global_duplicates: allowDuplicates,
       bot_status_message: botStatusMsg,
       retention_days: retentionDays,
+      role_sync_interval_hours: roleSyncInterval,
       duplicate_output_dedupe: dedupe,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg, retentionDays, dedupe]);
+  }, [autoReactivate, welcomeDmEnabled, welcomeDmText, allowDuplicates, botStatusMsg, retentionDays, roleSyncInterval, dedupe]);
 
   const saveNotifications = useCallback(() => {
     save({
@@ -370,6 +373,21 @@ export default function SettingsPage() {
                 />
                 <p className="text-[11px] text-muted-foreground">
                   How long audit log entries are kept. Default is 90 days.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Role Sync Interval (hours)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={roleSyncInterval}
+                  onChange={(e) => setRoleSyncInterval(e.target.value)}
+                  className="max-w-[120px]"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  How often the bot checks Discord roles against whitelist membership. Default is 24 hours (1–168).
                 </p>
               </div>
 

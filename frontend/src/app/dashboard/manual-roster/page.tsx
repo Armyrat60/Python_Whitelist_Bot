@@ -13,6 +13,9 @@ import {
   ChevronRight,
   Search,
   ExternalLink,
+  Upload,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -26,6 +29,7 @@ import {
   useCategoryEntries,
   useAddCategoryEntry,
   useRemoveCategoryEntry,
+  useImportCategoryEntries,
 } from "@/hooks/use-settings";
 import { useGuild } from "@/hooks/use-guild";
 import type { Whitelist, WhitelistCategory, CategoryEntry } from "@/lib/types";
@@ -506,8 +510,12 @@ function EntryView({
   );
   const addEntry    = useAddCategoryEntry(whitelist.id, category.id);
   const removeEntry = useRemoveCategoryEntry(whitelist.id, category.id);
+  const importEntries = useImportCategoryEntries(whitelist.id, category.id);
 
   const [addEntryOpen, setAddEntryOpen] = useState(false);
+  const [importOpen, setImportOpen]     = useState(false);
+  const [csvText, setCsvText]           = useState("");
+  const [importResult, setImportResult] = useState<{ added: number; updated: number; errors: { row: number; message: string }[] } | null>(null);
   const [steamId, setSteamId]         = useState("");
   const [discordId, setDiscordId]     = useState("");
   const [discordName, setDiscordName] = useState("");
@@ -696,11 +704,78 @@ function EntryView({
             </div>
           </CardContent>
         </Card>
+      ) : importOpen ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Import CSV</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              One row per entry. Columns: <code className="font-mono">steam_id, discord_id, discord_name, notes, expires_at</code>
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <textarea
+              className="w-full h-40 rounded-md border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-1 focus:ring-white/20"
+              placeholder={"76561198000000001,123456789012345678,PlayerName,,2026-12-31\n76561198000000002,,,some note,"}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+            />
+            {importResult && (
+              <div className="space-y-1 text-xs">
+                {(importResult.added + importResult.updated) > 0 && (
+                  <div className="flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    {importResult.added} added, {importResult.updated} updated
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <div className="space-y-0.5">
+                    {importResult.errors.map((e) => (
+                      <div key={e.row} className="flex items-start gap-1.5 text-red-400">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        Row {e.row}: {e.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={importEntries.isPending || !csvText.trim()}
+                onClick={() => {
+                  importEntries.mutate(csvText, {
+                    onSuccess: (res) => {
+                      setImportResult(res);
+                      if (res.added + res.updated > 0) {
+                        toast.success(`Imported ${res.added + res.updated} entries`);
+                        setCsvText("");
+                      }
+                      if (res.errors.length > 0) toast.warning(`${res.errors.length} row(s) had errors`);
+                    },
+                    onError: () => toast.error("Import failed"),
+                  });
+                }}
+              >
+                {importEntries.isPending ? "Importing…" : "Import"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setImportOpen(false); setCsvText(""); setImportResult(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
-        <Button variant="outline" size="sm" className="w-full" onClick={() => setAddEntryOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add Entry
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => setAddEntryOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add Entry
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-1.5 h-3.5 w-3.5" />
+            Import CSV
+          </Button>
+        </div>
       )}
 
       {/* ─── Managers sub-section ──────────────────────────────────────── */}

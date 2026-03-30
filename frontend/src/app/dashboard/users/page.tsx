@@ -980,6 +980,18 @@ export default function UsersPage() {
           </Button>
         </div>
 
+        {/* Verified filter */}
+        <Button
+          variant={filters.verified === "true" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-8 px-3 text-xs gap-1.5"
+          title="Show only bridge-verified users"
+          onClick={() => { setFilters((p) => ({ ...p, verified: p.verified === "true" ? "" : "true" })); setPage(1); }}
+        >
+          <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
+          Verified
+        </Button>
+
         {/* Linked / Unlinked toggle */}
         <div className="flex rounded-md border border-border text-xs">
           <Button
@@ -1002,8 +1014,21 @@ export default function UsersPage() {
         </div>
 
         {filters.unlinked === "true" && (
-          <RematchOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
+          <>
+            <RematchOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
+            <PurgeOrphansButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
+          </>
         )}
+
+        {/* Export All */}
+        <a href={`/api/admin/users/export?${new URLSearchParams(
+          Object.fromEntries(Object.entries({ ...filters, ...(search ? { search } : {}) }).filter(([, v]) => Boolean(v)))
+        ).toString()}`} download="roster-export.csv">
+          <Button variant="outline" size="sm">
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Export
+          </Button>
+        </a>
 
         <AddUserDialog whitelists={whitelists ?? []} />
         <AddSteamEntryDialog whitelists={whitelists ?? []} />
@@ -1257,7 +1282,7 @@ function UserListView({
               <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate">
                 <span className="truncate text-sm font-medium text-white/85">{user.discord_name}</span>
                 {user.is_verified && (
-                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" title="Bridge Verified" />
+                  <span title="Bridge Verified"><BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" /></span>
                 )}
                 <Link
                   href={`/dashboard/players/${user.discord_id}`}
@@ -2257,6 +2282,60 @@ function RematchOrphansButton({ onDone }: { onDone: () => void }) {
       {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
       Re-match All
     </Button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Purge Orphans Button                                               */
+/* ------------------------------------------------------------------ */
+
+function PurgeOrphansButton({ onDone }: { onDone: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  async function handlePurge() {
+    setRunning(true);
+    setOpen(false);
+    try {
+      const res = await api.post<{ ok: boolean; purged: number }>(
+        "/api/admin/reconcile/purge-orphans",
+        {}
+      );
+      toast.success(`Purged ${res.purged} unmatched entr${res.purged === 1 ? "y" : "ies"}`);
+      onDone();
+    } catch {
+      toast.error("Purge failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <Button variant="outline" size="sm" disabled={running} title="Permanently delete all unmatched orphan entries" />
+        }
+      >
+        {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
+        Purge All
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Purge All Unlinked Entries?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes all orphan entries (imported users that could not be matched to a Discord account).
+            This cannot be undone. Run &ldquo;Re-match All&rdquo; first to save any that can be matched.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handlePurge} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            Purge Orphans
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

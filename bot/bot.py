@@ -749,7 +749,7 @@ class WhitelistBot(commands.Bot):
                 await self.send_notification_event(guild_id, "user_left_discord", "🚪 User Left Discord", f"<@{member.id}> left the server and was removed from the `{wl['name']}` whitelist.", discord.Color.red())
         self.schedule_github_sync(guild_id)
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def daily_housekeeping(self):
         for guild in self.guilds:
             guild_id = guild.id
@@ -768,11 +768,22 @@ class WhitelistBot(commands.Bot):
             purged = await self.db.purge_inactive_older_than(guild_id, retention)
             if purged:
                 log.info("Purged %s inactive records older than %s days for guild %s", purged, retention, guild_id)
-            # Role-based membership sync — catch any changes missed by on_member_update
+            # Role-based membership sync — runs on a configurable interval (default 24h)
             try:
-                await self._daily_role_sync(guild)
-                # Record successful sync time so health alerts can detect stale syncs
-                await self.db.set_setting(guild_id, "last_role_sync_at", utcnow().isoformat())
+                interval_hours = max(1, min(168, int(await self.db.get_setting(guild_id, "role_sync_interval_hours", "24") or "24")))
+                last_sync_str  = await self.db.get_setting(guild_id, "last_role_sync_at")
+                due_for_sync   = True
+                if last_sync_str:
+                    try:
+                        from datetime import datetime, timezone
+                        last_dt   = datetime.fromisoformat(last_sync_str.replace("Z", "+00:00"))
+                        elapsed_h = (utcnow() - last_dt).total_seconds() / 3600
+                        due_for_sync = elapsed_h >= interval_hours
+                    except (ValueError, TypeError):
+                        pass
+                if due_for_sync:
+                    await self._daily_role_sync(guild)
+                    await self.db.set_setting(guild_id, "last_role_sync_at", utcnow().isoformat())
             except Exception as e:
                 log.error("Guild %s: daily role sync failed: %s", guild_id, e)
 
