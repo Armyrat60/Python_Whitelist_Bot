@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Shield, Clock, Tag, BadgeCheck } from "lucide-react";
@@ -119,14 +119,10 @@ function StatusBadge({ status, expiresAt }: { status: string | null; expiresAt: 
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Steam verification toast (needs Suspense boundary for useSearchParams) ───
 
-export default function MyWhitelistPage() {
-  const { activeGuild } = useGuild();
-  const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
+function SteamVerifyToast() {
   const searchParams = useSearchParams();
-
-  // Show toast based on Steam verification redirect result
   useEffect(() => {
     const result = searchParams.get("steam_verify");
     if (!result) return;
@@ -143,13 +139,20 @@ export default function MyWhitelistPage() {
         toast.error("Steam verification failed. Please try again.");
       }
     }
-    // Clean the URL params without re-navigating
     const url = new URL(window.location.href);
     url.searchParams.delete("steam_verify");
     url.searchParams.delete("steam_id");
     url.searchParams.delete("reason");
     window.history.replaceState({}, "", url.toString());
   }, [searchParams]);
+  return null;
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+
+export default function MyWhitelistPage() {
+  const { activeGuild } = useGuild();
+  const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
 
   if (isLoading) {
     return (
@@ -200,6 +203,7 @@ export default function MyWhitelistPage() {
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}><SteamVerifyToast /></Suspense>
       {guildBanner}
       <p className="text-sm text-muted-foreground">
         Entries here are the same as using{" "}
