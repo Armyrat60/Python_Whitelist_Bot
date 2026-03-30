@@ -197,13 +197,13 @@ export default async function groupRoutes(app: FastifyInstance) {
       where: { guildId, squadGroup: groupName }
     })
     if (inUse) {
-      // Collect all whitelist names that reference this group
       const usingWhitelists = await prisma.whitelist.findMany({
         where:  { guildId, squadGroup: groupName },
         select: { name: true, slug: true }
       })
+      const names = usingWhitelists.map(w => `"${w.name}"`).join(", ")
       return reply.code(400).send({
-        error:      `Group "${groupName}" is in use`,
+        error:      `Group "${groupName}" is in use by: ${names}. Reassign those whitelists to a different group first.`,
         whitelists: usingWhitelists.map(w => ({ name: w.name, slug: w.slug }))
       })
     }
