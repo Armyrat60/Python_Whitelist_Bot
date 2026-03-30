@@ -9,8 +9,10 @@ import {
   useUpdateGroup,
   useDeleteGroup,
   useSquadPermissions,
+  useWhitelists,
+  useUpdateWhitelist,
 } from "@/hooks/use-settings";
-import type { SquadGroup } from "@/lib/types";
+import type { SquadGroup, Whitelist } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +47,13 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 // ── Permission toggle grid ────────────────────────────────────────────────────
 
@@ -156,14 +165,123 @@ function CreateGroupDialog({ available }: { available: Record<string, string> })
   );
 }
 
+// ── Smart delete button — reassigns in-use whitelists then deletes ────────────
+
+function DeleteGroupButton({ group }: { group: SquadGroup }) {
+  const [open, setOpen] = useState(false);
+  const { data: allWhitelists } = useWhitelists();
+  const { data: allGroups } = useGroups();
+  const remove = useDeleteGroup();
+  const updateWl = useUpdateWhitelist();
+
+  // Whitelists currently using this group
+  const blocked = (allWhitelists ?? []).filter(
+    (wl: Whitelist) => wl.squad_group === group.group_name
+  );
+
+  // Per-whitelist replacement selection
+  const [replacements, setReplacements] = useState<Record<number, string>>({});
+
+  const otherGroups = (allGroups ?? []).filter(g => g.group_name !== group.group_name);
+
+  const allAssigned = blocked.length === 0 || blocked.every(wl => !!replacements[wl.id]);
+
+  async function handleDelete() {
+    try {
+      // Reassign any blocking whitelists first
+      for (const wl of blocked) {
+        const newGroup = replacements[wl.id];
+        if (newGroup) {
+          await updateWl.mutateAsync({ id: wl.id, squad_group: newGroup });
+        }
+      }
+      await remove.mutateAsync(group.group_name);
+      toast.success(`Group "${group.group_name}" deleted`);
+      setOpen(false);
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message ?? "Failed to delete group");
+    }
+  }
+
+  const isPending = updateWl.isPending || remove.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setReplacements({}); }}>
+      <DialogTrigger render={
+        <Button size="sm" variant="destructive" className="ml-auto">
+          <Trash2 className="mr-1 h-3 w-3" />
+          Delete
+        </Button>
+      } />
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete group &ldquo;{group.group_name}&rdquo;?</DialogTitle>
+        </DialogHeader>
+
+        {blocked.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            This group is not in use. It will be permanently removed.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {blocked.length} whitelist{blocked.length !== 1 ? "s are" : " is"} using this group.
+              Choose a replacement for each before deleting.
+            </p>
+            <div className="space-y-2">
+              {blocked.map((wl: Whitelist) => (
+                <div key={wl.id} className="flex items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2">
+                  <span className="flex-1 truncate text-sm font-medium">{wl.name}</span>
+                  <Select
+                    value={replacements[wl.id] ?? ""}
+                    onValueChange={(v) => setReplacements(prev => ({ ...prev, [wl.id]: v ?? "" }))}
+                  >
+                    <SelectTrigger className="h-7 w-36 text-xs">
+                      <SelectValue placeholder="Pick group…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {otherGroups.length === 0 ? (
+                        <SelectItem value="__none__" disabled>No other groups</SelectItem>
+                      ) : (
+                        otherGroups.map(g => (
+                          <SelectItem key={g.group_name} value={g.group_name}>
+                            {g.group_name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)} disabled={isPending}>Cancel</Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={!allAssigned || isPending || (blocked.length > 0 && otherGroups.length === 0)}
+          >
+            {isPending ? "Working…" : blocked.length > 0 ? "Reassign & Delete" : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Group card ────────────────────────────────────────────────────────────────
 
 function GroupCard({
   group,
   available,
+  attachedWhitelists,
 }: {
   group: SquadGroup;
   available: Record<string, string>;
+  attachedWhitelists: Whitelist[];
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(group.group_name);
@@ -238,8 +356,15 @@ function GroupCard({
             )}
           </div>
         </CardTitle>
-        <CardDescription className="font-mono text-[11px]">
-          Squad config: <span className="text-white/60">{group.group_name}:{group.permissions || "reserve"}</span>
+        <CardDescription className="space-y-0.5">
+          <span className="font-mono text-[11px]">
+            Squad config: <span className="text-white/60">{group.group_name}:{group.permissions || "reserve"}</span>
+          </span>
+          {attachedWhitelists.length > 0 && (
+            <span className="block text-[11px] text-muted-foreground">
+              Used by: {attachedWhitelists.map(w => w.name).join(", ")}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
 
@@ -263,41 +388,7 @@ function GroupCard({
 
       {!editing && (
         <CardFooter className="pt-2">
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={
-                <Button size="sm" variant="destructive" className="ml-auto">
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  Delete
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete group &ldquo;{group.group_name}&rdquo;?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will remove the group. Any whitelists using it must be reassigned first.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() =>
-                    remove.mutate(group.group_name, {
-                      onSuccess: () => toast.success(`Group "${group.group_name}" deleted`),
-                      onError: (err: unknown) => {
-                        const msg = (err as { message?: string })?.message ?? "Failed to delete group";
-                        toast.error(msg);
-                      },
-                    })
-                  }
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <DeleteGroupButton group={group} />
         </CardFooter>
       )}
     </Card>
@@ -309,6 +400,7 @@ function GroupCard({
 export default function SquadGroupsPage() {
   const { data: groups, isLoading } = useGroups();
   const { data: availablePerms } = useSquadPermissions();
+  const { data: allWhitelists } = useWhitelists();
 
   const available = availablePerms ?? {};
 
@@ -349,7 +441,12 @@ export default function SquadGroupsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 items-start">
           {groups.map((g) => (
-            <GroupCard key={g.group_name} group={g} available={available} />
+            <GroupCard
+              key={g.group_name}
+              group={g}
+              available={available}
+              attachedWhitelists={(allWhitelists ?? []).filter((wl: Whitelist) => wl.squad_group === g.group_name)}
+            />
           ))}
         </div>
       )}
