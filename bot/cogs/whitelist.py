@@ -283,7 +283,7 @@ class WhitelistPanelView(discord.ui.View):
             # Resolve Steam names for display
             from bot.utils import resolve_steam_names
             steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
-            steam_names = await resolve_steam_names(steam64_ids)
+            steam_names = await resolve_steam_names(steam64_ids, db=self.bot.db)
 
             if ids:
                 id_lines = []
@@ -534,7 +534,7 @@ class _UserLookupView(discord.ui.View):
         # Resolve Steam names
         from bot.utils import resolve_steam_names
         steam64_ids = [v for t, v, *_ in ids if t == "steam64"]
-        steam_names = await resolve_steam_names(steam64_ids)
+        steam_names = await resolve_steam_names(steam64_ids, db=self.bot.db)
 
         embed = discord.Embed(title=f"Whitelist: {target.display_name}", color=0xF97316)
         embed.set_thumbnail(url=target.display_avatar.url)

@@ -29,39 +29,56 @@ _STEAM_PROFILE_RE = re.compile(r'steamcommunity\.com/profiles/(\d{17})', re.IGNO
 _STEAM_VANITY_RE = re.compile(r'steamcommunity\.com/id/([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
 
-async def resolve_steam_names(steam64_ids: list[str]) -> dict[str, str]:
+async def resolve_steam_names(steam64_ids: list[str], db=None) -> dict[str, str]:
     """Resolve Steam64 IDs to persona names.
 
-    Tries the internal API proxy first (requires BOT_INTERNAL_SECRET + WEB_INTERNAL_URL),
-    then falls back to calling the Steam API directly (requires STEAM_API_KEY).
+    Lookup order:
+      1. DB steam_name_cache (if db provided)
+      2. Internal API proxy  (requires BOT_INTERNAL_SECRET + WEB_INTERNAL_URL)
+      3. Direct Steam API    (requires STEAM_API_KEY)
+
+    Newly resolved names are written back to the DB cache.
     Returns a dict of {steam64_id: persona_name}.
     """
     if not steam64_ids:
         return {}
 
+    names: dict[str, str] = {}
+
+    # 1. DB cache
+    if db:
+        cached = await db.get_steam_names(steam64_ids)
+        names.update(cached)
+
+    uncached = [sid for sid in steam64_ids if sid not in names]
+    if not uncached:
+        return names
+
     from bot.config import BOT_INTERNAL_SECRET, WEB_INTERNAL_URL, STEAM_API_KEY
     import aiohttp
 
-    # Try internal API proxy first
+    newly_resolved: dict[str, str] = {}
+
+    # 2. Internal API proxy
     if BOT_INTERNAL_SECRET and WEB_INTERNAL_URL:
         try:
             async with aiohttp.ClientSession() as http:
                 async with http.post(
                     f"{WEB_INTERNAL_URL}/api/internal/steam-names",
-                    json={"steam_ids": steam64_ids},
+                    json={"steam_ids": uncached},
                     headers={"x-bot-secret": BOT_INTERNAL_SECRET, "Content-Type": "application/json"},
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        return {k: v for k, v in data.get("names", {}).items() if v}
+                        newly_resolved = {k: v for k, v in data.get("names", {}).items() if v}
         except Exception:
-            pass  # Fall through to direct Steam API
+            pass
 
-    # Fall back to direct Steam API
-    if STEAM_API_KEY:
+    # 3. Direct Steam API fallback
+    if not newly_resolved and STEAM_API_KEY:
         try:
-            ids_param = ",".join(steam64_ids)
+            ids_param = ",".join(uncached)
             async with aiohttp.ClientSession() as http:
                 async with http.get(
                     f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids_param}",
@@ -69,7 +86,7 @@ async def resolve_steam_names(steam64_ids: list[str]) -> dict[str, str]:
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        return {
+                        newly_resolved = {
                             p["steamid"]: p.get("personaname", "")
                             for p in data.get("response", {}).get("players", [])
                             if p.get("personaname")
@@ -77,7 +94,15 @@ async def resolve_steam_names(steam64_ids: list[str]) -> dict[str, str]:
         except Exception:
             pass
 
-    return {}
+    if newly_resolved:
+        names.update(newly_resolved)
+        if db:
+            try:
+                await db.cache_steam_names(newly_resolved)
+            except Exception:
+                pass
+
+    return names
 
 
 async def resolve_steam_vanity(vanity_name: str) -> str | None:

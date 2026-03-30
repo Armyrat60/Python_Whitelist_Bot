@@ -15,11 +15,13 @@ const steamCache = new Map<string, { name: string; cachedAt: number }>()
 const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
 
 // Shared resolution logic used by both endpoints
-async function resolveSteamNames(steamIds: string[]): Promise<Record<string, string>> {
+// Lookup order: in-memory cache → DB cache → Steam API
+async function resolveSteamNames(steamIds: string[], prisma?: import("@prisma/client").PrismaClient): Promise<Record<string, string>> {
   const now = Date.now()
   const results: Record<string, string> = {}
-  const uncached: string[] = []
+  let uncached: string[] = []
 
+  // 1. In-memory cache
   for (const sid of steamIds) {
     const cached = steamCache.get(sid)
     if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
@@ -29,6 +31,19 @@ async function resolveSteamNames(steamIds: string[]): Promise<Record<string, str
     }
   }
 
+  // 2. DB cache
+  if (uncached.length > 0 && prisma) {
+    try {
+      const dbRows = await prisma.steamNameCache.findMany({ where: { steamId: { in: uncached } } })
+      for (const row of dbRows) {
+        results[row.steamId] = row.personaName
+        steamCache.set(row.steamId, { name: row.personaName, cachedAt: now })
+      }
+      uncached = uncached.filter((sid) => !(sid in results))
+    } catch { /* non-fatal */ }
+  }
+
+  // 3. Steam API
   const STEAM_API_KEY = process.env["STEAM_API_KEY"] ?? ""
   if (uncached.length > 0 && STEAM_API_KEY) {
     try {
@@ -37,10 +52,22 @@ async function resolveSteamNames(steamIds: string[]): Promise<Record<string, str
       const resp = await fetch(url)
       if (resp.ok) {
         const data = await resp.json() as { response?: { players?: Array<{ steamid: string; personaname: string }> } }
+        const toCache: Array<{ steamId: string; personaName: string; cachedAt: Date }> = []
         for (const player of data.response?.players ?? []) {
           if (player.steamid) {
             results[player.steamid] = player.personaname ?? ""
             steamCache.set(player.steamid, { name: player.personaname ?? "", cachedAt: now })
+            if (player.personaname) toCache.push({ steamId: player.steamid, personaName: player.personaname, cachedAt: new Date() })
+          }
+        }
+        // Write to DB cache
+        if (toCache.length > 0 && prisma) {
+          for (const entry of toCache) {
+            prisma.steamNameCache.upsert({
+              where: { steamId: entry.steamId },
+              update: { personaName: entry.personaName, cachedAt: entry.cachedAt },
+              create: entry,
+            }).catch(() => { /* non-fatal */ })
           }
         }
       }
@@ -65,7 +92,7 @@ export const steamRoutes: FastifyPluginAsync = async (app) => {
     if (!rawIds || !Array.isArray(rawIds)) {
       return reply.code(400).send({ error: "steam_ids array required" })
     }
-    const names = await resolveSteamNames(rawIds.slice(0, 100).map(String))
+    const names = await resolveSteamNames(rawIds.slice(0, 100).map(String), app.prisma)
     return reply.send({ names })
   })
 
@@ -76,7 +103,7 @@ export const steamRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const steamIds = rawIds.slice(0, 100).map((id) => String(id))
-    const names = await resolveSteamNames(steamIds)
+    const names = await resolveSteamNames(steamIds, app.prisma)
     return reply.send({ names })
   })
 
