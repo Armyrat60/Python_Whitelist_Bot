@@ -23,6 +23,7 @@ import {
   usePanelRoles,
   useAddPanelRole,
   useRemovePanelRole,
+  useUpdatePanelRole,
   useRoles,
 } from "@/hooks/use-settings";
 import type { Panel, Whitelist, PanelRole, DiscordRole } from "@/lib/types";
@@ -158,6 +159,109 @@ function getStatusColor(panel: Panel): string {
   if (hasChannel || hasWhitelist) return "bg-yellow-500";
   return "bg-red-500";
 }
+
+// ── Inline-editable panel role row ───────────────────────────────────────────
+
+function PanelRoleRow({
+  role,
+  panelId,
+  onRemove,
+}: {
+  role: PanelRole;
+  panelId: number;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [slots, setSlots] = useState(String(role.slot_limit));
+  const [stackable, setStackable] = useState(role.is_stackable);
+  const updateRole = useUpdatePanelRole(panelId);
+
+  function handleSave() {
+    const limit = parseInt(slots, 10);
+    if (isNaN(limit) || limit < 1) { toast.error("Slots must be at least 1"); return; }
+    updateRole.mutate(
+      { roleId: role.role_id, slot_limit: limit, is_stackable: stackable },
+      {
+        onSuccess: () => { toast.success("Role updated"); setEditing(false); },
+        onError: () => toast.error("Failed to update role"),
+      }
+    );
+  }
+
+  function handleCancel() {
+    setSlots(String(role.slot_limit));
+    setStackable(role.is_stackable);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="rounded-lg border border-white/[0.12] bg-white/[0.02] px-2.5 py-2 space-y-2">
+        <span className="text-sm font-medium text-foreground">{role.display_name || role.role_name}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Slots</Label>
+            <Input
+              type="number"
+              min={1}
+              value={slots}
+              onChange={(e) => setSlots(e.target.value)}
+              className="h-7 w-16 text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Switch checked={stackable} onCheckedChange={setStackable} id={`stack-${role.role_id}`} />
+            <Label htmlFor={`stack-${role.role_id}`} className="text-xs text-muted-foreground">Stack</Label>
+          </div>
+          <div className="ml-auto flex gap-1">
+            <Button size="icon-xs" variant="ghost" onClick={handleSave} disabled={updateRole.isPending}>
+              <Check className="h-3 w-3" />
+            </Button>
+            <Button size="icon-xs" variant="ghost" onClick={handleCancel}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-sm">
+      <span className="flex-1 truncate font-medium text-foreground">
+        {role.display_name || role.role_name}
+      </span>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {role.slot_limit} slot{role.slot_limit !== 1 ? "s" : ""}
+      </span>
+      {role.is_stackable && (
+        <span className="shrink-0 text-[10px] text-blue-400 border border-blue-400/30 rounded px-1">
+          stack
+        </span>
+      )}
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={() => setEditing(true)}
+        title="Edit role"
+      >
+        <Pencil className="h-3 w-3" />
+      </Button>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground hover:text-destructive"
+        onClick={onRemove}
+        title="Remove role"
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+// ── Panel card ────────────────────────────────────────────────────────────────
 
 function PanelCard({
   panel,
@@ -480,34 +584,16 @@ function PanelCard({
               ) : panelRoles && panelRoles.length > 0 ? (
                 <div className="space-y-1.5">
                   {panelRoles.map((role) => (
-                    <div
+                    <PanelRoleRow
                       key={role.role_id}
-                      className="flex items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-sm"
-                    >
-                      <span className="flex-1 truncate font-medium text-foreground">
-                        {role.display_name || role.role_name}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {role.slot_limit} slot{role.slot_limit !== 1 ? "s" : ""}
-                      </span>
-                      {role.is_stackable && (
-                        <span className="shrink-0 text-[10px] text-blue-400 border border-blue-400/30 rounded px-1">
-                          stack
-                        </span>
-                      )}
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() =>
-                          removeRole.mutate(role.role_id, {
-                            onError: () => toast.error("Failed to remove role"),
-                          })
-                        }
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
+                      role={role}
+                      panelId={panel.id}
+                      onRemove={() =>
+                        removeRole.mutate(role.role_id, {
+                          onError: () => toast.error("Failed to remove role"),
+                        })
+                      }
+                    />
                   ))}
                 </div>
               ) : (

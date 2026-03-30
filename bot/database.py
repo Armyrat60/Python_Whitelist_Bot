@@ -598,7 +598,7 @@ class Database:
             VALUES (%s, %s, %s, %s, TRUE, %s, %s)
             ON CONFLICT (guild_id, group_name) DO NOTHING
             """,
-            (guild_id, "Whitelist", "reserve", "Reserve slot for whitelisted players", now, now),
+            (guild_id, "reserve", "reserve", "Reserve slot for whitelisted players", now, now),
         )
 
         # Seed default settings
@@ -624,7 +624,7 @@ class Database:
                     name="Whitelist 1",
                     slug="default",
                     enabled=False,
-                    squad_group="Whitelist",
+                    squad_group="reserve",
                     output_filename="whitelist.txt",
                     default_slot_limit=1,
                     stack_roles=False,

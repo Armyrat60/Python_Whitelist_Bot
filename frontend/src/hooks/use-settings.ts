@@ -152,6 +152,17 @@ export function useDeleteGroup() {
   });
 }
 
+export function useSquadPermissions() {
+  return useQuery<Record<string, string>>({
+    queryKey: ["squad-permissions"],
+    queryFn: async () => {
+      const res = await api.get<{ permissions: Record<string, string> }>("/api/admin/permissions");
+      return res.permissions;
+    },
+    staleTime: Infinity,
+  });
+}
+
 
 export function useStats() {
   return useQuery<Stats>({

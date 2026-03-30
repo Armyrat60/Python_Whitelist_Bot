@@ -20,6 +20,7 @@ import {
   Search,
   Database,
   Clock,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -58,6 +59,7 @@ const playerLinks = [
 const manageLinks = [
   { href: "/dashboard/panels", label: "Panels", icon: PanelTop },
   { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
+  { href: "/dashboard/squad-groups", label: "Squad Groups", icon: Layers },
 ];
 
 const settingsLinks = [
