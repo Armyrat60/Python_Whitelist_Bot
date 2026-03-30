@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RotateCcw, Clock, UserX } from "lucide-react";
+import { RotateCcw, Clock, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useWhitelists } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
@@ -139,7 +139,7 @@ export default function RoleHistoryPage() {
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-          <UserX className="mb-3 h-8 w-8 text-muted-foreground/40" />
+          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm font-medium text-white/60">No role losses in the last {days} days</p>
           <p className="mt-1 text-xs text-muted-foreground">Members who lose their whitelist role will appear here.</p>
         </div>
@@ -152,7 +152,7 @@ export default function RoleHistoryPage() {
             >
               {/* Status indicator */}
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
-                <UserX className="h-4 w-4 text-amber-400" />
+                <UserRound className="h-4 w-4 text-amber-400" />
               </div>
 
               {/* User info */}
@@ -176,7 +176,7 @@ export default function RoleHistoryPage() {
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <UserX className="h-3 w-3 text-amber-400/70" />
+                    <UserRound className="h-3 w-3 text-amber-400/70" />
                     Lost {formatRelative(entry.lost_at)} · {formatDate(entry.lost_at)}
                   </span>
                   <span className="flex items-center gap-1">
