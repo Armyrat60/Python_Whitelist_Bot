@@ -89,7 +89,7 @@ export default function MyWhitelistLayout({
               {session.username}
             </span>
           </div>
-          <a href="/api/auth/logout">
+          <a href="/logout">
             <Button variant="ghost" size="icon-sm">
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Logout</span>
