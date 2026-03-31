@@ -4,6 +4,7 @@
  * Prefix: /api/admin
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
+import { Prisma } from "@prisma/client"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
 import { getFileToken } from "../../services/token.js"
@@ -130,8 +131,8 @@ export default async function userRoutes(app: FastifyInstance) {
     }
 
     const sortField = query.sort ?? "name"
-    const sortDir   = query.order === "desc" ? "desc" : "asc"
-    const orderBy =
+    const sortDir: Prisma.SortOrder = query.order === "desc" ? "desc" : "asc"
+    const orderBy: Prisma.WhitelistUserOrderByWithRelationInput =
       sortField === "slots"     ? { effectiveSlotLimit: sortDir } :
       sortField === "status"    ? { status: sortDir } :
       sortField === "updated"   ? { updatedAt: sortDir } :

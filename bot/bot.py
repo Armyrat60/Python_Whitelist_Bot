@@ -122,7 +122,7 @@ class WhitelistBot(commands.Bot):
                         await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl)
                         log.info("Refreshed panel '%s' in guild %s", panel["name"], guild.name)
                     except Exception:
-                        log.warning("Could not refresh panel '%s' for guild %s", panel["name"], guild.id)
+                        log.exception("Startup: failed to refresh panel '%s' (id=%s) for guild %s", panel["name"], panel.get("id"), guild.id)
 
         refresh_tasks = []
         for guild in self.guilds:
@@ -134,6 +134,7 @@ class WhitelistBot(commands.Bot):
                     continue
                 refresh_tasks.append(_refresh_one(guild, panel))
         if refresh_tasks:
+            log.info("Startup: refreshing %d panel(s) across %d guild(s)", len(refresh_tasks), len(self.guilds))
             await asyncio.gather(*refresh_tasks)
 
     async def on_guild_join(self, guild: discord.Guild):
@@ -653,15 +654,24 @@ class WhitelistBot(commands.Bot):
         stored_channel_id = panel_record["channel_id"] if panel_record else wl.get("panel_channel_id")
         stored_message_id = panel_record["panel_message_id"] if panel_record else wl.get("panel_message_id")
 
+        label = f"[panel][guild={guild_id}][wl={whitelist_id}]"
+
         async def _resolve_channel(ch_id: int):
             """Get channel from cache; fall back to REST fetch if not cached."""
             ch = self.get_channel(ch_id)
             if ch is None:
                 try:
                     ch = await self.fetch_channel(ch_id)
-                except Exception:
-                    pass
+                except discord.NotFound:
+                    log.warning("%s Channel %s not found — was it deleted?", label, ch_id)
+                except discord.Forbidden:
+                    log.warning("%s Bot lacks access to channel %s — check permissions", label, ch_id)
+                except Exception as e:
+                    log.exception("%s Unexpected error fetching channel %s: %s", label, ch_id, e)
             return ch
+
+        log.debug("%s panel_record=%s channel=%s message=%s", label,
+                  panel_record["id"] if panel_record else None, stored_channel_id, stored_message_id)
 
         if stored_message_id and stored_channel_id:
             stored_ch = await _resolve_channel(int(stored_channel_id))
@@ -688,6 +698,8 @@ class WhitelistBot(commands.Bot):
             target = channel
             if target is None and stored_channel_id:
                 target = await _resolve_channel(int(stored_channel_id))
+            if target is None:
+                log.warning("%s No target channel — stored_channel_id=%s, passed channel=%s. Set a channel on the panel.", label, stored_channel_id, channel)
             if target is not None:
                 try:
                     posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
@@ -997,6 +1009,8 @@ class WhitelistBot(commands.Bot):
         """Poll for panel refresh requests from the web dashboard."""
         try:
             pending = await self.db.get_pending_refreshes()
+            if pending:
+                log.info("[panel_poller] Processing %d pending refresh(es)", len(pending))
             for row in pending:
                 refresh_id, guild_id, panel_id, reason = int(row[0]), int(row[1]), int(row[2]), row[3]
                 action     = row[4] if len(row) > 4 else "refresh"
@@ -1040,7 +1054,7 @@ class WhitelistBot(commands.Bot):
                     log.exception("Failed to process panel queue entry %s (panel=%s action=%s)", refresh_id, panel_id, action)
                 await self.db.mark_refresh_processed(refresh_id)
         except Exception:
-            pass  # DB might not be ready yet
+            log.exception("[panel_poller] Unexpected error fetching/processing refresh queue")
 
     @panel_refresh_poller.before_loop
     async def _before_panel_poller(self):
