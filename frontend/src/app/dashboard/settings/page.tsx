@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
   Shield, User, Globe, Crown, Lock, ChevronRight, Clock,
-  Plus, Users, Tag, Send,
+  Plus, Users, Tag, Send, Link2, BarChart3,
 } from "lucide-react";
+import { BridgeSettings } from "@/components/bridge-settings";
+import { DataContent } from "@/app/dashboard/data/page";
 import {
   useSettings,
   useRoles,
@@ -55,13 +57,15 @@ import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/ui/combobox";
 
 /* ─── Types ─── */
-type Tab = "general" | "notifications" | "appearance" | "permissions" | "account";
+type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "data";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "general",       label: "General",       icon: Settings2 },
   { id: "notifications", label: "Notifications",  icon: Bell },
   { id: "appearance",    label: "Appearance",     icon: Palette },
   { id: "permissions",   label: "Permissions",    icon: Shield },
+  { id: "connections",   label: "Connections",    icon: Link2 },
+  { id: "data",          label: "Data",          icon: BarChart3 },
   { id: "account",       label: "Account",        icon: User },
 ];
 
@@ -410,38 +414,44 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       {/* Page header */}
-      <div className="mb-6">
+      <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure your server's whitelist bot and dashboard preferences.
         </p>
       </div>
 
-      {/* Tab nav */}
-      <div className="mb-6 flex gap-1 border-b border-white/[0.06]">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = activeTab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setActiveTab(t.id)}
-              className={cn(
-                "flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors",
-                active
-                  ? "border-[var(--accent-primary)] text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground/80"
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <div className="flex gap-8">
+        {/* Left nav */}
+        <nav className="w-48 shrink-0 space-y-0.5">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            const isDataGroup = t.id === "data";
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-left",
+                  active
+                    ? "bg-white/[0.08] text-white"
+                    : "text-white/50 hover:bg-white/[0.04] hover:text-white/80",
+                  isDataGroup && "mt-1"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
 
       {/* ── General ── */}
       {activeTab === "general" && (
@@ -1210,6 +1220,16 @@ export default function SettingsPage() {
       )}
 
       {/* ── Account ── */}
+      {activeTab === "connections" && (
+        <div className="max-w-2xl">
+          <BridgeSettings />
+        </div>
+      )}
+
+      {activeTab === "data" && (
+        <DataContent />
+      )}
+
       {activeTab === "account" && (
         <div className="space-y-6">
           {/* Discord Info */}
@@ -1285,6 +1305,8 @@ export default function SettingsPage() {
           <SaveBar onSave={saveAccount} isPending={saveSettings.isPending} />
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -72,11 +72,14 @@ class WhitelistBot(commands.Bot):
                 self.add_view(view)
         log.info("Registered %d persistent panel views", len(self.panel_views))
 
-        # Sync commands globally
-        synced = await self.tree.sync()
-        log.info("Synced %s global app commands", len(synced))
-        for cmd in synced:
-            log.info("  -> /%s", cmd.name)
+        # Sync commands globally — retry once on transient Discord outage
+        try:
+            synced = await self.tree.sync()
+            log.info("Synced %s global app commands", len(synced))
+            for cmd in synced:
+                log.info("  -> /%s", cmd.name)
+        except discord.HTTPException as e:
+            log.warning("tree.sync() failed (Discord may be unavailable): %s — commands may not update until next restart", e)
 
         self.weekly_report.start()
         self.daily_housekeeping.start()
@@ -653,8 +656,14 @@ class WhitelistBot(commands.Bot):
                 except discord.NotFound:
                     # Old message was deleted — will post fresh below
                     log.info("Panel message %s not found in channel %s, posting fresh", stored_message_id, stored_channel_id)
-                except Exception:
-                    log.exception("Failed to edit panel message %s", stored_message_id)
+                except discord.Forbidden:
+                    log.warning(
+                        "post_or_refresh_panel: Missing Permissions to edit message %s in channel %s (guild=%s) — "
+                        "grant the bot Send Messages + Embed Links in that channel",
+                        stored_message_id, stored_channel_id, guild_id,
+                    )
+                except discord.HTTPException as e:
+                    log.exception("Failed to edit panel message %s: %s", stored_message_id, e)
 
         # If no existing panel found (or edit failed), post a new one
         if posted is None:
@@ -663,7 +672,16 @@ class WhitelistBot(commands.Bot):
             if target is None and stored_channel_id:
                 target = await _resolve_channel(int(stored_channel_id))
             if target is not None:
-                posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
+                try:
+                    posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
+                except discord.Forbidden:
+                    log.warning(
+                        "post_or_refresh_panel: Missing Permissions to send in channel %s (guild=%s) — "
+                        "grant the bot Send Messages + Embed Links in that channel",
+                        stored_channel_id or getattr(target, "id", "?"), guild_id,
+                    )
+                except discord.HTTPException as e:
+                    log.exception("post_or_refresh_panel: Discord HTTP error sending panel (guild=%s): %s", guild_id, e)
 
         if posted is not None:
             # Save message ID to BOTH panels table and whitelists table (for backward compat)
@@ -672,6 +690,14 @@ class WhitelistBot(commands.Bot):
             await self.db.update_whitelist(whitelist_id, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
             actor = interaction.user.id if interaction else None
             await self.db.audit(guild_id, "panel_post", actor, None, f"panel={panel_record['name'] if panel_record else 'unknown'} channel={posted.channel.id} message={posted.id}", whitelist_id)
+        else:
+            log.warning(
+                "post_or_refresh_panel: nothing posted for whitelist_id=%s guild=%s — "
+                "panel_record=%s stored_channel_id=%s stored_message_id=%s",
+                whitelist_id, guild_id,
+                panel_record["id"] if panel_record else None,
+                stored_channel_id, stored_message_id,
+            )
         return posted
 
     async def enforce_member_roles(self, member: discord.Member):
@@ -973,11 +999,20 @@ class WhitelistBot(commands.Bot):
                                     log.exception("Failed to delete panel message %s", message_id)
                     else:
                         panel = await self.db.get_panel_by_id(panel_id)
-                        if panel and panel.get("whitelist_id"):
+                        if not panel:
+                            log.warning("Panel refresh: panel_id=%s not found in DB", panel_id)
+                        elif not panel.get("whitelist_id"):
+                            log.warning("Panel refresh: panel_id=%s has no whitelist_id set — skipping", panel_id)
+                        else:
                             wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
-                            if wl:
-                                await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
-                                log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
+                            if not wl:
+                                log.warning("Panel refresh: whitelist_id=%s not found for panel_id=%s", panel["whitelist_id"], panel_id)
+                            else:
+                                result = await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
+                                if result:
+                                    log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
+                                else:
+                                    log.warning("Panel refresh: post_or_refresh_panel returned None for panel_id=%s (channel configured? %s)", panel_id, bool(panel.get("channel_id")))
                 except Exception:
                     log.exception("Failed to process panel queue entry %s (panel=%s action=%s)", refresh_id, panel_id, action)
                 await self.db.mark_refresh_processed(refresh_id)

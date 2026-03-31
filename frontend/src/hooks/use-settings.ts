@@ -168,6 +168,7 @@ export function useStats() {
   return useQuery<Stats>({
     queryKey: ["stats"],
     queryFn: () => api.get<Stats>("/api/admin/stats"),
+    refetchInterval: 30_000,
   });
 }
 

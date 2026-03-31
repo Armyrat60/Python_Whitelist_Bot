@@ -32,13 +32,15 @@ interface BridgeConfigRow {
   mysql_password:        string
   server_name:           string
   sync_interval_minutes: number
+  last_sync_at:          Date | null
 }
 
 /** Fetch all enabled guild bridge configs from the DB. */
 async function loadEnabledConfigs(): Promise<BridgeConfigRow[]> {
   const result = await pool.query<BridgeConfigRow>(
     `SELECT id, guild_id, mysql_host, mysql_port, mysql_database,
-            mysql_user, mysql_password, server_name, sync_interval_minutes
+            mysql_user, mysql_password, server_name, sync_interval_minutes,
+            last_sync_at
      FROM bridge_configs
      WHERE enabled = TRUE`,
   )
@@ -61,22 +63,36 @@ async function updateSyncStatus(
   )
 }
 
-/** Run the actual MySQL → PostgreSQL sync for one guild. */
+/** Run the actual MySQL → PostgreSQL sync for one guild.
+ *  Uses last_sync_at as a cursor for incremental syncs after the first run.
+ *  A 5-minute buffer is applied to avoid missing records updated near the boundary.
+ */
 async function syncGuild(cfg: BridgeConfigRow): Promise<string> {
   const label = `[bridge][guild=${cfg.guild_id}][server="${cfg.server_name}"]`
 
-  const players = await fetchPlayersForGuild({
-    host:     cfg.mysql_host,
-    port:     cfg.mysql_port,
-    database: cfg.mysql_database,
-    user:     cfg.mysql_user,
-    password: cfg.mysql_password,
-  })
+  // Incremental: only fetch records updated since last sync (minus 5 min buffer)
+  const since = cfg.last_sync_at
+    ? new Date(cfg.last_sync_at.getTime() - 5 * 60 * 1000)
+    : undefined
+  const mode = since ? "incremental" : "full"
 
-  console.log(`${label} Fetched ${players.length} player(s)`)
+  const players = await fetchPlayersForGuild(
+    {
+      host:     cfg.mysql_host,
+      port:     cfg.mysql_port,
+      database: cfg.mysql_database,
+      user:     cfg.mysql_user,
+      password: cfg.mysql_password,
+    },
+    since,
+  )
+
+  console.log(`${label} [${mode}] Fetched ${players.length} player(s)`)
 
   if (players.length === 0) {
-    const msg = "Connected — DBLog_Players is empty"
+    const msg = since
+      ? `Incremental sync — no new records since ${since.toISOString()}`
+      : "Connected — DBLog_Players is empty"
     await updateSyncStatus(cfg.guild_id, "ok", msg)
     return msg
   }
@@ -95,7 +111,7 @@ async function syncGuild(cfg: BridgeConfigRow): Promise<string> {
     totalLinked   += linked
   }
 
-  const summary = `Synced ${players.length} player(s): ${totalUpserted} upserted, ${totalLinked} linked to Discord`
+  const summary = `[${mode}] ${players.length} player(s): ${totalUpserted} upserted, ${totalLinked} linked to Discord`
   console.log(`${label} ${summary}`)
   await updateSyncStatus(cfg.guild_id, "ok", summary)
   await logSyncRun(cfg.guild_id, summary)

@@ -896,7 +896,7 @@ export default function UsersPage() {
         const stats = [
           { label: "Active Members", value: statsData.total_active_users, sub: `of ${statsData.total_registered} registered`, color: "text-emerald-400" },
           { label: "Slots Granted", value: slotsGranted, sub: "total across all roles", color: "text-white/80" },
-          { label: "IDs Submitted", value: statsData.total_identifiers, sub: `${slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0}% fill rate`, color: "var(--accent-primary)" },
+          { label: "IDs Submitted", value: statsData.total_identifiers, sub: `${slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0}% fill rate · all users`, color: "var(--accent-primary)" },
         ];
         return (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

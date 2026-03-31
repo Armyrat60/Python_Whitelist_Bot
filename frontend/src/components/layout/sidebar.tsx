@@ -10,7 +10,6 @@ import {
   PanelTop,
   Shield,
   Settings2,
-  BarChart3,
   ChevronsUpDown,
   Check,
   BookUser,
@@ -53,7 +52,6 @@ const configLinks = [
 
 const bottomLinks = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
-  { href: "/dashboard/data", label: "Data & Logs", icon: BarChart3 },
 ];
 
 const userLinks = [

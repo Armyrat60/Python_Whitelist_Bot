@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Plus,
@@ -445,15 +446,27 @@ function PanelCard({
             <Badge variant="outline">Log: #{logChannelName}</Badge>
           )}
           {panel.whitelist_id && (
-            <Badge variant="outline">{wlName}</Badge>
+            <Link href="/dashboard/whitelists">
+              <Badge variant="outline" className="cursor-pointer hover:border-white/30 transition-colors">
+                {wlName}
+              </Badge>
+            </Link>
           )}
-          {panelRoles !== undefined && panelRoles.length > 0 && (
-            <Badge variant="outline">
-              {panelRoles.length} role{panelRoles.length !== 1 ? "s" : ""}
+          {panelRoles !== undefined && panelRoles.map((r) => (
+            <Badge key={r.role_id} variant="outline" className="gap-1">
+              <ShieldCheck className="h-2.5 w-2.5 opacity-60" />
+              {r.role_name}
+              <span className="text-muted-foreground">{r.slot_limit}s</span>
             </Badge>
-          )}
-          {!panel.channel_id && !panel.whitelist_id && (
-            <span className="text-xs text-muted-foreground">Not configured</span>
+          ))}
+          {(!panel.channel_id || !panel.whitelist_id) && (
+            <span className="text-xs text-amber-400/80">
+              {!panel.channel_id && !panel.whitelist_id
+                ? "No channel or whitelist — configure before pushing"
+                : !panel.channel_id
+                ? "No channel set — configure before pushing"
+                : "No whitelist linked — configure before pushing"}
+            </span>
           )}
         </div>
 
@@ -641,9 +654,18 @@ function PanelCard({
           <>
             <Button
               size="sm"
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               onClick={handlePush}
-              disabled={pushPanel.isPending}
+              disabled={pushPanel.isPending || !panel.channel_id || !panel.whitelist_id}
+              title={
+                !panel.channel_id && !panel.whitelist_id
+                  ? "Configure a channel and whitelist before pushing"
+                  : !panel.channel_id
+                  ? "Configure a channel before pushing"
+                  : !panel.whitelist_id
+                  ? "Link a whitelist before pushing"
+                  : undefined
+              }
             >
               <Send className="mr-1 h-3 w-3" />
               Push
