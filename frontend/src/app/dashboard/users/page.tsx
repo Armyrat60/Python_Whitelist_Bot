@@ -28,6 +28,8 @@ import {
   Clock,
   UserRound,
   History,
+  Filter,
+  SlidersHorizontal,
 } from "lucide-react";
 import Link from "next/link";
 import { useUsers, useWhitelists, useSteamNames, useCategories, useRoleStats, useStats } from "@/hooks/use-settings";
@@ -774,6 +776,7 @@ function BulkActionBar({
 
 export default function UsersPage() {
   const [activeTab, setActiveTab] = useState<"members" | "role-history">("members");
+  const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -940,162 +943,242 @@ export default function UsersPage() {
       {activeTab === "members" && <>
 
       {/* ---- Toolbar ---- */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Search name, Discord ID, Steam ID…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="max-w-sm"
-              maxLength={100}
-            />
-            <Button variant="outline" size="icon" onClick={handleSearch}>
-              <Search className="h-4 w-4" />
-            </Button>
+      {(() => {
+        // Count active non-default filters
+        const activeFilterKeys = ["whitelist", "status", "category_id", "role_name", "verified"] as const;
+        const defaultFilters: Record<string, string> = { status: "active" };
+        const activeCount = activeFilterKeys.filter(k => {
+          const v = filters[k] ?? "";
+          return v !== "" && v !== (defaultFilters[k] ?? "");
+        }).length;
+
+        // Chip labels for active filters
+        const chips: { key: string; label: string }[] = [];
+        if (filters.whitelist) chips.push({ key: "whitelist", label: `Whitelist: ${whitelists?.find(w => w.slug === filters.whitelist)?.name ?? filters.whitelist}` });
+        if (filters.status && filters.status !== "active") chips.push({ key: "status", label: `Status: ${filters.status}` });
+        if (filters.category_id) chips.push({ key: "category_id", label: `Category: ${categories?.find(c => String(c.id) === filters.category_id)?.name ?? filters.category_id}` });
+        if (filters.role_name) chips.push({ key: "role_name", label: `Role: ${filters.role_name}` });
+        if (filters.verified === "true") chips.push({ key: "verified", label: "Verified only" });
+
+        return (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Search */}
+              <div className="flex flex-1 min-w-[200px] gap-2">
+                <Input
+                  placeholder="Search name, Discord ID, Steam ID…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  className="max-w-sm"
+                  maxLength={100}
+                />
+                <Button variant="outline" size="icon" onClick={handleSearch}>
+                  <Search className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Filters button */}
+              <Button
+                variant={showFilters || activeCount > 0 ? "secondary" : "outline"}
+                size="sm"
+                className="h-9 gap-1.5"
+                onClick={() => setShowFilters(v => !v)}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters
+                {activeCount > 0 && (
+                  <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-white/20 px-1 text-[10px] font-semibold">
+                    {activeCount}
+                  </span>
+                )}
+              </Button>
+
+              {/* View toggle */}
+              <div className="flex rounded-md border border-border">
+                <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-r-none" onClick={() => setViewMode("list")}>
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button variant={viewMode === "cards" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-l-none" onClick={() => setViewMode("cards")}>
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="ml-auto flex items-center gap-2">
+                {/* Export */}
+                <a href={`/api/admin/users/export?${new URLSearchParams(
+                  Object.fromEntries(Object.entries({ ...filters, ...(search ? { search } : {}) }).filter(([, v]) => Boolean(v)))
+                ).toString()}`} download="roster-export.csv">
+                  <Button variant="outline" size="sm">
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    Export
+                  </Button>
+                </a>
+
+                {/* Gap Report */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadGapReport}
+                  disabled={gapLoading}
+                  title="Discord members with a whitelist role who haven't submitted any IDs yet"
+                >
+                  {gapLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Users className="mr-1.5 h-3.5 w-3.5" />}
+                  Gap Report
+                </Button>
+
+                <SyncTiersButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
+              </div>
+            </div>
+
+            {/* Filter panel */}
+            {showFilters && (
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {/* Status */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Status</label>
+                    <Select
+                      value={filters.status ?? "active"}
+                      onValueChange={(v) => { setFilters(p => ({ ...p, status: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Active" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All statuses</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="expired">Expired</SelectItem>
+                        <SelectItem value="disabled_role_lost">Role Lost</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Whitelist */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Whitelist</label>
+                    <Select
+                      value={filters.whitelist ?? ""}
+                      onValueChange={(v) => { setFilters(p => ({ ...p, whitelist: v === "__all__" ? "" : (v ?? ""), category_id: "" })); setPage(1); }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All whitelists" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All whitelists</SelectItem>
+                        {whitelists?.map((wl) => (
+                          <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Role */}
+                  {roleOptions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Role</label>
+                      <Select
+                        value={filters.role_name ?? ""}
+                        onValueChange={(v) => { setFilters(p => ({ ...p, role_name: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="All roles" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All roles</SelectItem>
+                          {roleOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Category (manual whitelist only) */}
+                  {selectedWl?.is_manual && categories && categories.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Category</label>
+                      <Select
+                        value={filters.category_id ?? ""}
+                        onValueChange={(v) => { setFilters(p => ({ ...p, category_id: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All categories</SelectItem>
+                          {categories.map(cat => (
+                            <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Verified */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Verified</label>
+                    <Button
+                      variant={filters.verified === "true" ? "secondary" : "outline"}
+                      size="sm"
+                      className="h-8 w-full justify-start gap-1.5 text-xs"
+                      onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "true" ? "" : "true" })); setPage(1); }}
+                    >
+                      <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
+                      {filters.verified === "true" ? "Verified only" : "All members"}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Reset link */}
+                {activeCount > 0 && (
+                  <button
+                    className="text-[11px] text-muted-foreground/60 hover:text-white/60 transition-colors"
+                    onClick={() => { setFilters({ status: "active" }); setPage(1); }}
+                  >
+                    Reset to defaults
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Active filter chips */}
+            {chips.length > 0 && !showFilters && (
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map(({ key, label }) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] text-white/70"
+                  >
+                    {label}
+                    <button
+                      onClick={() => {
+                        setFilters(p => {
+                          const next = { ...p };
+                          if (key === "status") next.status = "active";
+                          else delete next[key];
+                          return next;
+                        });
+                        setPage(1);
+                      }}
+                      className="ml-0.5 text-muted-foreground/50 hover:text-white/80"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  className="text-[11px] text-muted-foreground/50 hover:text-white/60 transition-colors"
+                  onClick={() => { setFilters({ status: "active" }); setPage(1); }}
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-        <Select
-          value={filters.whitelist ?? ""}
-          onValueChange={(v) => {
-            setFilters((prev) => ({
-              ...prev,
-              whitelist: v === "__all__" ? "" : (v ?? ""),
-              category_id: "",
-            }));
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All whitelists" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All whitelists</SelectItem>
-            {whitelists?.map((wl) => (
-              <SelectItem key={wl.slug} value={wl.slug}>
-                {wl.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.status ?? ""}
-          onValueChange={(v) => {
-            setFilters((prev) => ({
-              ...prev,
-              status: v === "__all__" ? "" : (v ?? ""),
-            }));
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="All status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All status</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {selectedWl?.is_manual && categories && categories.length > 0 && (
-          <Select value={filters.category_id ?? ""} onValueChange={(v) => {
-            setFilters(prev => ({ ...prev, category_id: v === "__all__" ? "" : (v ?? "") }));
-            setPage(1);
-          }}>
-            <SelectTrigger className="w-40 h-8 text-xs">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All categories</SelectItem>
-              {categories.map(cat => (
-                <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {roleOptions.length > 0 && (
-          <Select
-            value={filters.role_name ?? ""}
-            onValueChange={(v) => {
-              setFilters((prev) => ({ ...prev, role_name: v === "__all__" ? "" : (v ?? "") }));
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="All roles" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All roles</SelectItem>
-              {roleOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {/* View toggle */}
-        <div className="flex rounded-md border border-border">
-          <Button
-            variant={viewMode === "list" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 rounded-r-none"
-            onClick={() => setViewMode("list")}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === "cards" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 rounded-l-none"
-            onClick={() => setViewMode("cards")}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Verified filter */}
-        <Button
-          variant={filters.verified === "true" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-8 px-3 text-xs gap-1.5"
-          title="Show only bridge-verified users"
-          onClick={() => { setFilters((p) => ({ ...p, verified: p.verified === "true" ? "" : "true" })); setPage(1); }}
-        >
-          <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
-          Verified
-        </Button>
-
-
-        {/* Export All */}
-        <a href={`/api/admin/users/export?${new URLSearchParams(
-          Object.fromEntries(Object.entries({ ...filters, ...(search ? { search } : {}) }).filter(([, v]) => Boolean(v)))
-        ).toString()}`} download="roster-export.csv">
-          <Button variant="outline" size="sm">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Export
-          </Button>
-        </a>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadGapReport}
-          disabled={gapLoading}
-          title="Shows Discord members who have a whitelist role but haven't submitted any Steam or EOS IDs yet"
-        >
-          {gapLoading ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Users className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Gap Report
-        </Button>
-        <SyncTiersButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
-      </div>
+        );
+      })()}
 
       {/* ---- Member Gap Report ---- */}
       {showGapReport && gapData && (
