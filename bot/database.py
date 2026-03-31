@@ -576,6 +576,11 @@ POSTGRES_MIGRATIONS = [
     # --- Per-category squad group assignment ---
     "ALTER TABLE whitelist_categories ADD COLUMN IF NOT EXISTS squad_group VARCHAR(100) NULL",
 
+    # --- Panel push status tracking ---
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_status VARCHAR(20) NULL",
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_error TEXT NULL",
+    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_at TIMESTAMP NULL",
+
     # --- Discord username / server nickname / clan tag ---
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(255) NULL",
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_nick VARCHAR(255) NULL",
@@ -1035,7 +1040,7 @@ class Database:
         allowed = {
             "name", "channel_id", "log_channel_id", "whitelist_id",
             "panel_message_id", "is_default", "enabled",
-            "show_role_mentions",
+            "show_role_mentions", "last_push_status", "last_push_error", "last_push_at",
         }
         bool_cols = {"is_default", "enabled", "show_role_mentions"}
         parts = []

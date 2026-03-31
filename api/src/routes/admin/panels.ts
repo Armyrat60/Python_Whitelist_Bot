@@ -66,6 +66,9 @@ export default async function panelRoutes(app: FastifyInstance) {
       is_default:         p.isDefault,
       enabled:            p.enabled,
       show_role_mentions: p.showRoleMentions,
+      last_push_status:   p.lastPushStatus  ?? null,
+      last_push_error:    p.lastPushError   ?? null,
+      last_push_at:       p.lastPushAt      ?? null,
     }))
 
     return reply.send(safeJson({ panels: result }))

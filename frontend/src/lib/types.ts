@@ -83,6 +83,9 @@ export interface Panel {
   is_default: boolean;
   enabled: boolean;
   show_role_mentions: boolean;
+  last_push_status: "ok" | "error" | null;
+  last_push_error: string | null;
+  last_push_at: string | null;
 }
 
 export interface PanelRole {
@@ -203,6 +206,7 @@ export interface BridgeConfig {
 export interface HealthAlert {
   level: "warning" | "info" | "error";
   message: string;
+  link?: string;
 }
 
 export interface HealthStatus {

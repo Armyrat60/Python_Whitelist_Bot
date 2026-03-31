@@ -715,18 +715,36 @@ class WhitelistBot(commands.Bot):
         if posted is not None:
             # Save message ID to BOTH panels table and whitelists table (for backward compat)
             if panel_record:
-                await self.db.update_panel(panel_record["id"], panel_message_id=posted.id, channel_id=posted.channel.id)
+                await self.db.update_panel(
+                    panel_record["id"],
+                    panel_message_id=posted.id,
+                    channel_id=posted.channel.id,
+                    last_push_status="ok",
+                    last_push_error=None,
+                    last_push_at=utcnow(),
+                )
             await self.db.update_whitelist(whitelist_id, panel_channel_id=posted.channel.id, panel_message_id=posted.id)
             actor = interaction.user.id if interaction else None
             await self.db.audit(guild_id, "panel_post", actor, None, f"panel={panel_record['name'] if panel_record else 'unknown'} channel={posted.channel.id} message={posted.id}", whitelist_id)
         else:
+            # Determine the specific error message for the status
+            _push_err = (
+                "Bot is missing Send Messages or Embed Links permission in the configured channel"
+                if stored_channel_id
+                else "No channel is configured for this panel"
+            )
             log.warning(
-                "post_or_refresh_panel: nothing posted for whitelist_id=%s guild=%s — "
-                "panel_record=%s stored_channel_id=%s stored_message_id=%s",
-                whitelist_id, guild_id,
-                panel_record["id"] if panel_record else None,
+                "%s nothing posted — panel_record=%s stored_channel_id=%s stored_message_id=%s",
+                label, panel_record["id"] if panel_record else None,
                 stored_channel_id, stored_message_id,
             )
+            if panel_record:
+                await self.db.update_panel(
+                    panel_record["id"],
+                    last_push_status="error",
+                    last_push_error=_push_err,
+                    last_push_at=utcnow(),
+                )
         return posted
 
     async def enforce_member_roles(self, member: discord.Member):

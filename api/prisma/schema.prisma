@@ -188,9 +188,12 @@ model Panel {
   panelMessageId   BigInt?  @map("panel_message_id")
   isDefault        Boolean  @default(false) @map("is_default")
   enabled          Boolean  @default(true)
-  showRoleMentions Boolean  @default(true) @map("show_role_mentions")
-  createdAt        DateTime @map("created_at")
-  updatedAt        DateTime @map("updated_at")
+  showRoleMentions Boolean   @default(true) @map("show_role_mentions")
+  lastPushStatus   String?   @map("last_push_status") @db.VarChar(20)
+  lastPushError    String?   @map("last_push_error")
+  lastPushAt       DateTime? @map("last_push_at")
+  createdAt        DateTime  @map("created_at")
+  updatedAt        DateTime  @map("updated_at")
 
   whitelist        Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
   panelRoles       PanelRole[]

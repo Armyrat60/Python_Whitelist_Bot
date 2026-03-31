@@ -164,12 +164,12 @@ export default function PanelsPage() {
 
 // ─── Status dot helper ──────────────────────────────────────────────────────
 function getStatusColor(panel: Panel): string {
+  if (panel.last_push_status === "error") return "bg-red-500";
   const hasChannel = !!panel.channel_id;
   const hasWhitelist = !!panel.whitelist_id;
-  // Green if channel + whitelist both set, yellow if partially configured, red if nothing
-  if (hasChannel && hasWhitelist) return "bg-emerald-500";
+  if (hasChannel && hasWhitelist) return panel.last_push_status === "ok" ? "bg-emerald-500" : "bg-yellow-500";
   if (hasChannel || hasWhitelist) return "bg-yellow-500";
-  return "bg-red-500";
+  return "bg-red-500/60";
 }
 
 // ── Inline-editable panel role row ───────────────────────────────────────────
@@ -437,6 +437,22 @@ function PanelCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Push status banner */}
+        {panel.last_push_status === "error" && panel.last_push_error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/8 px-3 py-2">
+            <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-red-400">Push failed</p>
+              <p className="text-[11px] text-red-300/70">{panel.last_push_error}</p>
+            </div>
+          </div>
+        )}
+        {panel.last_push_status === "ok" && panel.last_push_at && (
+          <p className="text-[11px] text-emerald-400/60">
+            Last pushed {new Date(panel.last_push_at).toLocaleString()}
+          </p>
+        )}
+
         {/* Always show badges summary */}
         <div className="flex flex-wrap gap-1.5">
           {panel.channel_id && (

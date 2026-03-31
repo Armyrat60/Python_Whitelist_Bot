@@ -231,7 +231,7 @@ export default async function auditRoutes(app: FastifyInstance) {
   app.get("/health", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const alerts: Array<{ level: "warning" | "info" | "error"; message: string }> = []
+    const alerts: Array<{ level: "warning" | "info" | "error"; message: string; link?: string }> = []
 
     const [
       panelsWithNoChannel,
@@ -260,7 +260,16 @@ export default async function auditRoutes(app: FastifyInstance) {
     ])
 
     if (panelsWithNoChannel > 0) {
-      alerts.push({ level: "warning", message: `${panelsWithNoChannel} panel(s) have no channel configured` })
+      alerts.push({ level: "warning", message: `${panelsWithNoChannel} panel(s) have no channel configured`, link: "/dashboard/panels" })
+    }
+
+    // Panels with push errors (bot reported a permission or config problem)
+    const panelsWithErrors = await prisma.panel.findMany({
+      where:  { guildId, lastPushStatus: "error" },
+      select: { name: true, lastPushError: true },
+    })
+    for (const p of panelsWithErrors) {
+      alerts.push({ level: "error", message: `Panel "${p.name}": ${p.lastPushError ?? "push failed"}`, link: "/dashboard/panels" })
     }
 
     if (duplicateSteamRows.length > 0) {
