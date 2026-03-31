@@ -9,6 +9,7 @@ import { useGuild } from "@/hooks/use-guild";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { APP_VERSION } from "@/lib/version";
+import { NotificationBell } from "@/components/layout/system-alerts";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -68,6 +69,7 @@ export function Topbar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <NotificationBell />
         <span className="hidden rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
           v{APP_VERSION}
         </span>

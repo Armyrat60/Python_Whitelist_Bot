@@ -1,85 +1,149 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { AlertTriangle, Info, XCircle, X, ChevronRight } from "lucide-react";
+import { Bell, AlertTriangle, Info, XCircle, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealth } from "@/hooks/use-settings";
 import type { HealthAlert } from "@/lib/types";
 
 const STYLES = {
   error: {
-    bar:   "bg-red-500/10 border-red-500/20",
     icon:  "text-red-400",
     text:  "text-red-200",
-    close: "text-red-400/60 hover:text-red-300",
+    sub:   "text-red-300/60",
+    dot:   "bg-red-500",
+    row:   "border-red-500/20 bg-red-500/8",
     Icon:  XCircle,
   },
   warning: {
-    bar:   "bg-amber-500/10 border-amber-500/20",
     icon:  "text-amber-400",
-    text:  "text-amber-200/80",
-    close: "text-amber-400/60 hover:text-amber-300",
+    text:  "text-amber-200/90",
+    sub:   "text-amber-300/60",
+    dot:   "bg-amber-500",
+    row:   "border-amber-500/20 bg-amber-500/8",
     Icon:  AlertTriangle,
   },
   info: {
-    bar:   "bg-blue-500/10 border-blue-500/20",
     icon:  "text-blue-400",
-    text:  "text-blue-200/70",
-    close: "text-blue-400/60 hover:text-blue-300",
+    text:  "text-blue-200/80",
+    sub:   "text-blue-300/60",
+    dot:   "bg-blue-500",
+    row:   "border-blue-500/20 bg-blue-500/8",
     Icon:  Info,
   },
 } as const;
 
-export function SystemAlerts() {
-  const { data } = useHealth();
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-
-  const alerts = (data?.alerts ?? []).filter(
-    (a) => !dismissed.has(alertKey(a))
-  );
-
-  if (alerts.length === 0) return null;
-
-  return (
-    <div className="border-b border-white/[0.05] space-y-px">
-      {alerts.map((alert) => {
-        const key = alertKey(alert);
-        const s = STYLES[alert.level];
-        const { Icon } = s;
-        return (
-          <div
-            key={key}
-            className={cn("flex items-center gap-3 border-l-2 px-4 py-2.5", s.bar,
-              alert.level === "error"   ? "border-l-red-500/60" :
-              alert.level === "warning" ? "border-l-amber-500/60" :
-                                          "border-l-blue-500/60"
-            )}
-          >
-            <Icon className={cn("h-3.5 w-3.5 shrink-0", s.icon)} />
-            <span className={cn("flex-1 text-xs", s.text)}>{alert.message}</span>
-            {alert.link && (
-              <Link
-                href={alert.link}
-                className={cn("flex items-center gap-0.5 text-[11px] font-medium shrink-0", s.icon, "hover:opacity-80 transition-opacity")}
-              >
-                Fix <ChevronRight className="h-3 w-3" />
-              </Link>
-            )}
-            <button
-              onClick={() => setDismissed(prev => new Set([...prev, key]))}
-              className={cn("shrink-0 transition-colors", s.close)}
-              aria-label="Dismiss"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function alertKey(a: HealthAlert) {
   return `${a.level}:${a.message}`;
+}
+
+export function NotificationBell() {
+  const { data } = useHealth();
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const alerts = (data?.alerts ?? []).filter((a) => !dismissed.has(alertKey(a)));
+  const count = alerts.length;
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const badgeColor =
+    alerts.some((a) => a.level === "error")   ? "bg-red-500" :
+    alerts.some((a) => a.level === "warning") ? "bg-amber-500" :
+    count > 0                                  ? "bg-blue-500" : "";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "relative flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+          open
+            ? "bg-white/10 text-foreground"
+            : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+        )}
+        aria-label="Notifications"
+      >
+        <Bell className="h-4 w-4" />
+        {count > 0 && (
+          <span
+            className={cn(
+              "absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white",
+              badgeColor
+            )}
+          >
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-white/[0.08] shadow-xl"
+          style={{ background: "oklch(0.18 0 0)" }}
+        >
+          <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+            <span className="text-sm font-semibold text-foreground">System Alerts</span>
+            {count > 0 ? (
+              <button
+                onClick={() => setDismissed(new Set(alerts.map(alertKey)))}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+
+          {count === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+              <Bell className="h-6 w-6 text-muted-foreground/40" />
+              <p className="text-xs text-muted-foreground">No active alerts</p>
+            </div>
+          ) : (
+            <div className="max-h-80 divide-y divide-white/[0.04] overflow-y-auto">
+              {alerts.map((alert) => {
+                const key = alertKey(alert);
+                const s = STYLES[alert.level];
+                const { Icon } = s;
+                return (
+                  <div key={key} className={cn("flex items-start gap-3 px-4 py-3", s.row)}>
+                    <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", s.icon)} />
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("text-xs leading-snug", s.text)}>{alert.message}</p>
+                      {alert.link && (
+                        <Link
+                          href={alert.link}
+                          onClick={() => setOpen(false)}
+                          className={cn("mt-1 flex items-center gap-0.5 text-[11px] font-medium", s.icon, "hover:opacity-80 transition-opacity")}
+                        >
+                          Fix <ChevronRight className="h-3 w-3" />
+                        </Link>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setDismissed((prev) => new Set([...prev, key]))}
+                      className="mt-0.5 shrink-0 text-white/20 transition-colors hover:text-white/50"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
