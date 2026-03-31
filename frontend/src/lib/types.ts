@@ -58,6 +58,7 @@ export interface WhitelistCategory {
   name: string;
   slot_limit: number | null;
   sort_order: number;
+  squad_group: string | null;
   created_at: string;
   updated_at: string;
   manager_count: number;

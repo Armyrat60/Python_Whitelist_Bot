@@ -394,8 +394,8 @@ class _EditIDsView(discord.ui.View):
         self.slots = slots
         self.existing = existing
 
-        # Slot selector dropdown (only if there are slots to edit)
-        if slots > 0:
+        # Slot selector dropdown — only needed when there are multiple slots
+        if slots > 1:
             options = []
             for i in range(1, min(slots + 1, 26)):  # Discord max 25 options
                 current = existing[i - 1] if i - 1 < len(existing) else None
@@ -411,6 +411,10 @@ class _EditIDsView(discord.ui.View):
             select.callback = self._slot_selected
             self.add_item(select)
 
+        # Single-slot: relabel the button so it reads "Edit" instead of "Edit All"
+        if slots == 1:
+            self.edit_button.label = "Edit"
+
     async def _slot_selected(self, interaction: discord.Interaction):
         slot_num = int(interaction.data["values"][0])
         current = self.existing[slot_num - 1][1] if slot_num - 1 < len(self.existing) else ""
@@ -420,9 +424,16 @@ class _EditIDsView(discord.ui.View):
 
     @discord.ui.button(label="Edit All", style=discord.ButtonStyle.primary, emoji="✏️", row=2)
     async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(
-            IdentifierModal(self.bot, self.whitelist_type, self.slots, self.existing)
-        )
+        if self.slots == 1:
+            # Single slot — open a direct single-slot modal, no need to pick from a list
+            current = self.existing[0][1] if self.existing else ""
+            await interaction.response.send_modal(
+                _SingleSlotModal(self.bot, self.whitelist_type, self.whitelist_id, 1, current, self.slots, self.existing)
+            )
+        else:
+            await interaction.response.send_modal(
+                IdentifierModal(self.bot, self.whitelist_type, self.slots, self.existing)
+            )
 
     @discord.ui.button(label="Clear All", style=discord.ButtonStyle.danger, emoji="🗑️", row=2)
     async def clear_button(self, interaction: discord.Interaction, button: discord.ui.Button):

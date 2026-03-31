@@ -336,7 +336,7 @@ export function useCreateCategory(whitelistId: number) {
 export function useUpdateCategory(whitelistId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: number; name?: string; slot_limit?: number | null; sort_order?: number }) =>
+    mutationFn: ({ id, ...data }: { id: number; name?: string; slot_limit?: number | null; sort_order?: number; squad_group?: string | null }) =>
       api.put(`/api/admin/whitelists/${whitelistId}/categories/${id}`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["categories", whitelistId] }),
   });

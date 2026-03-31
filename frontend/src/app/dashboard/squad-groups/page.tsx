@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
+import { Plus, Trash2, Pencil, Check, X, Layers } from "lucide-react";
 import {
   useGroups,
   useCreateGroup,
@@ -398,7 +398,7 @@ function GroupCard({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SquadGroupsPage() {
-  const { data: groups, isLoading } = useGroups();
+  const { data: groups, isLoading, isError } = useGroups();
   const { data: availablePerms } = useSquadPermissions();
   const { data: allWhitelists } = useWhitelists();
 
@@ -410,6 +410,15 @@ export default function SquadGroupsPage() {
         {[1, 2, 3].map((i) => (
           <Skeleton key={i} className="h-32 w-full rounded-xl" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-red-500/20 bg-red-500/5 py-12 text-center">
+        <p className="text-sm font-medium text-red-400">Failed to load data</p>
+        <p className="mt-1 text-xs text-muted-foreground">Check your connection and refresh the page.</p>
       </div>
     );
   }
@@ -436,6 +445,7 @@ export default function SquadGroupsPage() {
 
       {(!groups || groups.length === 0) ? (
         <div className="rounded-xl border border-dashed border-white/10 py-16 text-center">
+          <Layers className="h-8 w-8 text-muted-foreground/30 mb-3 mx-auto" />
           <p className="text-sm text-muted-foreground">No groups yet. Create one to get started.</p>
         </div>
       ) : (

@@ -6,24 +6,18 @@ import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Users,
-  FileText,
-  ArrowUpDown,
   List,
   PanelTop,
   Shield,
-  Sliders,
+  Settings2,
+  BarChart3,
   ChevronsUpDown,
   Check,
-  Bell,
   BookUser,
-  UserRound,
   Search,
-  Database,
-  Clock,
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   Popover,
@@ -48,27 +42,18 @@ const dashboardLinks = [
 const rosterLinks = [
   { href: "/dashboard/roster", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
-  { href: "/dashboard/role-history", label: "Role History", icon: Clock },
-];
-
-const playerLinks = [
-  { href: "/dashboard/players", label: "Profiles", icon: UserRound },
   { href: "/dashboard/search", label: "Player Search", icon: Search },
 ];
 
-const manageLinks = [
-  { href: "/dashboard/panels", label: "Panels", icon: PanelTop },
+const configLinks = [
+  { href: "/dashboard/panels", label: "Signup Panels", icon: PanelTop },
   { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
-  { href: "/dashboard/squad-groups", label: "Squad Groups", icon: Layers },
+  { href: "/dashboard/squad-groups", label: "Permission Groups", icon: Layers },
 ];
 
-const settingsLinks = [
-  { href: "/dashboard/settings", label: "Settings", icon: Sliders },
-  { href: "/dashboard/permissions", label: "Permissions", icon: Shield },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
-  { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
-  { href: "/dashboard/audit", label: "Audit Log", icon: FileText },
-  { href: "/dashboard/bridge", label: "SquadJS Bridge", icon: Database },
+const bottomLinks = [
+  { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
+  { href: "/dashboard/data", label: "Data & Logs", icon: BarChart3 },
 ];
 
 const userLinks = [
@@ -206,93 +191,45 @@ export function Sidebar() {
       {/* Active guild card */}
       <SidebarGuildCard />
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
+      {/* Scrollable primary navigation */}
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-2">
         <div className="pt-2 pb-1">
           <div className="h-px bg-white/[0.06]" />
         </div>
 
         {!isRosterManager && dashboardLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
+          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
 
         <SectionLabel>Rosters</SectionLabel>
-
-        {/* Roster managers only see roster links */}
         {rosterLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
+          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
 
         {!isRosterManager && (
           <>
-            <SectionLabel>Players</SectionLabel>
-
-            {playerLinks.map((link) => (
-              <NavLink
-                key={link.href}
-                href={link.href}
-                label={link.label}
-                icon={link.icon}
-                active={isActive(link.href)}
-              />
-            ))}
-
-            <SectionLabel>Manage</SectionLabel>
-
-            {manageLinks.map((link) => (
-              <NavLink
-                key={link.href}
-                href={link.href}
-                label={link.label}
-                icon={link.icon}
-                active={isActive(link.href)}
-              />
-            ))}
-
-            <SectionLabel>Settings</SectionLabel>
-
-            {settingsLinks.map((link) => (
-              <NavLink
-                key={link.href}
-                href={link.href}
-                label={link.label}
-                icon={link.icon}
-                active={isActive(link.href)}
-              />
+            <SectionLabel>Configuration</SectionLabel>
+            {configLinks.map((link) => (
+              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
             ))}
           </>
         )}
-
-        <div className="py-2">
-          <Separator className="bg-white/[0.06]" />
-        </div>
-
-        {userLinks.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            icon={link.icon}
-            active={isActive(link.href)}
-          />
-        ))}
       </nav>
+
+      {/* Fixed bottom section — Settings, Data, My Whitelist */}
+      <div className="shrink-0 border-t border-white/[0.06] px-3 pt-2 pb-2 space-y-0.5">
+        {!isRosterManager && bottomLinks.map((link) => (
+          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+        ))}
+        <div className="my-1.5 h-px bg-white/[0.06]" />
+        {userLinks.map((link) => (
+          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+        ))}
+      </div>
 
       {/* Bottom accent bar */}
       <div
-        className="h-0.5 w-full"
+        className="h-0.5 w-full shrink-0"
         style={{ background: "linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)", opacity: 0.4 }}
       />
     </aside>
@@ -304,7 +241,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <div className="pt-4 pb-1">
       <p
         className="px-3 text-[10px] font-semibold uppercase tracking-widest"
-        style={{ color: "color-mix(in srgb, var(--accent-primary) 60%, #9CA3AF)" }}
+        style={{ color: "color-mix(in srgb, var(--accent-primary) 50%, var(--muted-foreground, #9CA3AF))" }}
       >
         {children}
       </p>
@@ -364,7 +301,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
 
   const allLinks = isRosterManager
     ? [...rosterLinks, ...userLinks]
-    : [...dashboardLinks, ...rosterLinks, ...playerLinks, ...manageLinks, ...settingsLinks, ...userLinks];
+    : [...dashboardLinks, ...rosterLinks, ...configLinks, ...bottomLinks, ...userLinks];
 
   return (
     <>

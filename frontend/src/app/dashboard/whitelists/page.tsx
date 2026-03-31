@@ -11,6 +11,7 @@ import {
   Check,
   X,
   RefreshCw,
+  Shield,
 } from "lucide-react";
 import {
   useWhitelists,
@@ -75,7 +76,7 @@ function slugify(name: string) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WhitelistsPage() {
-  const { data: whitelists, isLoading } = useWhitelists();
+  const { data: whitelists, isLoading, isError } = useWhitelists();
   const { data: groups } = useGroups();
   const toggleWhitelist = useToggleWhitelist();
   const createWhitelist = useCreateWhitelist();
@@ -108,6 +109,15 @@ export default function WhitelistsPage() {
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-48 w-full rounded-xl" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-red-500/20 bg-red-500/5 py-12 text-center">
+        <p className="text-sm font-medium text-red-400">Failed to load data</p>
+        <p className="mt-1 text-xs text-muted-foreground">Check your connection and refresh the page.</p>
       </div>
     );
   }
@@ -189,6 +199,7 @@ export default function WhitelistsPage() {
 
         {roleWhitelists.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-12 text-center">
+            <Shield className="h-8 w-8 text-muted-foreground/30 mb-3" />
             <p className="text-sm font-medium">No Discord whitelists yet</p>
             <p className="mt-1 text-xs text-muted-foreground">Create a whitelist to get started.</p>
           </div>
@@ -310,7 +321,7 @@ function WhitelistCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="flex-1 truncate text-xs font-mono text-muted-foreground">
-            {url || <span className="italic text-muted-foreground/50">URL pending deploy…</span>}
+            {url || <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">URL pending deploy</Badge>}
           </span>
           {url && (
             <Button variant="ghost" size="icon-xs" onClick={copyUrl} title="Copy URL">

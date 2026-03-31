@@ -175,15 +175,15 @@ export default function PlayerSearchPage() {
             </div>
           )}
 
-          {players.map((p) => (
-            <PlayerCard key={p.discord_id} player={p} />
-          ))}
-
           {players.length > 0 && (
             <p className="text-center text-xs text-muted-foreground pt-1">
               {players.length} result{players.length !== 1 ? "s" : ""}
             </p>
           )}
+
+          {players.map((p) => (
+            <PlayerCard key={p.discord_id} player={p} />
+          ))}
         </div>
       )}
 

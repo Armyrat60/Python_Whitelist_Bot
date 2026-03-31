@@ -66,6 +66,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         name:           c.name,
         slot_limit:     c.slotLimit,
         sort_order:     c.sortOrder,
+        squad_group:    c.squadGroup ?? null,
         created_at:     c.createdAt,
         updated_at:     c.updatedAt,
         manager_count:  c._count.managers,
@@ -93,6 +94,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         name:        string
         slot_limit?: number | null
         sort_order?: number
+        squad_group?: string | null
       }
 
       if (!body.name || typeof body.name !== "string") {
@@ -104,20 +106,22 @@ export default async function categoryRoutes(app: FastifyInstance) {
         data: {
           guildId,
           whitelistId,
-          name:      body.name.trim(),
-          slotLimit: body.slot_limit ?? null,
-          sortOrder: body.sort_order ?? 0,
-          createdAt: now,
-          updatedAt: now,
+          name:       body.name.trim(),
+          slotLimit:  body.slot_limit ?? null,
+          sortOrder:  body.sort_order ?? 0,
+          squadGroup: body.squad_group ?? null,
+          createdAt:  now,
+          updatedAt:  now,
         },
       })
 
       return reply.code(201).send(safeJson({
-        ok:         true,
-        id:         category.id,
-        name:       category.name,
-        slot_limit: category.slotLimit,
-        sort_order: category.sortOrder,
+        ok:          true,
+        id:          category.id,
+        name:        category.name,
+        slot_limit:  category.slotLimit,
+        sort_order:  category.sortOrder,
+        squad_group: category.squadGroup ?? null,
       }))
     }
   )
@@ -142,15 +146,17 @@ export default async function categoryRoutes(app: FastifyInstance) {
       if (!existing) return reply.code(404).send({ error: "Category not found" })
 
       const body = req.body as {
-        name?:       string
-        slot_limit?: number | null
-        sort_order?: number
+        name?:        string
+        slot_limit?:  number | null
+        sort_order?:  number
+        squad_group?: string | null
       }
 
       const data: Record<string, unknown> = { updatedAt: new Date() }
-      if (body.name       !== undefined) data.name      = body.name.trim()
-      if (body.slot_limit !== undefined) data.slotLimit = body.slot_limit ?? null
-      if (body.sort_order !== undefined) data.sortOrder = body.sort_order
+      if (body.name        !== undefined) data.name       = body.name.trim()
+      if (body.slot_limit  !== undefined) data.slotLimit  = body.slot_limit ?? null
+      if (body.sort_order  !== undefined) data.sortOrder  = body.sort_order
+      if (body.squad_group !== undefined) data.squadGroup = body.squad_group ?? null
 
       await prisma.whitelistCategory.update({ where: { id: categoryId }, data })
 

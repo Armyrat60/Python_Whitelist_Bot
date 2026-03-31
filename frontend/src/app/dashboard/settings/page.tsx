@@ -1,20 +1,32 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
   Shield, User, Globe, Crown, Lock, ChevronRight, Clock,
+  Plus, Users, Tag, Send,
 } from "lucide-react";
 import {
   useSettings,
   useRoles,
   useChannels,
   useSaveSettings,
+  useNotifications,
+  useSaveNotifications,
+  useTriggerReport,
+  usePermissions,
+  useGrantPermission,
+  useUpdatePermission,
+  useRevokePermission,
+  useRolePermissions,
+  useGrantRolePermission,
+  useUpdateRolePermission,
+  useRevokeRolePermission,
 } from "@/hooks/use-settings";
 import { useSession } from "@/hooks/use-session";
 import type { Settings } from "@/lib/types";
+import type { PermissionLevel } from "@/lib/types";
 import { useAccent, ACCENT_PRESETS, type PresetName } from "@/components/accent-context";
 
 import { Button } from "@/components/ui/button";
@@ -87,6 +99,37 @@ const PRESET_TAGS: Record<string, string> = {
   "Night Vision": "NVG · High-Tech",
   "Phantom":      "Esports · Flair",
 };
+
+/* ─── Permission level constants ─── */
+const LEVEL_LABELS: Record<PermissionLevel, string> = {
+  owner:          "Owner",
+  admin:          "Admin",
+  roster_manager: "Roster Manager",
+  viewer:         "Viewer",
+};
+
+const LEVEL_DESCRIPTIONS: Record<PermissionLevel, string> = {
+  owner:          "Full access — auto-detected from Discord guild ownership",
+  admin:          "Full access — auto-detected from MANAGE_GUILD permission or mod role",
+  roster_manager: "Can manage Manual Roster categories they are assigned to",
+  viewer:         "Read-only access to the dashboard",
+};
+
+const LEVEL_BADGE: Record<PermissionLevel, string> = {
+  owner:          "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  admin:          "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  roster_manager: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  viewer:         "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
+};
+
+const GRANTABLE_LEVELS: PermissionLevel[] = ["roster_manager", "viewer"];
+
+/* ─── Notification event groups ─── */
+const NOTIF_GROUPS: { label: string; events: string[] }[] = [
+  { label: "User Events",      events: ["user_joined", "user_removed", "user_left_discord"] },
+  { label: "Role Events",      events: ["role_lost", "role_returned"] },
+  { label: "Reports & Alerts", events: ["report", "bot_alert", "admin_action"] },
+];
 
 /* ─── Helpers ─── */
 function avatarUrl(userId: string, avatar: string) {
@@ -170,7 +213,21 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const saveSettings = useSaveSettings();
   const accent = useAccent();
-  const router = useRouter();
+
+  /* ── Notification routing hooks ── */
+  const { data: notifData, isLoading: notifLoading } = useNotifications();
+  const saveNotifRouting = useSaveNotifications();
+  const triggerReport = useTriggerReport();
+
+  /* ── Permission hooks ── */
+  const { data: permissions, isLoading: permissionsLoading } = usePermissions();
+  const { data: rolePermissions, isLoading: rolePermissionsLoading } = useRolePermissions();
+  const grant        = useGrantPermission();
+  const update       = useUpdatePermission();
+  const revoke       = useRevokePermission();
+  const grantRole    = useGrantRolePermission();
+  const updateRole   = useUpdateRolePermission();
+  const revokeRole   = useRevokeRolePermission();
 
   const botSettings = data?.bot_settings as Record<string, string> | undefined;
 
@@ -195,6 +252,19 @@ export default function SettingsPage() {
   /* ── Account / Timezone form state ── */
   const [timezone, setTimezone] = useState("UTC");
 
+  /* ── Notification routing state ── */
+  const [notifRouting, setNotifRouting] = useState<Record<string, string>>({});
+  const [notifRoutingDirty, setNotifRoutingDirty] = useState(false);
+
+  /* ── Permission form state ── */
+  const [showAddUser, setShowAddUser]       = useState(false);
+  const [newDiscordId, setNewDiscordId]     = useState("");
+  const [newDiscordName, setNewDiscordName] = useState("");
+  const [newUserLevel, setNewUserLevel]     = useState<PermissionLevel>("viewer");
+  const [showAddRole, setShowAddRole]       = useState(false);
+  const [newRoleId, setNewRoleId]           = useState("");
+  const [newRoleLevel, setNewRoleLevel]     = useState<PermissionLevel>("viewer");
+
   /* ── Sync state from server ── */
   useEffect(() => {
     if (!botSettings) return;
@@ -215,6 +285,14 @@ export default function SettingsPage() {
         : []
     );
   }, [botSettings]);
+
+  /* ── Seed notification routing from API ── */
+  useEffect(() => {
+    if (notifData?.routing) {
+      setNotifRouting(notifData.routing);
+      setNotifRoutingDirty(false);
+    }
+  }, [notifData]);
 
   /* ── Save helpers ── */
   function save(fields: Partial<Settings & Record<string, string>>) {
@@ -256,6 +334,64 @@ export default function SettingsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timezone]);
 
+  /* ── Notification routing helpers ── */
+  function setNotifChannel(eventType: string, channelId: string) {
+    setNotifRouting((prev) => ({ ...prev, [eventType]: channelId === "__none__" ? "" : channelId }));
+    setNotifRoutingDirty(true);
+  }
+
+  function handleSaveNotifRouting() {
+    saveNotifRouting.mutate(notifRouting, {
+      onSuccess: () => {
+        toast.success("Notification routing saved");
+        setNotifRoutingDirty(false);
+      },
+      onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save"),
+    });
+  }
+
+  function handleTriggerReport() {
+    triggerReport.mutate(undefined, {
+      onSuccess: () => toast.success("Report triggered — check your configured report channel"),
+      onError: () => toast.error("Failed to trigger report"),
+    });
+  }
+
+  /* ── Permission handler helpers ── */
+  function handleGrantUser() {
+    if (!newDiscordId.trim()) return;
+    grant.mutate(
+      { discord_id: newDiscordId.trim(), discord_name: newDiscordName.trim() || undefined, permission_level: newUserLevel },
+      {
+        onSuccess: () => {
+          setNewDiscordId("");
+          setNewDiscordName("");
+          setNewUserLevel("viewer");
+          setShowAddUser(false);
+        },
+      }
+    );
+  }
+
+  function handleGrantRole() {
+    if (!newRoleId) return;
+    const role = roles?.find((r) => r.id === newRoleId);
+    grantRole.mutate(
+      { role_id: newRoleId, role_name: role?.name, permission_level: newRoleLevel },
+      {
+        onSuccess: () => {
+          setNewRoleId("");
+          setNewRoleLevel("viewer");
+          setShowAddRole(false);
+        },
+      }
+    );
+  }
+
+  const grantedRoleIds = new Set((rolePermissions ?? []).map((r) => r.role_id));
+  const availableRoles = (roles ?? []).filter((r) => !grantedRoleIds.has(r.id));
+  const isAdmin = session?.is_mod ?? false;
+
   /* ── Org theme helpers (passed through accent context) ── */
   function handleSaveOrgTheme(p: string, s: string) {
     save({ accent_primary: p, accent_secondary: s });
@@ -274,7 +410,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       {/* Page header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
@@ -292,13 +428,7 @@ export default function SettingsPage() {
             <button
               key={t.id}
               type="button"
-              onClick={() => {
-                if (t.id === "notifications") {
-                  router.push("/dashboard/notifications");
-                } else {
-                  setActiveTab(t.id);
-                }
-              }}
+              onClick={() => setActiveTab(t.id)}
               className={cn(
                 "flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors",
                 active
@@ -435,6 +565,161 @@ export default function SettingsPage() {
           </Card>
 
           <SaveBar onSave={saveGeneral} isPending={saveSettings.isPending} />
+        </div>
+      )}
+
+      {/* ── Notifications ── */}
+      {activeTab === "notifications" && (
+        <div className="space-y-6">
+          {/* Card 1: Report Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Report Settings</CardTitle>
+              <CardDescription>
+                Configure scheduled reports and the default notification channel.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label>Report Frequency</Label>
+                <Select value={reportFreq} onValueChange={(v) => setReportFreq(v ?? "disabled")}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPORT_FREQUENCIES.map((f) => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  How often an automatic summary report is sent to your notification channel.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Notification Channel</Label>
+                <Select value={notifChannelId || "__none__"} onValueChange={(v) => setNotifChannelId(v === "__none__" ? "" : (v ?? ""))}>
+                  <SelectTrigger className="w-72">
+                    <SelectValue placeholder="Select a channel…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">
+                      <span className="text-muted-foreground">None</span>
+                    </SelectItem>
+                    {channels?.map((ch) => (
+                      <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Default channel for scheduled reports. Per-event routing can be set below.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          <SaveBar onSave={saveNotifications} isPending={saveSettings.isPending} />
+
+          {/* Card 2: Event Notifications */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    Event Notifications
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Choose which Discord channel receives each type of notification.
+                    Leave a channel unset to disable that notification type.
+                    All events are still recorded in the Audit Log regardless of routing.
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTriggerReport}
+                    disabled={triggerReport.isPending}
+                  >
+                    <Send className="h-4 w-4 mr-1.5" />
+                    Send Report Now
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveNotifRouting}
+                    disabled={!notifRoutingDirty || saveNotifRouting.isPending}
+                    style={{ background: "var(--accent-primary)" }}
+                    className="text-black font-semibold"
+                  >
+                    <Save className="h-4 w-4 mr-1.5" />
+                    {saveNotifRouting.isPending ? "Saving…" : "Save Routing"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {notifLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {NOTIF_GROUPS.map((group) => {
+                    const eventTypes = notifData?.event_types ?? {};
+                    const visibleEvents = group.events.filter((e) => eventTypes[e]);
+                    if (visibleEvents.length === 0) return null;
+                    return (
+                      <div key={group.label} className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground px-1 pb-1">
+                          {group.label}
+                        </p>
+                        <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] divide-y divide-white/[0.05]">
+                          {visibleEvents.map((eventType) => {
+                            const info = eventTypes[eventType];
+                            const currentChannel = notifRouting[eventType] ?? "";
+                            return (
+                              <div
+                                key={eventType}
+                                className="flex items-center justify-between gap-4 px-4 py-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">{info.label}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{info.description}</p>
+                                </div>
+                                <Select
+                                  value={currentChannel || "__none__"}
+                                  onValueChange={(v) => setNotifChannel(eventType, v ?? "")}
+                                >
+                                  <SelectTrigger className="w-52 shrink-0">
+                                    <SelectValue placeholder="Disabled" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">
+                                      <span className="text-muted-foreground">Disabled</span>
+                                    </SelectItem>
+                                    {channels?.map((ch) => (
+                                      <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Tip: You can point multiple event types at the same channel for a combined feed,
+                    or use separate channels for better signal-to-noise.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -612,6 +897,315 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
           <SaveBar onSave={savePermissions} isPending={saveSettings.isPending} />
+
+          {/* Dashboard Access */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                Dashboard Access
+              </CardTitle>
+              <CardDescription>
+                Grant specific Discord users or roles access to this dashboard.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+
+              {/* By User */}
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      By User
+                    </h3>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">
+                      Grant access to specific Discord users by their ID.
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      onClick={() => { setShowAddUser((v) => !v); setShowAddRole(false); }}
+                      style={{ background: "var(--accent-primary)" }}
+                      className="text-black font-semibold text-xs h-7 px-3"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add User
+                    </Button>
+                  )}
+                </div>
+
+                {showAddUser && (
+                  <div className="px-4 py-3 border-b border-white/[0.08] bg-white/[0.02] space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Discord ID *</Label>
+                        <Input
+                          type="text"
+                          placeholder="123456789012345678"
+                          value={newDiscordId}
+                          onChange={(e) => setNewDiscordId(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Display Name (optional)</Label>
+                        <Input
+                          type="text"
+                          placeholder="Username"
+                          value={newDiscordName}
+                          onChange={(e) => setNewDiscordName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Permission Level</Label>
+                        <Select value={newUserLevel} onValueChange={(v) => setNewUserLevel(v as PermissionLevel)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GRANTABLE_LEVELS.map((l) => (
+                              <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground/60">{LEVEL_DESCRIPTIONS[newUserLevel]}</p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleGrantUser}
+                        disabled={!newDiscordId.trim() || grant.isPending}
+                        style={{ background: "var(--accent-primary)" }}
+                        className="text-black font-semibold"
+                      >
+                        {grant.isPending ? "Granting…" : "Grant Access"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowAddUser(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {permissionsLoading ? (
+                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">Loading…</div>
+                ) : !permissions || permissions.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+                    No explicit user grants yet.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-left">
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">User</th>
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Level</th>
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Granted</th>
+                        {isAdmin && <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.05]">
+                      {permissions.map((p) => (
+                        <tr key={p.discord_id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-white/80">{p.discord_name ?? "Unknown"}</div>
+                            <div className="text-xs text-muted-foreground/60 font-mono">{p.discord_id}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {isAdmin ? (
+                              <Select
+                                value={p.permission_level}
+                                onValueChange={(v) =>
+                                  update.mutate({ discordId: p.discord_id, permission_level: v as PermissionLevel })
+                                }
+                              >
+                                <SelectTrigger className="w-36 h-7 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {GRANTABLE_LEVELS.map((l) => (
+                                    <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${LEVEL_BADGE[p.permission_level]}`}>
+                                {LEVEL_LABELS[p.permission_level]}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                            {new Date(p.granted_at).toLocaleDateString()}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                onClick={() => revoke.mutate(p.discord_id)}
+                                className="p-1.5 text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                title="Revoke access"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* By Role */}
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-muted-foreground" />
+                      By Role
+                    </h3>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">
+                      Grant access to everyone who has a specific Discord role.
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      onClick={() => { setShowAddRole((v) => !v); setShowAddUser(false); }}
+                      style={{ background: "var(--accent-primary)" }}
+                      className="text-black font-semibold text-xs h-7 px-3"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add Role
+                    </Button>
+                  )}
+                </div>
+
+                {showAddRole && (
+                  <div className="px-4 py-3 border-b border-white/[0.08] bg-white/[0.02] space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Discord Role *</Label>
+                        <Select value={newRoleId} onValueChange={(v) => setNewRoleId(v ?? "")}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a role…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableRoles.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Permission Level</Label>
+                        <Select value={newRoleLevel} onValueChange={(v) => setNewRoleLevel(v as PermissionLevel)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GRANTABLE_LEVELS.map((l) => (
+                              <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground/60">{LEVEL_DESCRIPTIONS[newRoleLevel]}</p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleGrantRole}
+                        disabled={!newRoleId || grantRole.isPending}
+                        style={{ background: "var(--accent-primary)" }}
+                        className="text-black font-semibold"
+                      >
+                        {grantRole.isPending ? "Granting…" : "Grant Access"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowAddRole(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {rolePermissionsLoading ? (
+                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">Loading…</div>
+                ) : !rolePermissions || rolePermissions.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+                    No role grants yet. Add a role above to grant access to everyone with that role.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-left">
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Role</th>
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Level</th>
+                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Granted</th>
+                        {isAdmin && <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.05]">
+                      {rolePermissions.map((p) => (
+                        <tr key={p.role_id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-white/80">{p.role_name ?? "Unknown Role"}</div>
+                            <div className="text-xs text-muted-foreground/60 font-mono">{p.role_id}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {isAdmin ? (
+                              <Select
+                                value={p.permission_level}
+                                onValueChange={(v) =>
+                                  updateRole.mutate({ roleId: p.role_id, permission_level: v as PermissionLevel })
+                                }
+                              >
+                                <SelectTrigger className="w-36 h-7 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {GRANTABLE_LEVELS.map((l) => (
+                                    <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${LEVEL_BADGE[p.permission_level]}`}>
+                                {LEVEL_LABELS[p.permission_level]}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                            {new Date(p.granted_at).toLocaleDateString()}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                onClick={() => revokeRole.mutate(p.role_id)}
+                                className="p-1.5 text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                title="Revoke role access"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+            </CardContent>
+          </Card>
         </div>
       )}
 

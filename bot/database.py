@@ -573,6 +573,8 @@ POSTGRES_MIGRATIONS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_job_queue_guild_status ON job_queue (guild_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_job_queue_status_priority ON job_queue (status, priority, created_at)",
+    # --- Per-category squad group assignment ---
+    "ALTER TABLE whitelist_categories ADD COLUMN IF NOT EXISTS squad_group VARCHAR(100) NULL",
 ]
 
 

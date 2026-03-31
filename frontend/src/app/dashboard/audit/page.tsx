@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { useAudit, useWhitelists } from "@/hooks/use-settings";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -184,11 +185,14 @@ export default function AuditPage() {
 
         {/* Clear all / Export */}
         <div className="ml-auto flex gap-2">
-          {hasFilters && (
-            <Button variant="ghost" size="sm" onClick={() => { setFilters({}); setPage(1); }}>
-              Clear filters
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setFilters({}); setPage(1); }}
+            className={cn("text-muted-foreground", !hasFilters && "invisible")}
+          >
+            Clear filters
+          </Button>
           <a href={buildExportUrl()} download="audit_log.csv">
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4 mr-1.5" />

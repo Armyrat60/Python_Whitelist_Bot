@@ -11,6 +11,7 @@ import {
   Pencil,
   Check,
   ShieldCheck,
+  PanelTop,
 } from "lucide-react";
 import {
   usePanels,
@@ -65,7 +66,7 @@ import { Combobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
 
 export default function PanelsPage() {
-  const { data: panels, isLoading: panelsLoading } = usePanels();
+  const { data: panels, isLoading: panelsLoading, isError: panelsError } = usePanels();
   const { data: whitelists } = useWhitelists();
   const { data: channels } = useChannels();
   const createPanel = useCreatePanel();
@@ -97,11 +98,21 @@ export default function PanelsPage() {
     );
   }
 
+  if (panelsError) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-red-500/20 bg-red-500/5 py-12 text-center">
+        <p className="text-sm font-medium text-red-400">Failed to load data</p>
+        <p className="mt-1 text-xs text-muted-foreground">Check your connection and refresh the page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {(!panels || panels.length === 0) && !panelsLoading ? (
           <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
+            <PanelTop className="h-8 w-8 text-muted-foreground/30 mb-3" />
             <p className="text-sm font-medium">No panels yet</p>
             <p className="mt-1 text-xs text-muted-foreground">Create a panel to let members apply for the whitelist.</p>
           </div>

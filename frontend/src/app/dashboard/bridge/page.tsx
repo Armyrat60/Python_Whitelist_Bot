@@ -11,6 +11,9 @@ import {
   RefreshCw,
   Clock,
   Zap,
+  ChevronDown,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 import {
   useBridgeConfig,
@@ -55,6 +58,84 @@ function StatusBadge({ status, message }: { status: "ok" | "error" | null; messa
     <div className="flex items-center gap-1.5 text-red-400 text-xs">
       <XCircle className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{message}</span>
+    </div>
+  );
+}
+
+function SetupGuide({ dbName }: { dbName: string }) {
+  const [open, setOpen] = useState(false);
+  const db = dbName.trim() || "YOUR_SQUADJS_DB";
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+      <button
+        className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-white/[0.03] transition-colors"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="flex items-center gap-2">
+          <Info className="h-4 w-4 shrink-0" style={{ color: "var(--accent-primary)" }} />
+          <span className="text-sm font-semibold text-white/80">MySQL Setup Guide</span>
+        </div>
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-white/[0.06] px-5 py-4 space-y-4 text-xs">
+          <p className="text-muted-foreground">
+            Create a <strong className="text-white/70">read-only</strong> MySQL user for the bridge. It only needs{" "}
+            <code className="rounded bg-white/[0.06] px-1">SELECT</code> on the{" "}
+            <code className="rounded bg-white/[0.06] px-1">DBLog_Players</code> table.
+          </p>
+
+          <div className="space-y-1.5">
+            <p className="font-semibold text-white/60 uppercase tracking-wider text-[10px]">Suggested credentials</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 space-y-0.5">
+                <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Username</p>
+                <code className="text-white/80">whitelister</code>
+              </div>
+              <div className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 space-y-0.5">
+                <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Password</p>
+                <code className="text-white/80">ChangeMe123!</code>
+                <p className="text-[10px] text-amber-400/80 mt-0.5">Change this before use</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="font-semibold text-white/60 uppercase tracking-wider text-[10px]">Run on your MySQL server</p>
+            <pre className="rounded-lg bg-black/40 border border-white/[0.06] px-4 py-3 text-[11px] text-green-400/90 overflow-x-auto leading-relaxed whitespace-pre">{`-- Create a read-only user (accessible from any host)
+CREATE USER 'whitelister'@'%' IDENTIFIED BY 'ChangeMe123!';
+
+-- Grant SELECT only on the DBLog_Players table
+GRANT SELECT ON ${db}.DBLog_Players TO 'whitelister'@'%';
+
+-- Apply changes
+FLUSH PRIVILEGES;`}</pre>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="font-semibold text-white/60 uppercase tracking-wider text-[10px]">Required permissions</p>
+            <div className="space-y-1">
+              {[
+                { perm: "SELECT", table: "DBLog_Players", note: "Read player join records" },
+              ].map(({ perm, table, note }) => (
+                <div key={table} className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.05] px-3 py-2">
+                  <code className="text-emerald-400 w-16 shrink-0">{perm}</code>
+                  <code className="text-white/70 flex-1">{table}</code>
+                  <span className="text-muted-foreground/70">{note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-muted-foreground/70">
+            Make sure your MySQL server allows remote connections from the bridge host. Check{" "}
+            <code className="rounded bg-white/[0.06] px-1">bind-address</code> in{" "}
+            <code className="rounded bg-white/[0.06] px-1">my.cnf</code> and your firewall rules (port 3306).
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -203,6 +284,9 @@ export default function BridgePage() {
           </p>
         </div>
       </div>
+
+      {/* Setup guide */}
+      <SetupGuide dbName={database} />
 
       {/* Last sync status */}
       {existing && (
