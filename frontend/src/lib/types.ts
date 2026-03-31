@@ -135,6 +135,9 @@ export interface Settings {
 export interface WhitelistUser {
   discord_id: string;
   discord_name: string;
+  discord_username?: string | null;
+  discord_nick?: string | null;
+  clan_tag?: string | null;
   whitelist_slug: string;
   whitelist_name: string;
   status: string;

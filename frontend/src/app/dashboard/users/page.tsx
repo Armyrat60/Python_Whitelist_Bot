@@ -942,6 +942,29 @@ export default function UsersPage() {
       {activeTab === "role-history" && <RoleHistoryTab whitelists={whitelists ?? []} />}
       {activeTab === "members" && <>
 
+      {/* ---- Role Tabs ---- */}
+      {roleOptions.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          <button
+            onClick={() => { setFilters(f => ({ ...f, role_name: "" })); setPage(1); }}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              !filters.role_name ? "bg-white/[0.08] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+            )}
+          >All</button>
+          {roleOptions.map(r => (
+            <button
+              key={r.value}
+              onClick={() => { setFilters(f => ({ ...f, role_name: r.value })); setPage(1); }}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                filters.role_name === r.value ? "bg-white/[0.08] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+              )}
+            >{r.label}</button>
+          ))}
+        </div>
+      )}
+
       {/* ---- Toolbar ---- */}
       {(() => {
         // Count active non-default filters
@@ -1305,11 +1328,24 @@ export default function UsersPage() {
       >
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>{selectedUser?.discord_name ?? "User"}</SheetTitle>
+            <SheetTitle className="flex items-center gap-2">
+              {selectedUser?.clan_tag && (
+                <span className="rounded px-1.5 py-0.5 text-xs font-bold tracking-wide text-white/40 bg-white/[0.05] border border-white/[0.08]">
+                  {selectedUser.clan_tag}
+                </span>
+              )}
+              {selectedUser
+                ? (selectedUser.clan_tag
+                    ? (selectedUser.discord_name.replace(/^\[[^\]]+\]\s*/, '').trim() || selectedUser.discord_name)
+                    : selectedUser.discord_name)
+                : "User"}
+            </SheetTitle>
             <SheetDescription>
               {selectedUser && parseInt(selectedUser.discord_id) < 0
                 ? "No Discord account linked"
-                : selectedUser?.discord_id}
+                : selectedUser?.discord_username
+                  ? <span><span className="text-white/30">@{selectedUser.discord_username}</span> · {selectedUser.discord_id}</span>
+                  : selectedUser?.discord_id}
             </SheetDescription>
           </SheetHeader>
           {selectedUser && (
@@ -1572,7 +1608,19 @@ function UserListView({
                 />
               </span>
               <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate">
-                <span className="truncate text-sm font-medium text-white/85">{user.discord_name}</span>
+                {user.clan_tag && (
+                  <span className="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold tracking-wide text-white/40 bg-white/[0.05] border border-white/[0.08]">
+                    {user.clan_tag}
+                  </span>
+                )}
+                <span
+                  className="truncate text-sm font-medium text-white/85"
+                  title={user.discord_username && user.discord_username !== user.discord_name ? `@${user.discord_username}` : undefined}
+                >
+                  {user.clan_tag
+                    ? (user.discord_name.replace(/^\[[^\]]+\]\s*/, '').trim() || user.discord_name)
+                    : user.discord_name}
+                </span>
                 {user.is_verified && (
                   <span title="Bridge Verified"><BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" /></span>
                 )}

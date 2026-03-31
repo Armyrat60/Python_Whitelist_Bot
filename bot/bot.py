@@ -25,6 +25,17 @@ from bot.utils import utcnow, to_bool, split_identifier_tokens, validate_identif
 from bot.database import Database
 from bot.github_publisher import GithubPublisher
 
+_CLAN_TAG_RE = re.compile(r'^\[([A-Za-z0-9 _\-]{1,15})\]\s*')
+
+def parse_clan_tag(display_name: str) -> tuple[str | None, str]:
+    """Extract a [TAG] prefix from a Discord display name. Returns (tag, clean_name)."""
+    m = _CLAN_TAG_RE.match(display_name)
+    if m:
+        tag = m.group(1).strip()
+        clean = display_name[m.end():].strip()
+        return tag, clean or display_name
+    return None, display_name
+
 
 class WhitelistBot(commands.Bot):
     def __init__(self):
@@ -498,16 +509,22 @@ class WhitelistBot(commands.Bot):
                 )
 
         existing_before_save = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
+        _u_nick = getattr(interaction.user, 'nick', None)
+        _u_display = _u_nick or interaction.user.display_name or str(interaction.user)
+        _u_tag, _ = parse_clan_tag(_u_display)
         async with self.write_lock:
             await self.db.upsert_user_record(
                 guild_id,
                 interaction.user.id,
                 whitelist_id,
-                str(interaction.user),
+                _u_display,
                 "active",
                 slots,
                 plan,
                 created_via="self_register",
+                discord_username=interaction.user.name,
+                discord_nick=_u_nick,
+                clan_tag=_u_tag,
             )
             await self.db.replace_identifiers(guild_id, interaction.user.id, whitelist_id, submitted)
 
@@ -723,10 +740,12 @@ class WhitelistBot(commands.Bot):
                     continue
 
                 # Member has a qualifying role — auto-enroll
-                name = member.display_name or str(member)
+                name = member.nick or member.display_name or str(member)
+                _tag, _ = parse_clan_tag(name)
                 default_slot = wl.get("default_slot_limit") or 1
                 await self.db.upsert_user_record(
-                    guild_id, member.id, whitelist_id, name, "active", default_slot, "", None, created_via="role_sync"
+                    guild_id, member.id, whitelist_id, name, "active", default_slot, "", None,
+                    created_via="role_sync", discord_username=member.name, discord_nick=member.nick, clan_tag=_tag,
                 )
                 await self.db.audit(
                     guild_id, "auto_enroll_role_gain", None, member.id,
@@ -754,13 +773,15 @@ class WhitelistBot(commands.Bot):
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
                     await self.send_notification_event(guild_id, "role_lost", "⚠️ Role Lost — Whitelist Disabled", f"<@{member.id}> lost their required role and was auto-disabled from `{wl['name']}`.", discord.Color.orange())
             else:
+                _m_name = member.nick or member.display_name or str(member)
+                _m_tag, _ = parse_clan_tag(_m_name)
                 if status_before != "active" and to_bool(await self.db.get_setting(guild_id, "auto_reactivate_on_role_return", "true")):
-                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), "active", slots, plan, user_record[2])
+                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, _m_name, "active", slots, plan, user_record[2], discord_username=member.name, discord_nick=member.nick, clan_tag=_m_tag)
                     await self.db.audit(guild_id, "auto_reactivate_role_return", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Re-enabled", f"User <@{member.id}> regained eligible role(s).", discord.Color.green())
                     await self.send_notification_event(guild_id, "role_returned", "✅ Role Returned — Re-enabled", f"<@{member.id}> regained their role and was re-enabled in `{wl['name']}`.", discord.Color.green())
                 else:
-                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, str(member), status_before, slots, plan, user_record[2])
+                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, _m_name, status_before, slots, plan, user_record[2], discord_username=member.name, discord_nick=member.nick, clan_tag=_m_tag)
         self.schedule_github_sync(guild_id)
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -862,9 +883,11 @@ class WhitelistBot(commands.Bot):
                     member = guild.get_member(member_id)
                     if not member:
                         continue
-                    name = member.display_name or str(member)
+                    name = member.nick or member.display_name or str(member)
+                    _d_tag, _ = parse_clan_tag(name)
                     await self.db.upsert_user_record(
-                        guild_id, member_id, wl_id, name, "active", default_slot, "", None, created_via="role_sync"
+                        guild_id, member_id, wl_id, name, "active", default_slot, "", None,
+                        created_via="role_sync", discord_username=member.name, discord_nick=member.nick, clan_tag=_d_tag,
                     )
                     await self.db.audit(guild_id, "daily_role_sync_add", None, member_id,
                                         f"type={wl['slug']}", wl_id)

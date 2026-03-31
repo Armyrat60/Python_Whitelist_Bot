@@ -575,6 +575,11 @@ POSTGRES_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_job_queue_status_priority ON job_queue (status, priority, created_at)",
     # --- Per-category squad group assignment ---
     "ALTER TABLE whitelist_categories ADD COLUMN IF NOT EXISTS squad_group VARCHAR(100) NULL",
+
+    # --- Discord username / server nickname / clan tag ---
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(255) NULL",
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_nick VARCHAR(255) NULL",
+    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS clan_tag VARCHAR(50) NULL",
 ]
 
 
@@ -1165,13 +1170,13 @@ class Database:
             (guild_id, discord_id, whitelist_id),
         )
 
-    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None):
+    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None, discord_username: Optional[str] = None, discord_nick: Optional[str] = None, clan_tag: Optional[str] = None):
         now = utcnow()
         await self.execute(
             """
             INSERT INTO whitelist_users
-            (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via, discord_username, discord_nick, clan_tag)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                 discord_name=EXCLUDED.discord_name,
                 status=EXCLUDED.status,
@@ -1180,9 +1185,12 @@ class Database:
                 last_plan_name=EXCLUDED.last_plan_name,
                 expires_at=EXCLUDED.expires_at,
                 updated_at=EXCLUDED.updated_at,
-                created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via)
+                created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via),
+                discord_username=COALESCE(EXCLUDED.discord_username, whitelist_users.discord_username),
+                discord_nick=COALESCE(EXCLUDED.discord_nick, whitelist_users.discord_nick),
+                clan_tag=COALESCE(EXCLUDED.clan_tag, whitelist_users.clan_tag)
             """,
-            (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via),
+            (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via, discord_username, discord_nick, clan_tag),
         )
 
     async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):

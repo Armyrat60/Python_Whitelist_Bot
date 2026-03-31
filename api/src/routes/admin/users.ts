@@ -170,6 +170,9 @@ export default async function userRoutes(app: FastifyInstance) {
       return {
         discord_id:           u.discordId.toString(),
         discord_name:         u.discordName,
+        discord_username:     u.discordUsername ?? null,
+        discord_nick:         u.discordNick ?? null,
+        clan_tag:             u.clanTag ?? null,
         whitelist_slug:       u.whitelist.slug,
         whitelist_name:       u.whitelist.name,
         status:               u.status,
