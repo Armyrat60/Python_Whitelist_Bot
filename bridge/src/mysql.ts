@@ -41,14 +41,29 @@ export async function fetchPlayersForGuild(
 
   try {
     const baseWhere = `steamID IS NOT NULL AND steamID != '' AND steamID REGEXP '^[0-9]{17}$'`
-    const [rows] = since
-      ? await conn.execute<mysql.RowDataPacket[]>(
-          `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere} AND updatedAt >= ?`,
+
+    // Try incremental first; some SquadJS versions don't have an updatedAt column
+    // so we detect the correct timestamp column name before filtering by it.
+    let rows: mysql.RowDataPacket[]
+    if (since) {
+      const tsCol = await detectTimestampColumn(conn)
+      if (tsCol) {
+        ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
+          `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere} AND \`${tsCol}\` >= ?`,
           [since],
         )
-      : await conn.execute<mysql.RowDataPacket[]>(
+      } else {
+        // No timestamp column — fall back to full sync
+        console.warn("[bridge][mysql] DBLog_Players has no updatedAt/updated_at column — falling back to full sync")
+        ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
           `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere}`,
         )
+      }
+    } else {
+      ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
+        `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere}`,
+      )
+    }
 
     return (rows as mysql.RowDataPacket[]).map((r) => ({
       steamID:  String(r.steamID),
@@ -57,4 +72,23 @@ export async function fetchPlayersForGuild(
   } finally {
     await conn.end().catch(() => {})
   }
+}
+
+/**
+ * Returns the name of the timestamp column in DBLog_Players used for
+ * incremental syncs ('updatedAt' or 'updated_at'), or null if neither exists.
+ * Cached per-process to avoid repeated SHOW COLUMNS queries.
+ */
+const _tsColCache = new Map<string, string | null>()
+async function detectTimestampColumn(conn: mysql.Connection): Promise<string | null> {
+  const cacheKey = (conn as any).config?.database ?? "default"
+  if (_tsColCache.has(cacheKey)) return _tsColCache.get(cacheKey)!
+
+  const [cols] = await conn.execute<mysql.RowDataPacket[]>(
+    `SHOW COLUMNS FROM DBLog_Players`,
+  )
+  const names = (cols as mysql.RowDataPacket[]).map((c) => String(c.Field))
+  const col = names.find((n) => n === "updatedAt" || n === "updated_at") ?? null
+  _tsColCache.set(cacheKey, col)
+  return col
 }
