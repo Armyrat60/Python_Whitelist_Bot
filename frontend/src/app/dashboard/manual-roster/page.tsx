@@ -370,8 +370,31 @@ function CategoryListView({
     );
   }
 
+  // Compute aggregate stats across all categories
+  const totalEntries  = categories?.reduce((s, c) => s + c.user_count, 0) ?? 0;
+  const totalCapacity = categories?.reduce((s, c) => s + (c.slot_limit ?? 0), 0) ?? 0;
+  const numCats       = categories?.length ?? 0;
+  const nearlFull     = categories?.filter(c => c.slot_limit != null && c.user_count / c.slot_limit >= 0.8).length ?? 0;
+
   return (
     <div className="space-y-3">
+      {/* Stats */}
+      {categories && categories.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: "Categories", value: numCats, color: "text-white/80" },
+            { label: "Total Entries", value: totalEntries, color: "text-white/80" },
+            { label: "Capacity", value: totalCapacity > 0 ? `${totalEntries}/${totalCapacity}` : "—", color: totalCapacity > 0 && totalEntries >= totalCapacity ? "text-red-400" : "text-white/80" },
+            { label: "Near Full", value: nearlFull, color: nearlFull > 0 ? "text-amber-400" : "text-white/80" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+              <span className={`text-lg font-semibold tabular-nums ${color}`}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           {whitelist.name} — Categories
@@ -421,11 +444,27 @@ function CategoryListView({
                   <>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{cat.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {cat.slot_limit != null
-                          ? `${cat.user_count} / ${cat.slot_limit} slots`
-                          : `${cat.user_count} entries`}
-                      </p>
+                      {cat.slot_limit != null ? (
+                        <div className="mt-1 flex items-center gap-2">
+                          {(() => {
+                            const pct = Math.min((cat.user_count / cat.slot_limit) * 100, 100);
+                            const isOver = cat.user_count > cat.slot_limit;
+                            const barColor = isOver ? "#F87171" : "var(--accent-primary)";
+                            return (
+                              <>
+                                <span className={`text-[11px] tabular-nums ${isOver ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {cat.user_count}/{cat.slot_limit}
+                                </span>
+                                <div className="relative h-[3px] w-16 overflow-hidden rounded-full bg-white/10">
+                                  <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: barColor }} />
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">{cat.user_count} entries</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {cat.manager_count > 0 && (
@@ -567,6 +606,22 @@ function EntryView({
   const [discordName, setDiscordName] = useState("");
   const [entryNotes, setEntryNotes]   = useState("");
   const [entryExpiry, setEntryExpiry] = useState("");
+  const [expiryFilter, setExpiryFilter] = useState<"all" | "active" | "expiring-soon" | "expired">("all");
+
+  const now = new Date();
+  const soonThreshold = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const filteredEntries = (entriesData?.entries ?? []).filter((e) => {
+    if (expiryFilter === "all") return true;
+    if (expiryFilter === "active") return !e.expires_at || new Date(e.expires_at) > now;
+    if (expiryFilter === "expiring-soon") {
+      if (!e.expires_at) return false;
+      const exp = new Date(e.expires_at);
+      return exp > now && exp <= soonThreshold;
+    }
+    if (expiryFilter === "expired") return !!e.expires_at && new Date(e.expires_at) <= now;
+    return true;
+  });
 
   const entryTotalPages = entriesData ? Math.ceil(entriesData.total / entriesData.per_page) : 0;
 
@@ -611,15 +666,33 @@ function EntryView({
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search by name or Steam ID…"
-          className="pl-8 h-8 text-xs"
-        />
+      {/* Search + expiry filter */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by name or Steam ID…"
+            className="pl-8 h-8 text-xs"
+          />
+        </div>
+        <div className="flex rounded-md border border-border text-xs">
+          {(["all", "active", "expiring-soon", "expired"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setExpiryFilter(f)}
+              className={cn(
+                "px-2.5 h-8 first:rounded-l-md last:rounded-r-md capitalize transition-colors",
+                expiryFilter === f
+                  ? "bg-white/[0.08] text-white"
+                  : "text-muted-foreground hover:text-white/70"
+              )}
+            >
+              {f === "expiring-soon" ? "Soon" : f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Entry list */}
@@ -627,14 +700,16 @@ function EntryView({
         <div className="space-y-2">
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
-      ) : !entriesData || entriesData.entries.length === 0 ? (
+      ) : !entriesData || filteredEntries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-10 text-center">
-          <p className="text-sm font-medium">No entries yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add a member below to get started.</p>
+          <p className="text-sm font-medium">{expiryFilter !== "all" ? `No ${expiryFilter} entries` : "No entries yet"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {expiryFilter !== "all" ? "Try changing the filter above." : "Add a member below to get started."}
+          </p>
         </div>
       ) : (
         <div className="rounded-xl border border-white/[0.06] overflow-hidden divide-y divide-white/[0.04]">
-          {entriesData.entries.map((entry) => (
+          {filteredEntries.map((entry) => (
             <EntryRow
               key={entry.discord_id}
               entry={entry}
@@ -858,6 +933,9 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
           )}
         </div>
         <div className="font-mono text-[10px] text-muted-foreground/60 truncate">{steamId}</div>
+        {entry.notes && (
+          <div className="text-[10px] text-muted-foreground/50 italic truncate">{entry.notes}</div>
+        )}
       </div>
       <div className="shrink-0 text-right space-y-0.5 text-[10px] text-muted-foreground">
         <div>{formatDate(entry.created_at)}</div>

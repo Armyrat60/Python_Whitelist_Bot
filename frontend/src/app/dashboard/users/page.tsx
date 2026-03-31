@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Search,
@@ -24,6 +24,10 @@ import {
   RefreshCw,
   ExternalLink,
   BadgeCheck,
+  RotateCcw,
+  Clock,
+  UserRound,
+  History,
 } from "lucide-react";
 import Link from "next/link";
 import { useUsers, useWhitelists, useSteamNames, useCategories, useRoleStats, useStats } from "@/hooks/use-settings";
@@ -769,6 +773,7 @@ function BulkActionBar({
 /* ------------------------------------------------------------------ */
 
 export default function UsersPage() {
+  const [activeTab, setActiveTab] = useState<"members" | "role-history">("members");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -800,13 +805,13 @@ export default function UsersPage() {
     return opts;
   }, [roleStatsData]);
   const [showGapReport, setShowGapReport] = useState(false);
-  const [gapData, setGapData] = useState<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number} | null>(null);
+  const [gapData, setGapData] = useState<{members: {discord_id: string; display_name: string; whitelisted_roles: string[]}[]; total: number} | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
   async function loadGapReport() {
     setGapLoading(true);
     setShowGapReport(true);
     try {
-      const data = await api.get<{gap: {discord_id: string; name: string; matched_roles: string[]}[]; total_role_holders: number; total_registered: number}>("/api/admin/members/gap");
+      const data = await api.get<{members: {discord_id: string; display_name: string; whitelisted_roles: string[]}[]; total: number}>("/api/admin/members/gap");
       setGapData(data);
     } catch {
       toast.error("Failed to load gap report");
@@ -883,24 +888,56 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       {/* ---- Stats Banner ---- */}
-      {statsData && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "Total Registered", value: statsData.total_registered, color: "text-white/80" },
-            { label: "Active", value: statsData.total_active_users, color: "text-emerald-400" },
-            { label: "No Access", value: statsData.no_access_count, color: "text-red-400" },
-            { label: "Role Lost", value: statsData.disabled_role_lost_count, color: "text-amber-400" },
-          ].map(({ label, value, color }) => (
-            <div
-              key={label}
-              className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
-            >
-              <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
-              <span className={`text-2xl font-semibold tabular-nums ${color}`}>{value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {statsData && (() => {
+        const slotsGranted = Object.values(statsData.per_type).reduce((sum, wl) => sum + wl.slots_used, 0);
+        const stats = [
+          { label: "Active Members", value: statsData.total_active_users, sub: `of ${statsData.total_registered} registered`, color: "text-emerald-400" },
+          { label: "Slots Granted", value: slotsGranted, sub: "total across all roles", color: "text-white/80" },
+          { label: "IDs Submitted", value: statsData.total_identifiers, sub: `${slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0}% fill rate`, color: "var(--accent-primary)" },
+        ];
+        return (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {stats.map(({ label, value, sub, color }) => (
+              <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+                <span className="text-2xl font-semibold tabular-nums" style={{ color }}>{value}</span>
+                <span className="text-[11px] text-muted-foreground/50">{sub}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* ---- Tabs ---- */}
+      <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-1 w-fit">
+        <button
+          onClick={() => setActiveTab("members")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            activeTab === "members"
+              ? "bg-white/[0.08] text-white"
+              : "text-muted-foreground hover:text-white/70"
+          )}
+        >
+          <Users className="h-3.5 w-3.5" />
+          Members
+        </button>
+        <button
+          onClick={() => setActiveTab("role-history")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            activeTab === "role-history"
+              ? "bg-white/[0.08] text-white"
+              : "text-muted-foreground hover:text-white/70"
+          )}
+        >
+          <History className="h-3.5 w-3.5" />
+          Role History
+        </button>
+      </div>
+
+      {activeTab === "role-history" && <RoleHistoryTab whitelists={whitelists ?? []} />}
+      {activeTab === "members" && <>
 
       {/* ---- Toolbar ---- */}
       <div className="flex flex-wrap items-end gap-3">
@@ -1043,8 +1080,13 @@ export default function UsersPage() {
           </Button>
         </a>
 
-        <AddSteamEntryDialog whitelists={whitelists ?? []} />
-        <Button variant="outline" size="sm" onClick={loadGapReport} disabled={gapLoading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadGapReport}
+          disabled={gapLoading}
+          title="Shows Discord members who have a whitelist role but haven't submitted any Steam or EOS IDs yet"
+        >
           {gapLoading ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : (
@@ -1062,26 +1104,25 @@ export default function UsersPage() {
             <div>
               <h3 className="text-sm font-semibold">Unregistered Members</h3>
               <p className="text-xs text-muted-foreground">
-                {gapData.gap.length} member(s) have a whitelist role but haven't submitted IDs
-                &nbsp;·&nbsp;{gapData.total_registered}/{gapData.total_role_holders} registered
+                {gapData.total} member(s) have a whitelist role but haven't submitted IDs yet
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setShowGapReport(false)}>
               <X className="h-3.5 w-3.5" />
             </Button>
           </div>
-          {gapData.gap.length === 0 ? (
+          {gapData.members.length === 0 ? (
             <p className="text-sm" style={{ color: "var(--accent-primary)" }}>All role holders have registered!</p>
           ) : (
             <div className="max-h-64 overflow-y-auto space-y-1">
-              {gapData.gap.map((m) => (
+              {gapData.members.map((m) => (
                 <div key={m.discord_id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs hover:bg-yellow-500/10">
                   <div>
-                    <span className="font-medium">{m.name}</span>
+                    <span className="font-medium">{m.display_name}</span>
                     <span className="ml-2 font-mono text-muted-foreground">{m.discord_id}</span>
                   </div>
                   <div className="flex gap-1">
-                    {m.matched_roles.map((r) => (
+                    {m.whitelisted_roles.map((r) => (
                       <Badge key={r} variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-400">{r}</Badge>
                     ))}
                   </div>
@@ -1205,6 +1246,163 @@ export default function UsersPage() {
         onClear={clearSelection}
         onDeleteDone={clearSelection}
       />
+      </>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Role History Tab                                                   */
+/* ------------------------------------------------------------------ */
+
+interface RoleLossEntry {
+  discord_id: string;
+  discord_name: string;
+  whitelist_slug: string;
+  whitelist_name: string;
+  lost_at: string;
+  added_at: string;
+  last_plan_name: string | null;
+  effective_slot_limit: number;
+}
+
+function formatRelativeRl(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function heldForRl(addedAt: string, lostAt: string): string {
+  const days = Math.floor((new Date(lostAt).getTime() - new Date(addedAt).getTime()) / (1000 * 60 * 60 * 24));
+  if (days < 1) return "< 1 day";
+  if (days === 1) return "1 day";
+  if (days < 30) return `${days} days`;
+  return `${Math.floor(days / 30)} mo`;
+}
+
+function RoleHistoryTab({ whitelists }: { whitelists: { slug: string; name: string; is_manual?: boolean }[] }) {
+  const [days, setDays] = useState(90);
+  const [whitelistSlug, setWhitelistSlug] = useState("");
+  const queryClient = useQueryClient();
+
+  const roleWhitelists = whitelists.filter(wl => !wl.is_manual);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["role-loss", days, whitelistSlug || null],
+    queryFn: () => {
+      const params = new URLSearchParams({ days: String(days) });
+      if (whitelistSlug) params.set("whitelist_slug", whitelistSlug);
+      return api.get<{ users: RoleLossEntry[] }>(`/api/admin/role-loss?${params}`);
+    },
+  });
+
+  const entries = data?.users ?? [];
+
+  async function handleRestore(entry: RoleLossEntry) {
+    try {
+      await api.patch(`/api/admin/users/${entry.discord_id}/${entry.whitelist_slug}`, { status: "active" });
+      toast.success(`Restored ${entry.discord_name}`);
+      queryClient.invalidateQueries({ queryKey: ["role-loss"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    } catch {
+      toast.error("Failed to restore user");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex rounded-md border border-border text-xs">
+          {[30, 60, 90].map((d) => (
+            <Button
+              key={d}
+              variant={days === d ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none px-3 h-8 first:rounded-l-md last:rounded-r-md"
+              onClick={() => setDays(d)}
+            >
+              {d}d
+            </Button>
+          ))}
+        </div>
+        <Select value={whitelistSlug || "__all"} onValueChange={(v) => setWhitelistSlug(!v || v === "__all" ? "" : v)}>
+          <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectValue placeholder="All whitelists" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">All whitelists</SelectItem>
+            {roleWhitelists.map((wl) => (
+              <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {isFetching ? "Loading…" : `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`}
+        </span>
+      </div>
+
+      {/* List */}
+      {isFetching && entries.length === 0 ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-16 w-full rounded-xl bg-white/[0.03] animate-pulse" />
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
+          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm font-medium text-white/60">No role losses in the last {days} days</p>
+          <p className="mt-1 text-xs text-muted-foreground">Members who lose their whitelist role will appear here.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((entry) => (
+            <div
+              key={`${entry.discord_id}::${entry.whitelist_slug}`}
+              className="flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+                <UserRound className="h-4 w-4 text-amber-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-white/90">{entry.discord_name}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">{entry.discord_id}</span>
+                  <WhitelistBadge name={entry.whitelist_name} />
+                  {entry.last_plan_name && (
+                    <TierChip tier={entry.last_plan_name} />
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <UserRound className="h-3 w-3 text-amber-400/70" />
+                    Lost {formatRelativeRl(entry.lost_at)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Held for {heldForRl(entry.added_at, entry.lost_at)}
+                  </span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                onClick={() => handleRestore(entry)}
+              >
+                <RotateCcw className="mr-1.5 h-3 w-3" />
+                Restore
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
