@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useSession } from "./use-session";
 import type {
@@ -208,6 +208,33 @@ export function useUsers(
     queryKey: ["users", page, perPage, search, filters],
     queryFn: () =>
       api.get<PaginatedUsers>(`/api/admin/users?${params.toString()}`),
+  });
+}
+
+export function useInfiniteUsers(
+  perPage: number,
+  search?: string,
+  filters?: Record<string, string>,
+  sort?: string,
+  order?: string,
+) {
+  const baseParams: Record<string, string> = { per_page: String(perPage) };
+  if (search) baseParams.search = search;
+  if (filters) for (const [k, v] of Object.entries(filters)) if (v) baseParams[k] = v;
+  if (sort) baseParams.sort = sort;
+  if (order) baseParams.order = order;
+
+  return useInfiniteQuery<PaginatedUsers>({
+    queryKey: ["users", "infinite", perPage, search, filters, sort, order],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ ...baseParams, page: String(pageParam) });
+      return api.get<PaginatedUsers>(`/api/admin/users?${params.toString()}`);
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const pages = Math.ceil(lastPage.total / lastPage.per_page);
+      return lastPage.page < pages ? lastPage.page + 1 : undefined;
+    },
   });
 }
 

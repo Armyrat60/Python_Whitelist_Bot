@@ -580,6 +580,14 @@ POSTGRES_MIGRATIONS = [
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(255) NULL",
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_nick VARCHAR(255) NULL",
     "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS clan_tag VARCHAR(50) NULL",
+
+    # --- Backfill clan_tag from existing discord_name values (e.g. "[TAG] Name") ---
+    """
+    UPDATE whitelist_users
+    SET clan_tag = TRIM(SUBSTRING(discord_name FROM 2 FOR POSITION(']' IN discord_name) - 2))
+    WHERE clan_tag IS NULL
+      AND discord_name ~ '^\\[[A-Za-z0-9 _\\-]{1,15}\\]'
+    """,
 ]
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -27,12 +27,15 @@ import {
   RotateCcw,
   Clock,
   UserRound,
-  History,
+  UserMinus,
   Filter,
   SlidersHorizontal,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useUsers, useWhitelists, useSteamNames, useCategories, useRoleStats, useStats } from "@/hooks/use-settings";
+import { useInfiniteUsers, useWhitelists, useSteamNames, useCategories, useRoleStats, useStats } from "@/hooks/use-settings";
 import { useIsAdmin } from "@/hooks/use-session";
 import type { WhitelistUser } from "@/lib/types";
 
@@ -775,19 +778,28 @@ function BulkActionBar({
 /* ------------------------------------------------------------------ */
 
 export default function UsersPage() {
-  const [activeTab, setActiveTab] = useState<"members" | "role-history">("members");
+  const [activeTab, setActiveTab] = useState<"members" | "removed">("members");
   const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({ status: "active" });
+  const [sort, setSort] = useState("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [selectedUser, setSelectedUser] = useState<WhitelistUser | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const perPage = 24; // divisible by 1, 2, 3 for grid
-  const { data, isLoading, isError } = useUsers(page, perPage, search, filters);
+  const perPage = 30;
+  const {
+    data,
+    isLoading,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteUsers(perPage, search, filters, sort, sortOrder);
   const { data: whitelists } = useWhitelists();
   const { data: roleStatsData } = useRoleStats();
   const { data: statsData } = useStats();
@@ -824,26 +836,46 @@ export default function UsersPage() {
     }
   }
 
-  const users = data?.users ?? [];
+  const users = useMemo(() => data?.pages.flatMap(p => p.users) ?? [], [data]);
+  const total = data?.pages[0]?.total ?? 0;
   const steamNames = useSteamNames(users);
 
-  // Debounced dynamic search — update after 300ms of no typing
+  // Debounced dynamic search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchInput !== search) {
-        setSearch(searchInput);
-        setPage(1);
-      }
+      if (searchInput !== search) setSearch(searchInput);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput, search]);
 
   function handleSearch() {
     setSearch(searchInput);
-    setPage(1);
   }
 
-  const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const handleSort = useCallback((col: string) => {
+    if (sort === col) {
+      setSortOrder(o => o === "asc" ? "desc" : "asc");
+    } else {
+      setSort(col);
+      setSortOrder("asc");
+    }
+  }, [sort]);
 
   // Selection helpers
   const allVisibleKeys = useMemo(
@@ -911,64 +943,54 @@ export default function UsersPage() {
         );
       })()}
 
-      {/* ---- Tabs ---- */}
-      <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-1 w-fit">
+      {/* ---- Tabs (roles inline + Removed at end) ---- */}
+      <div className="flex flex-wrap items-center gap-1">
         <button
-          onClick={() => setActiveTab("members")}
+          onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: "" })); }}
           className={cn(
             "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            activeTab === "members"
+            activeTab === "members" && !filters.role_name
               ? "bg-white/[0.08] text-white"
-              : "text-muted-foreground hover:text-white/70"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
           )}
         >
           <Users className="h-3.5 w-3.5" />
-          Members
+          All
         </button>
+        {roleOptions.map(r => (
+          <button
+            key={r.value}
+            onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              activeTab === "members" && filters.role_name === r.value
+                ? "bg-white/[0.08] text-white"
+                : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+            )}
+          >{r.label}</button>
+        ))}
+        <div className="mx-1 h-4 w-px shrink-0 bg-white/[0.10]" />
         <button
-          onClick={() => setActiveTab("role-history")}
+          onClick={() => setActiveTab("removed")}
           className={cn(
             "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            activeTab === "role-history"
+            activeTab === "removed"
               ? "bg-white/[0.08] text-white"
-              : "text-muted-foreground hover:text-white/70"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
           )}
         >
-          <History className="h-3.5 w-3.5" />
-          Role History
+          <UserMinus className="h-3.5 w-3.5" />
+          Removed
         </button>
       </div>
 
-      {activeTab === "role-history" && <RoleHistoryTab whitelists={whitelists ?? []} />}
-      {activeTab === "members" && <>
-
-      {/* ---- Role Tabs ---- */}
-      {roleOptions.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1">
-          <button
-            onClick={() => { setFilters(f => ({ ...f, role_name: "" })); setPage(1); }}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              !filters.role_name ? "bg-white/[0.08] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
-            )}
-          >All</button>
-          {roleOptions.map(r => (
-            <button
-              key={r.value}
-              onClick={() => { setFilters(f => ({ ...f, role_name: r.value })); setPage(1); }}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                filters.role_name === r.value ? "bg-white/[0.08] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
-              )}
-            >{r.label}</button>
-          ))}
-        </div>
-      )}
+      {activeTab === "removed" && <RoleHistoryTab whitelists={whitelists ?? []} />}
+      {activeTab !== "removed" && <>
 
       {/* ---- Toolbar ---- */}
       {(() => {
-        // Count active non-default filters
-        const activeFilterKeys = ["whitelist", "status", "category_id", "role_name", "verified"] as const;
+        // Count active non-default filters (role_name handled by tabs, excluded here)
+        const activeFilterKeys = ["whitelist", "status", "category_id", "verified"] as const;
         const defaultFilters: Record<string, string> = { status: "active" };
         const activeCount = activeFilterKeys.filter(k => {
           const v = filters[k] ?? "";
@@ -980,7 +1002,6 @@ export default function UsersPage() {
         if (filters.whitelist) chips.push({ key: "whitelist", label: `Whitelist: ${whitelists?.find(w => w.slug === filters.whitelist)?.name ?? filters.whitelist}` });
         if (filters.status && filters.status !== "active") chips.push({ key: "status", label: `Status: ${filters.status}` });
         if (filters.category_id) chips.push({ key: "category_id", label: `Category: ${categories?.find(c => String(c.id) === filters.category_id)?.name ?? filters.category_id}` });
-        if (filters.role_name) chips.push({ key: "role_name", label: `Role: ${filters.role_name}` });
         if (filters.verified === "true") chips.push({ key: "verified", label: "Verified only" });
 
         return (
@@ -1063,7 +1084,7 @@ export default function UsersPage() {
                     <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Status</label>
                     <Select
                       value={filters.status ?? "active"}
-                      onValueChange={(v) => { setFilters(p => ({ ...p, status: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
+                      onValueChange={(v) => { setFilters(p => ({ ...p, status: v === "__all__" ? "" : (v ?? "") })); }}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder="Active" />
@@ -1083,7 +1104,7 @@ export default function UsersPage() {
                     <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Whitelist</label>
                     <Select
                       value={filters.whitelist ?? ""}
-                      onValueChange={(v) => { setFilters(p => ({ ...p, whitelist: v === "__all__" ? "" : (v ?? ""), category_id: "" })); setPage(1); }}
+                      onValueChange={(v) => { setFilters(p => ({ ...p, whitelist: v === "__all__" ? "" : (v ?? ""), category_id: "" })); }}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder="All whitelists" />
@@ -1097,34 +1118,13 @@ export default function UsersPage() {
                     </Select>
                   </div>
 
-                  {/* Role */}
-                  {roleOptions.length > 0 && (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Role</label>
-                      <Select
-                        value={filters.role_name ?? ""}
-                        onValueChange={(v) => { setFilters(p => ({ ...p, role_name: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="All roles" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__all__">All roles</SelectItem>
-                          {roleOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
                   {/* Category (manual whitelist only) */}
                   {selectedWl?.is_manual && categories && categories.length > 0 && (
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Category</label>
                       <Select
                         value={filters.category_id ?? ""}
-                        onValueChange={(v) => { setFilters(p => ({ ...p, category_id: v === "__all__" ? "" : (v ?? "") })); setPage(1); }}
+                        onValueChange={(v) => { setFilters(p => ({ ...p, category_id: v === "__all__" ? "" : (v ?? "") })); }}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="All categories" />
@@ -1146,7 +1146,7 @@ export default function UsersPage() {
                       variant={filters.verified === "true" ? "secondary" : "outline"}
                       size="sm"
                       className="h-8 w-full justify-start gap-1.5 text-xs"
-                      onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "true" ? "" : "true" })); setPage(1); }}
+                      onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "true" ? "" : "true" })); }}
                     >
                       <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
                       {filters.verified === "true" ? "Verified only" : "All members"}
@@ -1158,7 +1158,7 @@ export default function UsersPage() {
                 {activeCount > 0 && (
                   <button
                     className="text-[11px] text-muted-foreground/60 hover:text-white/60 transition-colors"
-                    onClick={() => { setFilters({ status: "active" }); setPage(1); }}
+                    onClick={() => { setFilters({ status: "active" }); }}
                   >
                     Reset to defaults
                   </button>
@@ -1183,7 +1183,7 @@ export default function UsersPage() {
                           else delete next[key];
                           return next;
                         });
-                        setPage(1);
+                        
                       }}
                       className="ml-0.5 text-muted-foreground/50 hover:text-white/80"
                     >
@@ -1193,7 +1193,7 @@ export default function UsersPage() {
                 ))}
                 <button
                   className="text-[11px] text-muted-foreground/50 hover:text-white/60 transition-colors"
-                  onClick={() => { setFilters({ status: "active" }); setPage(1); }}
+                  onClick={() => { setFilters({ status: "active" }); }}
                 >
                   Clear all
                 </button>
@@ -1288,38 +1288,19 @@ export default function UsersPage() {
           allSelected={allSelected}
           someSelected={someSelected}
           onToggleSelectAll={toggleSelectAll}
+          sort={sort}
+          sortOrder={sortOrder}
+          onSort={handleSort}
         />
       )}
 
-      {/* ---- Pagination ---- */}
-      {totalPages > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {data?.total ?? 0} total users
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm">
-              Page {page} of {totalPages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* ---- Infinite scroll sentinel ---- */}
+      <div ref={sentinelRef} className="flex items-center justify-center py-4">
+        {isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        {!hasNextPage && users.length > 0 && (
+          <p className="text-xs text-muted-foreground/50">{total} total · {users.length} loaded</p>
+        )}
+      </div>
 
       {/* ---- User Detail Sheet ---- */}
       <Sheet
@@ -1530,6 +1511,13 @@ function RoleHistoryTab({ whitelists }: { whitelists: { slug: string; name: stri
 /*  List View                                                          */
 /* ------------------------------------------------------------------ */
 
+function SortIcon({ col, sort, sortOrder }: { col: string; sort: string; sortOrder: "asc" | "desc" }) {
+  if (sort !== col) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
+  return sortOrder === "asc"
+    ? <ArrowUp className="h-3 w-3" style={{ color: "var(--accent-primary)" }} />
+    : <ArrowDown className="h-3 w-3" style={{ color: "var(--accent-primary)" }} />;
+}
+
 function UserListView({
   users,
   whitelists,
@@ -1540,6 +1528,9 @@ function UserListView({
   allSelected,
   someSelected,
   onToggleSelectAll,
+  sort,
+  sortOrder,
+  onSort,
 }: {
   users: WhitelistUser[];
   whitelists: { slug: string; name: string }[];
@@ -1550,6 +1541,9 @@ function UserListView({
   allSelected: boolean;
   someSelected: boolean;
   onToggleSelectAll: () => void;
+  sort: string;
+  sortOrder: "asc" | "desc";
+  onSort: (col: string) => void;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
@@ -1559,10 +1553,7 @@ function UserListView({
       <div className="hidden items-center gap-3 border-b border-white/[0.05] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 sm:flex">
         <span
           className="flex w-8 cursor-pointer items-center justify-center"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelectAll();
-          }}
+          onClick={(e) => { e.stopPropagation(); onToggleSelectAll(); }}
         >
           <Checkbox
             checked={allSelected}
@@ -1570,11 +1561,19 @@ function UserListView({
             onCheckedChange={() => onToggleSelectAll()}
           />
         </span>
-        <span className="flex-1">Discord Name</span>
-        <span className="w-36">Slots</span>
-        <span className="w-32 text-center">Whitelist</span>
+        <button className="flex flex-1 items-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("name")}>
+          Discord Name <SortIcon col="name" sort={sort} sortOrder={sortOrder} />
+        </button>
+        <button className="flex w-36 items-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("slots")}>
+          Slots <SortIcon col="slots" sort={sort} sortOrder={sortOrder} />
+        </button>
+        <button className="flex w-32 items-center justify-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("whitelist")}>
+          Whitelist <SortIcon col="whitelist" sort={sort} sortOrder={sortOrder} />
+        </button>
         <span className="w-28 text-center">Role</span>
-        <span className="w-20 text-center">Status</span>
+        <button className="flex w-20 items-center justify-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("status")}>
+          Status <SortIcon col="status" sort={sort} sortOrder={sortOrder} />
+        </button>
         <span className="w-6" />
       </div>
 

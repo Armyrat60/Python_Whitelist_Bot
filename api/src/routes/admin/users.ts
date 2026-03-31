@@ -73,6 +73,8 @@ export default async function userRoutes(app: FastifyInstance) {
       unlinked?:    string   // "true" → orphan entries (discordId < 0)
       verified?:    string   // "true" → users with at least one verified identifier
       role_name?:   string   // filter by panel role display name (matches lastPlanName)
+      sort?:        string   // "name" | "slots" | "status" | "updated" | "whitelist"
+      order?:       string   // "asc" | "desc"
     }
 
     const page    = Math.max(1, parseInt(query.page    ?? "1",  10))
@@ -127,6 +129,15 @@ export default async function userRoutes(app: FastifyInstance) {
       if (!isNaN(catId)) where.categoryId = catId
     }
 
+    const sortField = query.sort ?? "name"
+    const sortDir   = query.order === "desc" ? "desc" : "asc"
+    const orderBy =
+      sortField === "slots"     ? { effectiveSlotLimit: sortDir } :
+      sortField === "status"    ? { status: sortDir } :
+      sortField === "updated"   ? { updatedAt: sortDir } :
+      sortField === "whitelist" ? { whitelist: { name: sortDir } } :
+                                  { discordName: sortDir }
+
     const [total, users] = await Promise.all([
       prisma.whitelistUser.count({ where }),
       prisma.whitelistUser.findMany({
@@ -135,7 +146,7 @@ export default async function userRoutes(app: FastifyInstance) {
           whitelist: { select: { slug: true, name: true } },
           category:  { select: { id: true, name: true } },
         },
-        orderBy: { discordName: "asc" },
+        orderBy,
         take:    perPage,
         skip:    (page - 1) * perPage,
       }),
