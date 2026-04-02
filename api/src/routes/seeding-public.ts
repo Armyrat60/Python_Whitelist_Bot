@@ -28,8 +28,8 @@ const seedingPublicRoutes: FastifyPluginAsync = async (app) => {
     const pointsRequired = config.pointsRequired
 
     const players = await app.prisma.seedingPoints.findMany({
-      where: { guildId, points: { gt: 0 } },
-      orderBy: { points: "desc" },
+      where: { guildId, OR: [{ points: { gt: 0 } }, { rewarded: true }] },
+      orderBy: [{ rewarded: "desc" }, { points: "desc" }],
       take: 50,
     })
 

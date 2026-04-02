@@ -118,8 +118,8 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
         JSON.stringify({ reason: safety.reason, qualifiers: qualifiers.length }),
       )
     } else {
-      // Determine which whitelist to use
-      const whitelistId = cfg.reward_whitelist_id ?? await getDefaultWhitelistId(guildId)
+      // Use the dedicated seeding whitelist (auto-created with correct group)
+      const whitelistId = await db.ensureSeedingWhitelist(guildId, cfg.reward_group_name)
 
       if (whitelistId) {
         for (const q of qualifiers) {
@@ -149,27 +149,6 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
   await db.updatePollStatus(guildId, "ok", msg)
 }
 
-/**
- * Get the default whitelist ID for a guild (the one marked is_default = true).
- */
-async function getDefaultWhitelistId(guildId: bigint): Promise<number | null> {
-  const result = await pool.query<{ id: number }>(
-    `SELECT id FROM whitelists
-     WHERE guild_id = $1 AND is_default = TRUE AND enabled = TRUE
-     LIMIT 1`,
-    [guildId],
-  )
-  if (result.rows.length > 0) return result.rows[0].id
-
-  // Fallback: first enabled whitelist
-  const fallback = await pool.query<{ id: number }>(
-    `SELECT id FROM whitelists
-     WHERE guild_id = $1 AND enabled = TRUE
-     ORDER BY id ASC LIMIT 1`,
-    [guildId],
-  )
-  return fallback.rows[0]?.id ?? null
-}
 
 /**
  * Run the fixed_reset point reset for all guilds.

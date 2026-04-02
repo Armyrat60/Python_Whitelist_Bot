@@ -279,8 +279,8 @@ export default async function seedingRoutes(app: FastifyInstance) {
     const pointsRequired = config?.pointsRequired ?? 120
 
     const players = await app.prisma.seedingPoints.findMany({
-      where: { guildId, points: { gt: 0 } },
-      orderBy: { points: "desc" },
+      where: { guildId, OR: [{ points: { gt: 0 } }, { rewarded: true }] },
+      orderBy: [{ rewarded: "desc" }, { points: "desc" }],
       take: limit,
     })
 

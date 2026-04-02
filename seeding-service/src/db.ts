@@ -221,18 +221,21 @@ export async function markRewarded(
   )
 }
 
-/** Reset all points for a guild (fixed_reset mode). */
+/** Reset all points for a guild (fixed_reset mode).
+ *  Preserves rewarded status and rewarded_at — only resets points to 0.
+ *  Players who already earned their reward keep the badge on the leaderboard. */
 export async function resetPoints(guildId: bigint): Promise<number> {
   const result = await pool.query(
     `UPDATE seeding_points
-     SET points = 0, rewarded = FALSE, last_reset_at = NOW()
+     SET points = 0, last_reset_at = NOW()
      WHERE guild_id = $1`,
     [guildId],
   )
   return result.rowCount ?? 0
 }
 
-/** Get leaderboard for a guild. */
+/** Get leaderboard for a guild.
+ *  Shows players with points > 0 OR who have been rewarded (even after reset). */
 export async function getLeaderboard(
   guildId: bigint,
   limit = 50,
@@ -246,12 +249,72 @@ export async function getLeaderboard(
   const result = await pool.query(
     `SELECT steam_id, player_name, points, rewarded, rewarded_at
      FROM seeding_points
-     WHERE guild_id = $1 AND points > 0
-     ORDER BY points DESC
+     WHERE guild_id = $1 AND (points > 0 OR rewarded = TRUE)
+     ORDER BY rewarded DESC, points DESC
      LIMIT $2`,
     [guildId, limit],
   )
   return result.rows
+}
+
+// ─── Seeding whitelist management ────────────────────────────────────────────
+
+/**
+ * Ensure a dedicated "Seeding Rewards" whitelist exists for this guild
+ * with the correct squad_group set to the configured reward group (e.g. "reserve").
+ *
+ * This prevents seeding rewards from inheriting the main whitelist's group
+ * (which might have cameraman, admin, etc.).
+ *
+ * Returns the whitelist ID to use for seeding rewards.
+ */
+export async function ensureSeedingWhitelist(
+  guildId: bigint,
+  groupName: string,
+): Promise<number> {
+  // Check if a seeding whitelist already exists
+  const existing = await pool.query<{ id: number; squad_group: string }>(
+    `SELECT id, squad_group FROM whitelists
+     WHERE guild_id = $1 AND slug = 'seeding-rewards'
+     LIMIT 1`,
+    [guildId],
+  )
+
+  if (existing.rows.length > 0) {
+    const wl = existing.rows[0]
+    // Update squad_group if it changed
+    if (wl.squad_group !== groupName) {
+      await pool.query(
+        `UPDATE whitelists SET squad_group = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [groupName, wl.id],
+      )
+      console.log(`[seeding/db] Updated seeding whitelist group to "${groupName}" for guild ${guildId}`)
+    }
+    return wl.id
+  }
+
+  // Create a new seeding whitelist
+  const result = await pool.query<{ id: number }>(
+    `INSERT INTO whitelists
+       (guild_id, name, slug, enabled, squad_group, output_filename,
+        default_slot_limit, stack_roles, is_default, is_manual, created_at, updated_at)
+     VALUES ($1, 'Seeding Rewards', 'seeding-rewards', TRUE, $2, 'seeding_rewards.txt',
+             1, FALSE, FALSE, FALSE, NOW(), NOW())
+     RETURNING id`,
+    [guildId, groupName],
+  )
+
+  // Ensure the squad group exists
+  await pool.query(
+    `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+     VALUES ($1, $2, $2, 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
+     ON CONFLICT (guild_id, group_name) DO NOTHING`,
+    [guildId, groupName],
+  )
+
+  console.log(`[seeding/db] Created seeding whitelist (id=${result.rows[0].id}) with group "${groupName}" for guild ${guildId}`)
+  return result.rows[0].id
 }
 
 // ─── Whitelist reward creation ───────────────────────────────────────────────
