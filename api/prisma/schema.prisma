@@ -335,6 +335,7 @@ model SeedingConfig {
   lastPollAt              DateTime? @map("last_poll_at")
   lastPollStatus          String?   @map("last_poll_status") @db.VarChar(20)
   lastPollMessage         String?   @map("last_poll_message")
+  leaderboardPublic       Boolean   @default(false) @map("leaderboard_public")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 

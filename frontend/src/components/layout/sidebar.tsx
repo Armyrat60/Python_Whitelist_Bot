@@ -16,6 +16,7 @@ import {
   Search,
   Layers,
   Sprout,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -58,6 +59,7 @@ const bottomLinks = [
 
 const userLinks = [
   { href: "/my-whitelist", label: "My Whitelist", icon: List },
+  { href: "/seeding/leaderboard", label: "Seeding Leaderboard", icon: Trophy },
 ];
 
 function guildIconUrl(guildId: string, icon: string | null) {

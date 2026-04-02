@@ -27,6 +27,7 @@ import notificationRoutes from "./routes/admin/notifications.js"
 import permissionsRoutes from "./routes/admin/permissions.js"
 import bridgeRoutes from "./routes/admin/bridge.js"
 import seedingRoutes from "./routes/admin/seeding.js"
+import seedingPublicRoutes from "./routes/seeding-public.js"
 import jobRoutes from "./routes/admin/jobs.js"
 import { cache } from "./services/cache.js"
 import { DiscordRESTClient } from "./lib/discord.js"
@@ -96,6 +97,7 @@ async function build() {
   await app.register(roleSyncRoutes, { prefix: "/api/admin" })
   await app.register(reconcileRoutes, { prefix: "/api/admin" })
   await app.register(myWhitelistRoutes, { prefix: "/api" })
+  await app.register(seedingPublicRoutes, { prefix: "/api" })
   await app.register(steamRoutes, { prefix: "/api" })
 
   // Health check — registered last so it appears after all routes in logs

@@ -233,6 +233,7 @@ export interface SeedingConfig {
   last_poll_at: string | null;
   last_poll_status: "ok" | "error" | null;
   last_poll_message: string | null;
+  leaderboard_public: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -245,4 +246,11 @@ export interface SeedingPlayer {
   rewarded: boolean;
   rewarded_at: string | null;
   last_award_at?: string | null;
+}
+
+export interface SeedingPublicPlayer {
+  player_name: string | null;
+  points: number;
+  progress_pct: number;
+  rewarded: boolean;
 }

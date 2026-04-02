@@ -47,9 +47,15 @@ export async function ensureTables(): Promise<void> {
       last_poll_at                TIMESTAMP    NULL,
       last_poll_status            VARCHAR(20)  NULL,
       last_poll_message           TEXT         NULL,
+      leaderboard_public          BOOLEAN      NOT NULL DEFAULT FALSE,
       created_at                  TIMESTAMP    NOT NULL DEFAULT NOW(),
       updated_at                  TIMESTAMP    NOT NULL DEFAULT NOW()
     )
+  `)
+
+  // Add column for existing installs
+  await pool.query(`
+    ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS leaderboard_public BOOLEAN NOT NULL DEFAULT FALSE
   `)
 
   await pool.query(`
@@ -114,6 +120,7 @@ export interface SeedingConfigRow {
   last_poll_at: Date | null
   last_poll_status: string | null
   last_poll_message: string | null
+  leaderboard_public: boolean
 }
 
 /** Load all enabled seeding configs. */

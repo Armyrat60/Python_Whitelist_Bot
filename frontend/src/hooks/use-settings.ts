@@ -993,3 +993,18 @@ export function useGrantSeedingPoints() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-leaderboard"] }),
   });
 }
+
+export function useSeedingPublicLeaderboard() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{
+    enabled: boolean;
+    points_required: number;
+    players: import("@/lib/types").SeedingPublicPlayer[];
+  }>({
+    queryKey: ["seeding-public-leaderboard", guildId],
+    queryFn: () => api.get("/api/seeding/public-leaderboard"),
+    enabled: !!guildId,
+    refetchInterval: 30_000,
+  });
+}

@@ -46,6 +46,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         last_poll_at:                config.lastPollAt?.toISOString() ?? null,
         last_poll_status:            config.lastPollStatus,
         last_poll_message:           config.lastPollMessage,
+        leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
       },
@@ -69,6 +70,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       reset_cron?: string
       poll_interval_seconds?: number
       enabled?: boolean
+      leaderboard_public?: boolean
     }
   }>("/seeding-config", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
@@ -143,6 +145,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         resetCron:              body.reset_cron              ?? "0 0 * * *",
         pollIntervalSeconds:    body.poll_interval_seconds   ?? 60,
         enabled:                body.enabled                 ?? false,
+        leaderboardPublic:      body.leaderboard_public      ?? false,
       },
       update: {
         squadjsHost:            host,
@@ -158,6 +161,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         resetCron:              body.reset_cron              ?? existing?.resetCron              ?? "0 0 * * *",
         pollIntervalSeconds:    body.poll_interval_seconds   ?? existing?.pollIntervalSeconds    ?? 60,
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
+        leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },
     })
 
