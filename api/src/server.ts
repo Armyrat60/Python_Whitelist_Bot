@@ -26,6 +26,7 @@ import auditRoutes from "./routes/admin/audit.js"
 import notificationRoutes from "./routes/admin/notifications.js"
 import permissionsRoutes from "./routes/admin/permissions.js"
 import bridgeRoutes from "./routes/admin/bridge.js"
+import seedingRoutes from "./routes/admin/seeding.js"
 import jobRoutes from "./routes/admin/jobs.js"
 import { cache } from "./services/cache.js"
 import { DiscordRESTClient } from "./lib/discord.js"
@@ -89,6 +90,7 @@ async function build() {
   await app.register(notificationRoutes, { prefix: "/api/admin" })
   await app.register(permissionsRoutes, { prefix: "/api/admin" })
   await app.register(bridgeRoutes, { prefix: "/api/admin" })
+  await app.register(seedingRoutes, { prefix: "/api/admin" })
   await app.register(jobRoutes,    { prefix: "/api/admin" })
   await app.register(importExportRoutes, { prefix: "/api/admin" })
   await app.register(roleSyncRoutes, { prefix: "/api/admin" })

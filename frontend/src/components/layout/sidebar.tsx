@@ -15,6 +15,7 @@ import {
   BookUser,
   Search,
   Layers,
+  Sprout,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -48,6 +49,7 @@ const configLinks = [
   { href: "/dashboard/panels", label: "Signup Panels", icon: PanelTop },
   { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
   { href: "/dashboard/squad-groups", label: "Permission Groups", icon: Layers },
+  { href: "/dashboard/seeding", label: "Seeding", icon: Sprout },
 ];
 
 const bottomLinks = [

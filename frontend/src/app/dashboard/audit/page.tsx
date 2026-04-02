@@ -66,7 +66,8 @@ function actionLabel(actionType: string): string {
   return ACTION_TYPES.find((a) => a.value === actionType)?.label ?? actionType.replace(/_/g, " ");
 }
 
-export default function AuditPage() {
+/** Reusable audit log content — used in Settings > Audit tab and standalone /dashboard/audit */
+export function AuditContent() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const { data: whitelists } = useWhitelists();
@@ -324,4 +325,8 @@ export default function AuditPage() {
       )}
     </div>
   );
+}
+
+export default function AuditPage() {
+  return <AuditContent />;
 }

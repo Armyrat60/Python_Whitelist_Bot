@@ -145,7 +145,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
       // Check mod roles from bot_settings
       const modRoleSetting = await app.prisma.botSetting.findUnique({
-        where: { guildId_settingKey: { guildId: BigInt(ug.id), settingKey: "mod_role_ids" } },
+        where: { guildId_settingKey: { guildId: BigInt(ug.id), settingKey: "mod_role_id" } },
       })
       const modRoleIds = modRoleSetting?.settingValue?.split(",").filter(Boolean) ?? []
       const hasModRole = memberRoles.some((r) => modRoleIds.includes(r))

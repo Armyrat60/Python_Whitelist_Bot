@@ -212,3 +212,37 @@ export interface HealthAlert {
 export interface HealthStatus {
   alerts: HealthAlert[];
 }
+
+// ── Seeding Module ──────────────────────────────────────────────────────────
+
+export interface SeedingConfig {
+  id: number;
+  squadjs_host: string;
+  squadjs_port: number;
+  squadjs_token: string;
+  seeding_start_player_count: number;
+  seeding_player_threshold: number;
+  points_required: number;
+  reward_whitelist_id: number | null;
+  reward_group_name: string;
+  reward_duration_hours: number;
+  tracking_mode: "fixed_reset" | "incremental";
+  reset_cron: string;
+  poll_interval_seconds: number;
+  enabled: boolean;
+  last_poll_at: string | null;
+  last_poll_status: "ok" | "error" | null;
+  last_poll_message: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SeedingPlayer {
+  steam_id: string;
+  player_name: string | null;
+  points: number;
+  progress_pct: number;
+  rewarded: boolean;
+  rewarded_at: string | null;
+  last_award_at?: string | null;
+}

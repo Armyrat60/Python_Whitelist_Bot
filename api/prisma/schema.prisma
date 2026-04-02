@@ -313,3 +313,61 @@ model SquadPlayer {
   @@index([discordId])
   @@map("squad_players")
 }
+
+// ─── Seeding Module ─────────────────────────────────────────────────────────
+
+model SeedingConfig {
+  id                      Int       @id @default(autoincrement())
+  guildId                 BigInt    @unique @map("guild_id")
+  enabled                 Boolean   @default(false)
+  squadjsHost             String    @default("") @map("squadjs_host") @db.VarChar(255)
+  squadjsPort             Int       @default(3000) @map("squadjs_port")
+  squadjsToken            String    @default("") @map("squadjs_token") @db.VarChar(500)
+  seedingStartPlayerCount Int       @default(2) @map("seeding_start_player_count")
+  seedingPlayerThreshold  Int       @default(50) @map("seeding_player_threshold")
+  pointsRequired          Int       @default(120) @map("points_required")
+  rewardWhitelistId       Int?      @map("reward_whitelist_id")
+  rewardGroupName         String    @default("reserve") @map("reward_group_name") @db.VarChar(100)
+  rewardDurationHours     Int       @default(168) @map("reward_duration_hours")
+  trackingMode            String    @default("fixed_reset") @map("tracking_mode") @db.VarChar(20)
+  resetCron               String    @default("0 0 * * *") @map("reset_cron") @db.VarChar(50)
+  pollIntervalSeconds     Int       @default(60) @map("poll_interval_seconds")
+  lastPollAt              DateTime? @map("last_poll_at")
+  lastPollStatus          String?   @map("last_poll_status") @db.VarChar(20)
+  lastPollMessage         String?   @map("last_poll_message")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@map("seeding_configs")
+}
+
+model SeedingPoints {
+  id          Int       @id @default(autoincrement())
+  guildId     BigInt    @map("guild_id")
+  steamId     String    @map("steam_id") @db.VarChar(32)
+  playerName  String?   @map("player_name") @db.VarChar(255)
+  points      Int       @default(0)
+  lastAwardAt DateTime? @map("last_award_at")
+  lastResetAt DateTime? @map("last_reset_at")
+  rewarded    Boolean   @default(false)
+  rewardedAt  DateTime? @map("rewarded_at")
+
+  @@unique([guildId, steamId])
+  @@index([guildId, points(sort: Desc)])
+  @@map("seeding_points")
+}
+
+model SeedingSession {
+  id           Int       @id @default(autoincrement())
+  guildId      BigInt    @map("guild_id")
+  steamId      String    @map("steam_id") @db.VarChar(32)
+  playerName   String?   @map("player_name") @db.VarChar(255)
+  startedAt    DateTime  @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  pointsEarned Int       @default(0) @map("points_earned")
+  playerCount  Int       @default(0) @map("player_count")
+
+  @@index([guildId, startedAt(sort: Desc)])
+  @@index([guildId, steamId])
+  @@map("seeding_sessions")
+}

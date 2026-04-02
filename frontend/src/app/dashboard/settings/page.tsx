@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
   Shield, User, Globe, Crown, Lock, ChevronRight, Clock,
-  Plus, Users, Tag, Send, Link2, BarChart3,
+  Plus, Users, Tag, Send, Link2, BarChart3, FileText,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
 import { DataContent } from "@/app/dashboard/data/page";
+import { AuditContent } from "@/app/dashboard/audit/page";
 import {
   useSettings,
   useRoles,
@@ -57,7 +58,7 @@ import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/ui/combobox";
 
 /* ─── Types ─── */
-type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "data";
+type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "data" | "audit";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "general",       label: "General",       icon: Settings2 },
@@ -66,6 +67,7 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "permissions",   label: "Permissions",    icon: Shield },
   { id: "connections",   label: "Connections",    icon: Link2 },
   { id: "data",          label: "Data",          icon: BarChart3 },
+  { id: "audit",         label: "Audit Log",     icon: FileText },
   { id: "account",       label: "Account",        icon: User },
 ];
 
@@ -396,6 +398,33 @@ export default function SettingsPage() {
   const availableRoles = (roles ?? []).filter((r) => !grantedRoleIds.has(r.id));
   const isAdmin = session?.is_mod ?? false;
 
+  /* ── Combobox options for channels & roles ── */
+  const channelOptions = useMemo(
+    () =>
+      [{ value: "__none__", label: "None (disabled)" }].concat(
+        (channels ?? [])
+          .slice()
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          .map((ch) => ({ value: ch.id, label: `#${ch.name}` }))
+      ),
+    [channels]
+  );
+
+  const availableRoleOptions = useMemo(
+    () =>
+      availableRoles.map((r) => ({
+        value: r.id,
+        label: r.name,
+        icon: (
+          <span
+            className="inline-block h-3 w-3 rounded-full mr-1 shrink-0"
+            style={{ backgroundColor: r.color || "#99AAB5" }}
+          />
+        ),
+      })),
+    [availableRoles]
+  );
+
   /* ── Org theme helpers (passed through accent context) ── */
   function handleSaveOrgTheme(p: string, s: string) {
     save({ accent_primary: p, accent_secondary: s });
@@ -609,19 +638,15 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <Label>Notification Channel</Label>
-                <Select value={notifChannelId || "__none__"} onValueChange={(v) => setNotifChannelId(v === "__none__" ? "" : (v ?? ""))}>
-                  <SelectTrigger className="w-72">
-                    <SelectValue placeholder="Select a channel…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">
-                      <span className="text-muted-foreground">None</span>
-                    </SelectItem>
-                    {channels?.map((ch) => (
-                      <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={channelOptions}
+                  value={notifChannelId || "__none__"}
+                  onValueChange={(v) => setNotifChannelId(v === "__none__" ? "" : v)}
+                  placeholder="Select a channel…"
+                  searchPlaceholder="Search channels…"
+                  emptyText="No channels found."
+                  className="w-72"
+                />
                 <p className="text-[11px] text-muted-foreground">
                   Default channel for scheduled reports. Per-event routing can be set below.
                 </p>
@@ -699,22 +724,15 @@ export default function SettingsPage() {
                                   <p className="text-sm font-medium truncate">{info.label}</p>
                                   <p className="text-xs text-muted-foreground truncate">{info.description}</p>
                                 </div>
-                                <Select
+                                <Combobox
+                                  options={channelOptions}
                                   value={currentChannel || "__none__"}
-                                  onValueChange={(v) => setNotifChannel(eventType, v ?? "")}
-                                >
-                                  <SelectTrigger className="w-52 shrink-0">
-                                    <SelectValue placeholder="Disabled" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__none__">
-                                      <span className="text-muted-foreground">Disabled</span>
-                                    </SelectItem>
-                                    {channels?.map((ch) => (
-                                      <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                  onValueChange={(v) => setNotifChannel(eventType, v)}
+                                  placeholder="Disabled"
+                                  searchPlaceholder="Search channels…"
+                                  emptyText="No channels found."
+                                  className="w-52 shrink-0"
+                                />
                               </div>
                             );
                           })}
@@ -1100,16 +1118,14 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <Label className="text-xs text-muted-foreground mb-1 block">Discord Role *</Label>
-                        <Select value={newRoleId} onValueChange={(v) => setNewRoleId(v ?? "")}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a role…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableRoles.map((r) => (
-                              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Combobox
+                          options={availableRoleOptions}
+                          value={newRoleId}
+                          onValueChange={(v) => setNewRoleId(v)}
+                          placeholder="Select a role…"
+                          searchPlaceholder="Search roles…"
+                          emptyText="No roles available."
+                        />
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground mb-1 block">Permission Level</Label>
@@ -1228,6 +1244,10 @@ export default function SettingsPage() {
 
       {activeTab === "data" && (
         <DataContent />
+      )}
+
+      {activeTab === "audit" && (
+        <AuditContent />
       )}
 
       {activeTab === "account" && (

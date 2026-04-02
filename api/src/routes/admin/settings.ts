@@ -15,23 +15,37 @@ import { getFileToken, getFileUrl } from "../../services/token.js"
 
 const DEFAULT_SETTINGS = [
   "duplicate_output_dedupe",
-  "mod_role_ids",
+  "mod_role_id",
   "accent_primary",
   "accent_secondary",
-  "report_channel_id",
-  "report_schedule",
+  "notification_channel_id",
+  "report_frequency",
   "retention_days",
   "url_salt",
+  "auto_reactivate_on_role_return",
+  "welcome_dm_enabled",
+  "welcome_dm_text",
+  "allow_global_duplicates",
+  "bot_status_message",
+  "role_sync_interval_hours",
+  "timezone",
 ] as const
 
 const MUTABLE_SETTINGS = new Set<string>([
   "duplicate_output_dedupe",
-  "mod_role_ids",
+  "mod_role_id",
   "accent_primary",
   "accent_secondary",
-  "report_channel_id",
-  "report_schedule",
+  "notification_channel_id",
+  "report_frequency",
   "retention_days",
+  "auto_reactivate_on_role_return",
+  "welcome_dm_enabled",
+  "welcome_dm_text",
+  "allow_global_duplicates",
+  "bot_status_message",
+  "role_sync_interval_hours",
+  "timezone",
 ])
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -154,7 +168,11 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/channels", { preHandler: requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const channels = await app.discord.fetchChannels(guildId)
-    return reply.send({ channels: channels.map((ch) => ({ id: ch.id, name: ch.name })) })
+    return reply.send({
+      channels: channels
+        .map((ch) => ({ id: ch.id, name: ch.name, position: ch.position ?? 0 }))
+        .sort((a, b) => a.position - b.position),
+    })
   })
 
   // ── GET /roles ────────────────────────────────────────────────────

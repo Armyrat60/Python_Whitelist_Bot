@@ -15,14 +15,10 @@ import {
   Users,
   Trash2,
   Clock,
-  FileText,
-  ChevronLeft,
-  ChevronRight,
   X,
 } from "lucide-react";
 import {
   useWhitelists,
-  useAudit,
 } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,11 +64,10 @@ import { cn } from "@/lib/utils";
 
 // ─── Tab definition ────────────────────────────────────────────────────────
 
-type Tab = "import-export" | "audit";
+type Tab = "import-export";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
   { id: "import-export", label: "Import / Export", icon: Upload },
-  { id: "audit",         label: "Audit Log",        icon: FileText },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -155,51 +150,6 @@ interface RoleSyncResult {
   already_exist: number;
   dry_run: boolean;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AUDIT — constants & helpers
-// ═══════════════════════════════════════════════════════════════════════════
-
-const ACTION_TYPES: { value: string; label: string }[] = [
-  { value: "user_added",                 label: "User Added" },
-  { value: "user_removed",               label: "User Removed" },
-  { value: "user_updated",               label: "User Updated" },
-  { value: "ids_updated",                label: "IDs Updated" },
-  { value: "auto_disable_role_lost",     label: "Auto-Disabled (Role Lost)" },
-  { value: "auto_reactivate_role_return",label: "Auto Re-enabled (Role Return)" },
-  { value: "left_guild",                 label: "Left Discord Server" },
-  { value: "auto_expire",                label: "Expired" },
-  { value: "daily_role_sync_add",        label: "Role Sync — Added" },
-  { value: "daily_role_sync_remove",     label: "Role Sync — Removed" },
-  { value: "bulk_import",                label: "Bulk Import" },
-  { value: "mod_override",               label: "Mod Override" },
-  { value: "mod_remove",                 label: "Mod Remove" },
-  { value: "mod_set",                    label: "Mod Set IDs" },
-  { value: "panel_pushed",               label: "Panel Pushed" },
-  { value: "settings_changed",           label: "Settings Changed" },
-  { value: "whitelist_toggled",          label: "Whitelist Toggled" },
-  { value: "role_mapping_added",         label: "Role Mapping Added" },
-  { value: "role_mapping_removed",       label: "Role Mapping Removed" },
-  { value: "resync",                     label: "Resync" },
-  { value: "admin_add_user",             label: "Admin: Add User" },
-  { value: "group_create",               label: "Group Created" },
-  { value: "group_delete",               label: "Group Deleted" },
-  { value: "group_edit_perms",           label: "Group Permissions Edited" },
-];
-
-type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
-
-function actionVariant(actionType: string): BadgeVariant {
-  if (["user_added", "admin_add_user", "daily_role_sync_add", "auto_reactivate_role_return"].includes(actionType)) return "default";
-  if (["user_removed", "auto_disable_role_lost", "left_guild", "auto_expire", "mod_remove", "daily_role_sync_remove"].includes(actionType)) return "destructive";
-  if (["settings_changed", "whitelist_toggled", "role_mapping_added", "role_mapping_removed", "group_create", "group_delete", "group_edit_perms"].includes(actionType)) return "outline";
-  return "secondary";
-}
-
-function actionLabel(actionType: string): string {
-  return ACTION_TYPES.find((a) => a.value === actionType)?.label ?? actionType.replace(/_/g, " ");
-}
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -520,36 +470,7 @@ export function DataContent() {
     }
   }
 
-  // ── Audit state ──────────────────────────────────────────────────────────
-  const [auditPage, setAuditPage] = useState(1);
-  const [auditFilters, setAuditFilters] = useState<Record<string, string>>({});
-  const auditPerPage = 25;
-  const { data: auditData, isLoading: auditLoading } = useAudit(auditPage, auditPerPage, auditFilters);
-  const auditTotalPages = auditData ? Math.ceil(auditData.total / auditPerPage) : 0;
-
-  function setAuditFilter(key: string, value: string) {
-    setAuditFilters((prev) => ({ ...prev, [key]: value }));
-    setAuditPage(1);
-  }
-
-  function clearAuditFilter(key: string) {
-    setAuditFilters((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    setAuditPage(1);
-  }
-
-  function buildExportUrl() {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(auditFilters)) {
-      if (v) params.set(k, v);
-    }
-    return `/api/admin/audit/export?${params.toString()}`;
-  }
-
-  const hasAuditFilters = Object.values(auditFilters).some(Boolean);
+  // Audit tab has been moved to Settings > Audit Log
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -653,206 +574,7 @@ export function DataContent() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════
-          AUDIT LOG TAB
-      ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "audit" && (
-        <div className="space-y-4">
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-end gap-3">
-            <Select
-              value={auditFilters.action ?? ""}
-              onValueChange={(v) => setAuditFilter("action", v === "__all__" ? "" : (v ?? ""))}
-            >
-              <SelectTrigger className="w-52">
-                <SelectValue placeholder="All actions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All actions</SelectItem>
-                {ACTION_TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={auditFilters.type ?? ""}
-              onValueChange={(v) => setAuditFilter("type", v === "__all__" ? "" : (v ?? ""))}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All whitelists" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All whitelists</SelectItem>
-                {whitelists?.map((wl) => (
-                  <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="relative">
-              <Input
-                type="date"
-                className="w-40"
-                value={auditFilters.date_from ?? ""}
-                onChange={(e) => setAuditFilter("date_from", e.target.value)}
-              />
-              {auditFilters.date_from && (
-                <button
-                  onClick={() => clearAuditFilter("date_from")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            <div className="relative">
-              <Input
-                type="date"
-                className="w-40"
-                value={auditFilters.date_to ?? ""}
-                onChange={(e) => setAuditFilter("date_to", e.target.value)}
-              />
-              {auditFilters.date_to && (
-                <button
-                  onClick={() => clearAuditFilter("date_to")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            <Input
-              className="w-44"
-              placeholder="Actor Discord ID"
-              value={auditFilters.actor ?? ""}
-              onChange={(e) => setAuditFilter("actor", e.target.value)}
-            />
-
-            <div className="ml-auto flex gap-2">
-              {hasAuditFilters && (
-                <Button variant="ghost" size="sm" onClick={() => { setAuditFilters({}); setAuditPage(1); }}>
-                  Clear filters
-                </Button>
-              )}
-              <a href={buildExportUrl()} download="audit_log.csv">
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-1.5" />
-                  Export CSV
-                </Button>
-              </a>
-            </div>
-          </div>
-
-          {/* Table */}
-          {auditLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : (
-            <>
-              <div className="rounded-lg border border-white/[0.06]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-40">Timestamp</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Whitelist</TableHead>
-                      <TableHead>Actor</TableHead>
-                      <TableHead>Target</TableHead>
-                      <TableHead>Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {auditData?.entries.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          No audit entries found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      auditData?.entries.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                            {new Date(entry.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={actionVariant(entry.action_type)}>
-                              {actionLabel(entry.action_type)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {entry.whitelist_name ? (
-                              <Badge variant="outline">{entry.whitelist_name}</Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {entry.actor_discord_id ? (
-                              <button
-                                className="hover:underline text-left"
-                                onClick={() => setAuditFilter("actor", entry.actor_discord_id!)}
-                                title={`Filter by ${entry.actor_discord_id}`}
-                              >
-                                <span className="text-white/80">{entry.actor_discord_name ?? entry.actor_discord_id}</span>
-                                {entry.actor_discord_name && (
-                                  <span className="block font-mono text-[10px] text-muted-foreground">{entry.actor_discord_id}</span>
-                                )}
-                              </button>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {entry.target_discord_id ? (
-                              <button
-                                className="hover:underline text-left"
-                                onClick={() => setAuditFilter("actor", entry.target_discord_id!)}
-                                title={`Filter by ${entry.target_discord_id}`}
-                              >
-                                <span className="text-white/80">{entry.target_discord_name ?? entry.target_discord_id}</span>
-                                {entry.target_discord_name && (
-                                  <span className="block font-mono text-[10px] text-muted-foreground">{entry.target_discord_id}</span>
-                                )}
-                              </button>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
-                            {entry.details ?? "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  {auditData?.total ?? 0} total entries
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" disabled={auditPage <= 1} onClick={() => setAuditPage((p) => p - 1)}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm">Page {auditPage} of {auditTotalPages || 1}</span>
-                  <Button variant="outline" size="sm" disabled={auditPage >= auditTotalPages} onClick={() => setAuditPage((p) => p + 1)}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {/* Audit Log has been moved to its own Settings tab */}
 
     </div>
   );

@@ -920,3 +920,76 @@ export function useJobStatus(jobId: number | null) {
     },
   });
 }
+
+// ── Seeding config hooks ────────────────────────────────────────────────────
+
+export function useSeedingConfig() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{ config: import("@/lib/types").SeedingConfig | null }>({
+    queryKey: ["seeding-config", guildId],
+    queryFn: () => api.get("/api/admin/seeding-config"),
+    enabled: !!guildId,
+  });
+}
+
+export function useSaveSeedingConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<import("@/lib/types").SeedingConfig>) =>
+      api.put<{ config: import("@/lib/types").SeedingConfig }>("/api/admin/seeding-config", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-config"] }),
+  });
+}
+
+export function useDeleteSeedingConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete("/api/admin/seeding-config"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-config"] }),
+  });
+}
+
+export function useTestSeedingConnection() {
+  return useMutation({
+    mutationFn: (data: Partial<import("@/lib/types").SeedingConfig>) =>
+      api.post<{ ok: boolean; message: string; player_count?: number }>(
+        "/api/admin/seeding-config/test",
+        data,
+      ),
+  });
+}
+
+export function useSeedingLeaderboard() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{
+    points_required: number;
+    players: import("@/lib/types").SeedingPlayer[];
+  }>({
+    queryKey: ["seeding-leaderboard", guildId],
+    queryFn: () => api.get("/api/admin/seeding/leaderboard"),
+    enabled: !!guildId,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useResetSeedingPoints() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean; players_reset: number }>("/api/admin/seeding/reset", {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["seeding-leaderboard"] });
+      qc.invalidateQueries({ queryKey: ["seeding-config"] });
+    },
+  });
+}
+
+export function useGrantSeedingPoints() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { steam_id: string; points: number }) =>
+      api.post<{ ok: boolean }>("/api/admin/seeding/grant", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-leaderboard"] }),
+  });
+}

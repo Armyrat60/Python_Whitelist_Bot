@@ -18,9 +18,10 @@ export interface LightGuild {
 }
 
 export interface DiscordChannel {
-  id:   string
-  name: string
-  type: number
+  id:       string
+  name:     string
+  type:     number
+  position: number
 }
 
 export interface DiscordRole {
