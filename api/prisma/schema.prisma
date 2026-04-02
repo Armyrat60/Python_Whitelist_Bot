@@ -327,7 +327,7 @@ model SeedingConfig {
   seedingPlayerThreshold  Int       @default(50) @map("seeding_player_threshold")
   pointsRequired          Int       @default(120) @map("points_required")
   rewardWhitelistId       Int?      @map("reward_whitelist_id")
-  rewardGroupName         String    @default("reserve") @map("reward_group_name") @db.VarChar(100)
+  rewardGroupName         String    @default("SeedReserve") @map("reward_group_name") @db.VarChar(100)
   rewardDurationHours     Int       @default(168) @map("reward_duration_hours")
   trackingMode            String    @default("fixed_reset") @map("tracking_mode") @db.VarChar(20)
   resetCron               String    @default("0 0 * * *") @map("reset_cron") @db.VarChar(50)

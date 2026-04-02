@@ -152,7 +152,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
     }
 
     // Validate reward group safety
-    const groupName = body.reward_group_name ?? existing?.rewardGroupName ?? "reserve"
+    const groupName = body.reward_group_name ?? existing?.rewardGroupName ?? "SeedReserve"
     const group = await app.prisma.squadGroup.findUnique({
       where: { guildId_groupName: { guildId, groupName } },
     })

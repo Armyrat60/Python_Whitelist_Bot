@@ -39,7 +39,7 @@ export async function ensureTables(): Promise<void> {
       seeding_player_threshold    INT          NOT NULL DEFAULT 50,
       points_required             INT          NOT NULL DEFAULT 120,
       reward_whitelist_id         INT          NULL,
-      reward_group_name           VARCHAR(100) NOT NULL DEFAULT 'reserve',
+      reward_group_name           VARCHAR(100) NOT NULL DEFAULT 'SeedReserve',
       reward_duration_hours       INT          NOT NULL DEFAULT 168,
       tracking_mode               VARCHAR(20)  NOT NULL DEFAULT 'fixed_reset',
       reset_cron                  VARCHAR(50)  NOT NULL DEFAULT '0 0 * * *',
@@ -61,6 +61,16 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_start VARCHAR(5) NOT NULL DEFAULT '07:00'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_end VARCHAR(5) NOT NULL DEFAULT '22:00'`)
+  // Rename old 'reserve' group to 'SeedReserve' for clarity
+  await pool.query(`UPDATE seeding_configs SET reward_group_name = 'SeedReserve' WHERE reward_group_name = 'reserve'`)
+  await pool.query(`UPDATE whitelists SET squad_group = 'SeedReserve' WHERE slug = 'seeding-rewards' AND squad_group = 'reserve'`)
+  await pool.query(`
+    INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+    SELECT guild_id, 'SeedReserve', 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW()
+    FROM seeding_configs WHERE enabled = TRUE
+    ON CONFLICT (guild_id, group_name) DO NOTHING
+  `)
+
   // Clean up any seeding rewards that were mistakenly added to the main whitelist
   // (before the ensureSeedingWhitelist fix). Remove entries from non-seeding whitelists.
   await pool.query(`
@@ -376,7 +386,7 @@ export async function ensureSeedingWhitelist(
     // Ensure the group exists and has correct (safe) permissions
     await pool.query(
       `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-       VALUES ($1, $2, 'reserve', 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
+       VALUES ($1, $2, 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW())
        ON CONFLICT (guild_id, group_name) DO NOTHING`,
       [guildId, groupName],
     )
@@ -398,7 +408,7 @@ export async function ensureSeedingWhitelist(
   // Use the group name as-is but always set permissions to just 'reserve' for safety
   await pool.query(
     `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-     VALUES ($1, $2, 'reserve', 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
+     VALUES ($1, $2, 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW())
      ON CONFLICT (guild_id, group_name) DO NOTHING`,
     [guildId, groupName],
   )

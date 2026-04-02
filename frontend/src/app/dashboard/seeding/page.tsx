@@ -222,7 +222,7 @@ export default function SeedingPage() {
   const [startCount, setStartCount] = useState("2");
   const [threshold, setThreshold] = useState("50");
   const [rewardWhitelistId, setRewardWhitelistId] = useState<string>("");
-  const [rewardGroupName, setRewardGroupName] = useState("reserve");
+  const [rewardGroupName, setRewardGroupName] = useState("SeedReserve");
   const [rewardDurationHours, setRewardDurationHours] = useState("168");
   const [resetFrequency, setResetFrequency] = useState("monthly");
   const [resetHour, setResetHour] = useState("12");
