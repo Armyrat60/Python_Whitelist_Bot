@@ -61,6 +61,20 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_start VARCHAR(5) NOT NULL DEFAULT '07:00'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_end VARCHAR(5) NOT NULL DEFAULT '22:00'`)
+  // Clean up any seeding rewards that were mistakenly added to the main whitelist
+  // (before the ensureSeedingWhitelist fix). Remove entries from non-seeding whitelists.
+  await pool.query(`
+    DELETE FROM whitelist_identifiers
+    WHERE verification_source = 'seeding_reward'
+      AND whitelist_id IS NOT NULL
+      AND whitelist_id NOT IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+  `)
+  await pool.query(`
+    DELETE FROM whitelist_users
+    WHERE created_via = 'seeding_reward'
+      AND whitelist_id NOT IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+  `)
+
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS reward_tiers JSONB NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warnings_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warning_message TEXT NOT NULL DEFAULT 'Seeding Progress: {progress}% ({points}/{required}). Keep seeding!'`)
