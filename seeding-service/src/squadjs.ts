@@ -175,6 +175,33 @@ export async function getOnlinePlayers(guildId: string): Promise<OnlinePlayer[]>
 }
 
 /**
+ * Send an RCON warning message to a specific player in-game.
+ * Returns true if the message was sent successfully.
+ */
+export async function warnPlayer(
+  guildId: string,
+  steamId: string,
+  message: string,
+): Promise<boolean> {
+  const state = connections.get(guildId)
+  if (!state || !state.connected) return false
+
+  try {
+    await emitPromise(
+      state.socket,
+      "rcon.warn",
+      { steamID: steamId, message },
+      5,
+    )
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[seeding/squadjs] Failed to warn player ${steamId}: ${msg}`)
+    return false
+  }
+}
+
+/**
  * Get the current player count for a guild.
  * Returns -1 if not connected.
  */

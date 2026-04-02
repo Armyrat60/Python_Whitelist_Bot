@@ -226,7 +226,7 @@ export interface SeedingConfig {
   reward_whitelist_id: number | null;
   reward_group_name: string;
   reward_duration_hours: number;
-  tracking_mode: "fixed_reset" | "incremental";
+  tracking_mode: "fixed_reset" | "daily_decay";
   reset_cron: string;
   poll_interval_seconds: number;
   seeding_window_enabled: boolean;
@@ -236,6 +236,11 @@ export interface SeedingConfig {
   last_poll_at: string | null;
   last_poll_status: "ok" | "error" | null;
   last_poll_message: string | null;
+  reward_tiers: Array<{ points: number; duration_hours: number; label: string }> | null;
+  rcon_warnings_enabled: boolean;
+  rcon_warning_message: string;
+  decay_days_threshold: number;
+  decay_points_per_day: number;
   leaderboard_public: boolean;
   created_at?: string;
   updated_at?: string;

@@ -18,7 +18,7 @@ import { validateConfig, config } from "./config.js"
 import { ensureTables, closePG } from "./db.js"
 import { disconnectAll } from "./squadjs.js"
 import { startHealthServer, stopHealthServer } from "./health.js"
-import { pollAllGuilds, runPointResets, runExpiryCleanup } from "./tracker.js"
+import { pollAllGuilds, runPointResets, runExpiryCleanup, runDailyDecay } from "./tracker.js"
 
 async function shutdown(code = 0): Promise<never> {
   console.log("[seeding] Shutting down gracefully...")
@@ -92,6 +92,16 @@ async function main(): Promise<void> {
     }
   })
   console.log('[seeding] Reset cron scheduled: "0 * * * *"')
+
+  // Daily decay — every 4 hours
+  cron.schedule("0 */4 * * *", async () => {
+    try {
+      await runDailyDecay()
+    } catch (err) {
+      console.error("[seeding] Daily decay failed:", err)
+    }
+  })
+  console.log('[seeding] Decay cron scheduled: "0 */4 * * *"')
 
   // Expiry cleanup — every 15 minutes
   cron.schedule("*/15 * * * *", async () => {

@@ -12,6 +12,21 @@ import { validateRewardGroup } from "./safety.js"
 import { updateHealthStats } from "./health.js"
 import { pool } from "./db.js"
 
+/** Milestones at which RCON warnings are sent (descending for highest-first match). */
+const MILESTONES = [100, 75, 50, 25, 10]
+
+/** Tracks last warned percentage per player to avoid duplicate warnings. Memory-only. */
+const lastWarnedPct = new Map<string, number>()
+
+/** Format an RCON warning message with template variables. */
+function formatWarning(template: string, progress: number, points: number, required: number, playerName: string): string {
+  return template
+    .replace(/\{progress\}/g, String(progress))
+    .replace(/\{points\}/g, String(points))
+    .replace(/\{required\}/g, String(required))
+    .replace(/\{player_name\}/g, playerName)
+}
+
 /**
  * Main poll loop — called every minute by cron.
  *
@@ -128,43 +143,83 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
 
   const awarded = await db.awardPoints(guildId, playerInputs)
 
-  // Check for players who qualify for rewards
+  // ── RCON milestone warnings ───────────────────────────────────────────
+  if (cfg.rcon_warnings_enabled) {
+    try {
+      const steamIds = playerInputs.map((p) => p.steamId)
+      const pointsMap = await db.getPlayerPointsBatch(guildId, steamIds)
+      const tiers = cfg.reward_tiers as db.RewardTier[] | null
+      const effectiveMax = tiers?.length
+        ? Math.max(...tiers.map((t) => t.points))
+        : cfg.points_required
+
+      const warnings: Promise<boolean>[] = []
+      for (const p of playerInputs) {
+        const pts = pointsMap.get(p.steamId) ?? 0
+        const pct = effectiveMax > 0 ? Math.round((pts / effectiveMax) * 100) : 0
+        const key = `${guildId}:${p.steamId}`
+        const lastPct = lastWarnedPct.get(key) ?? 0
+
+        for (const milestone of MILESTONES) {
+          if (pct >= milestone && lastPct < milestone) {
+            const msg = formatWarning(cfg.rcon_warning_message, pct, pts, effectiveMax, p.name)
+            warnings.push(squadjs.warnPlayer(guildKey, p.steamId, msg))
+            lastWarnedPct.set(key, pct)
+            break // only send highest newly crossed milestone
+          }
+        }
+      }
+      if (warnings.length > 0) await Promise.allSettled(warnings)
+    } catch (err) {
+      console.error(`[seeding/tracker] RCON warning error for guild ${guildId}:`, err)
+    }
+  }
+
+  // ── Check for players who qualify for rewards ─────────────────────────
   let rewarded = 0
-  const qualifiers = await db.getUnrewardedQualifiers(guildId, cfg.points_required)
+  const tiers = cfg.reward_tiers as db.RewardTier[] | null
+  const hasTiers = tiers && tiers.length >= 2
+
+  // Determine the minimum threshold to check
+  const minThreshold = hasTiers
+    ? Math.min(...tiers.map((t) => t.points))
+    : cfg.points_required
+
+  const qualifiers = await db.getUnrewardedQualifiers(guildId, minThreshold)
 
   if (qualifiers.length > 0) {
-    // Validate reward group safety before granting any rewards
     const safety = await validateRewardGroup(pool, guildId, cfg.reward_group_name)
 
     if (!safety.safe) {
-      console.warn(
-        `[seeding/tracker] Guild ${guildId}: Skipping rewards — ${safety.reason}`,
-      )
-      await db.logAudit(
-        guildId,
-        "seeding_reward_blocked",
-        JSON.stringify({ reason: safety.reason, qualifiers: qualifiers.length }),
-      )
+      console.warn(`[seeding/tracker] Guild ${guildId}: Skipping rewards — ${safety.reason}`)
+      await db.logAudit(guildId, "seeding_reward_blocked", JSON.stringify({ reason: safety.reason, qualifiers: qualifiers.length }))
     } else {
-      // Use the dedicated seeding whitelist (auto-created with correct group)
       const whitelistId = await db.ensureSeedingWhitelist(guildId, cfg.reward_group_name)
 
       if (whitelistId) {
+        // Sort tiers descending for highest-first matching
+        const sortedTiers = hasTiers ? [...tiers].sort((a, b) => b.points - a.points) : null
+
         for (const q of qualifiers) {
+          // Find the duration: highest matching tier or legacy single duration
+          let duration = cfg.reward_duration_hours
+          let tierLabel = ""
+
+          if (sortedTiers) {
+            const matchedTier = sortedTiers.find((t) => q.points >= t.points)
+            if (!matchedTier) continue // shouldn't happen, but guard
+            duration = matchedTier.duration_hours
+            tierLabel = matchedTier.label
+          }
+
           const ok = await db.createWhitelistReward(
-            guildId,
-            q.steam_id,
-            q.player_name,
-            whitelistId,
-            cfg.reward_group_name,
-            cfg.reward_duration_hours,
+            guildId, q.steam_id, q.player_name,
+            whitelistId, cfg.reward_group_name, duration,
           )
           if (ok) {
             await db.markRewarded(guildId, q.steam_id)
             rewarded++
-            console.log(
-              `[seeding/tracker] Reward granted to ${q.player_name ?? q.steam_id} in guild ${guildId}`,
-            )
+            console.log(`[seeding/tracker] Reward granted: ${q.player_name ?? q.steam_id} → ${tierLabel || "standard"} (${duration}h) in guild ${guildId}`)
           }
         }
       } else {
@@ -199,6 +254,18 @@ export async function runPointResets(): Promise<void> {
         JSON.stringify({ players_reset: count, mode: "fixed_reset" }),
       )
     }
+  }
+}
+
+/**
+ * Run daily decay for guilds using daily_decay tracking mode.
+ * Subtracts points from players who haven't seeded recently.
+ */
+export async function runDailyDecay(): Promise<void> {
+  try {
+    await db.runDailyDecay()
+  } catch (err) {
+    console.error("[seeding/tracker] Daily decay failed:", err)
   }
 }
 

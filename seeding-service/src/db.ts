@@ -61,6 +61,11 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_start VARCHAR(5) NOT NULL DEFAULT '07:00'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_end VARCHAR(5) NOT NULL DEFAULT '22:00'`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS reward_tiers JSONB NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warnings_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warning_message TEXT NOT NULL DEFAULT 'Seeding Progress: {progress}% ({points}/{required}). Keep seeding!'`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS decay_days_threshold INT NOT NULL DEFAULT 3`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS decay_points_per_day INT NOT NULL DEFAULT 10`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS seeding_points (
@@ -127,7 +132,18 @@ export interface SeedingConfigRow {
   last_poll_at: Date | null
   last_poll_status: string | null
   last_poll_message: string | null
+  reward_tiers: RewardTier[] | null
+  rcon_warnings_enabled: boolean
+  rcon_warning_message: string
+  decay_days_threshold: number
+  decay_points_per_day: number
   leaderboard_public: boolean
+}
+
+export interface RewardTier {
+  points: number
+  duration_hours: number
+  label: string
 }
 
 /** Load all enabled seeding configs. */
@@ -239,6 +255,51 @@ export async function resetPoints(guildId: bigint): Promise<number> {
     [guildId],
   )
   return result.rowCount ?? 0
+}
+
+/** Get current points for a batch of players (for RCON milestone checks). */
+export async function getPlayerPointsBatch(
+  guildId: bigint,
+  steamIds: string[],
+): Promise<Map<string, number>> {
+  if (steamIds.length === 0) return new Map()
+  const result = await pool.query<{ steam_id: string; points: number }>(
+    `SELECT steam_id, points FROM seeding_points
+     WHERE guild_id = $1 AND steam_id = ANY($2)`,
+    [guildId, steamIds],
+  )
+  const map = new Map<string, number>()
+  for (const row of result.rows) map.set(row.steam_id, row.points)
+  return map
+}
+
+/** Apply daily decay to inactive players for all guilds using daily_decay mode. */
+export async function runDailyDecay(): Promise<void> {
+  const configs = await pool.query<{ guild_id: bigint; decay_days_threshold: number; decay_points_per_day: number }>(
+    `SELECT guild_id, decay_days_threshold, decay_points_per_day
+     FROM seeding_configs
+     WHERE enabled = TRUE AND tracking_mode = 'daily_decay'`,
+  )
+
+  for (const cfg of configs.rows) {
+    const result = await pool.query(
+      `UPDATE seeding_points
+       SET points = GREATEST(0, points - $2)
+       WHERE guild_id = $1
+         AND points > 0
+         AND last_award_at < NOW() - make_interval(days => $3)`,
+      [cfg.guild_id, cfg.decay_points_per_day, cfg.decay_days_threshold],
+    )
+    const affected = result.rowCount ?? 0
+    if (affected > 0) {
+      console.log(`[seeding/db] Decay applied: ${affected} player(s) lost ${cfg.decay_points_per_day} points in guild ${cfg.guild_id}`)
+      await logAudit(
+        cfg.guild_id,
+        "seeding_daily_decay",
+        JSON.stringify({ players_affected: affected, points_removed: cfg.decay_points_per_day, days_threshold: cfg.decay_days_threshold }),
+      )
+    }
+  }
 }
 
 /** Get leaderboard for a guild.

@@ -11,7 +11,7 @@
  * POST   /seeding/grant          — manual point grant to specific player
  */
 import type { FastifyInstance } from "fastify"
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 
 const MASKED = "••••••••"
 
@@ -49,6 +49,11 @@ export default async function seedingRoutes(app: FastifyInstance) {
         last_poll_at:                config.lastPollAt?.toISOString() ?? null,
         last_poll_status:            config.lastPollStatus,
         last_poll_message:           config.lastPollMessage,
+        reward_tiers:                config.rewardTiers,
+        rcon_warnings_enabled:       config.rconWarningsEnabled,
+        rcon_warning_message:        config.rconWarningMessage,
+        decay_days_threshold:        config.decayDaysThreshold,
+        decay_points_per_day:        config.decayPointsPerDay,
         leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
@@ -75,6 +80,11 @@ export default async function seedingRoutes(app: FastifyInstance) {
       seeding_window_enabled?: boolean
       seeding_window_start?: string
       seeding_window_end?: string
+      reward_tiers?: Array<{ points: number; duration_hours: number; label: string }> | null
+      rcon_warnings_enabled?: boolean
+      rcon_warning_message?: string
+      decay_days_threshold?: number
+      decay_points_per_day?: number
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -113,8 +123,32 @@ export default async function seedingRoutes(app: FastifyInstance) {
 
     // Validate tracking mode
     const trackingMode = body.tracking_mode ?? existing?.trackingMode ?? "fixed_reset"
-    if (trackingMode !== "fixed_reset") {
-      return reply.code(400).send({ error: "Only 'fixed_reset' tracking mode is currently supported" })
+    if (!["fixed_reset", "daily_decay"].includes(trackingMode)) {
+      return reply.code(400).send({ error: "tracking_mode must be 'fixed_reset' or 'daily_decay'" })
+    }
+
+    // Validate tiered rewards
+    if (body.reward_tiers !== undefined && body.reward_tiers !== null) {
+      if (!Array.isArray(body.reward_tiers) || body.reward_tiers.length < 2 || body.reward_tiers.length > 5) {
+        return reply.code(400).send({ error: "reward_tiers must have 2-5 entries" })
+      }
+      const pts = body.reward_tiers.map((t) => t.points).sort((a, b) => a - b)
+      if (new Set(pts).size !== pts.length) {
+        return reply.code(400).send({ error: "Tier point values must be unique" })
+      }
+      for (const t of body.reward_tiers) {
+        if (!t.points || t.points < 1 || !t.duration_hours || t.duration_hours < 1 || !t.label?.trim()) {
+          return reply.code(400).send({ error: "Each tier needs points >= 1, duration_hours >= 1, and a label" })
+        }
+      }
+    }
+
+    // Validate decay settings
+    if (body.decay_days_threshold !== undefined && (body.decay_days_threshold < 1 || body.decay_days_threshold > 30)) {
+      return reply.code(400).send({ error: "decay_days_threshold must be 1-30" })
+    }
+    if (body.decay_points_per_day !== undefined && (body.decay_points_per_day < 1 || body.decay_points_per_day > 1000)) {
+      return reply.code(400).send({ error: "decay_points_per_day must be 1-1000" })
     }
 
     // Validate reward group safety
@@ -153,6 +187,11 @@ export default async function seedingRoutes(app: FastifyInstance) {
         seedingWindowEnabled:   body.seeding_window_enabled  ?? false,
         seedingWindowStart:     body.seeding_window_start    ?? "07:00",
         seedingWindowEnd:       body.seeding_window_end      ?? "22:00",
+        rewardTiers:            body.reward_tiers            ?? Prisma.JsonNull,
+        rconWarningsEnabled:    body.rcon_warnings_enabled   ?? false,
+        rconWarningMessage:     body.rcon_warning_message    ?? "Seeding Progress: {progress}% ({points}/{required}). Keep seeding!",
+        decayDaysThreshold:     body.decay_days_threshold    ?? 3,
+        decayPointsPerDay:      body.decay_points_per_day    ?? 10,
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -172,6 +211,11 @@ export default async function seedingRoutes(app: FastifyInstance) {
         seedingWindowEnabled:   body.seeding_window_enabled  ?? existing?.seedingWindowEnabled   ?? false,
         seedingWindowStart:     body.seeding_window_start    ?? existing?.seedingWindowStart     ?? "07:00",
         seedingWindowEnd:       body.seeding_window_end      ?? existing?.seedingWindowEnd       ?? "22:00",
+        rewardTiers:            body.reward_tiers !== undefined ? (body.reward_tiers ?? Prisma.JsonNull) : (existing?.rewardTiers ?? Prisma.JsonNull),
+        rconWarningsEnabled:    body.rcon_warnings_enabled   ?? existing?.rconWarningsEnabled    ?? false,
+        rconWarningMessage:     body.rcon_warning_message    ?? existing?.rconWarningMessage     ?? "Seeding Progress: {progress}% ({points}/{required}). Keep seeding!",
+        decayDaysThreshold:     body.decay_days_threshold    ?? existing?.decayDaysThreshold     ?? 3,
+        decayPointsPerDay:      body.decay_points_per_day    ?? existing?.decayPointsPerDay      ?? 10,
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },
@@ -193,10 +237,19 @@ export default async function seedingRoutes(app: FastifyInstance) {
         tracking_mode:               config.trackingMode,
         reset_cron:                  config.resetCron,
         poll_interval_seconds:       config.pollIntervalSeconds,
+        seeding_window_enabled:      config.seedingWindowEnabled,
+        seeding_window_start:        config.seedingWindowStart,
+        seeding_window_end:          config.seedingWindowEnd,
+        reward_tiers:                config.rewardTiers,
+        rcon_warnings_enabled:       config.rconWarningsEnabled,
+        rcon_warning_message:        config.rconWarningMessage,
+        decay_days_threshold:        config.decayDaysThreshold,
+        decay_points_per_day:        config.decayPointsPerDay,
         enabled:                     config.enabled,
         last_poll_at:                config.lastPollAt?.toISOString() ?? null,
         last_poll_status:            config.lastPollStatus,
         last_poll_message:           config.lastPollMessage,
+        leaderboard_public:          config.leaderboardPublic,
       },
     })
   })
