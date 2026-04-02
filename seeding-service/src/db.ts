@@ -44,6 +44,9 @@ export async function ensureTables(): Promise<void> {
       tracking_mode               VARCHAR(20)  NOT NULL DEFAULT 'fixed_reset',
       reset_cron                  VARCHAR(50)  NOT NULL DEFAULT '0 0 * * *',
       poll_interval_seconds       INT          NOT NULL DEFAULT 60,
+      seeding_window_enabled      BOOLEAN      NOT NULL DEFAULT FALSE,
+      seeding_window_start        VARCHAR(5)   NOT NULL DEFAULT '07:00',
+      seeding_window_end          VARCHAR(5)   NOT NULL DEFAULT '22:00',
       last_poll_at                TIMESTAMP    NULL,
       last_poll_status            VARCHAR(20)  NULL,
       last_poll_message           TEXT         NULL,
@@ -53,10 +56,11 @@ export async function ensureTables(): Promise<void> {
     )
   `)
 
-  // Add column for existing installs
-  await pool.query(`
-    ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS leaderboard_public BOOLEAN NOT NULL DEFAULT FALSE
-  `)
+  // Add columns for existing installs
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS leaderboard_public BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_start VARCHAR(5) NOT NULL DEFAULT '07:00'`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_end VARCHAR(5) NOT NULL DEFAULT '22:00'`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS seeding_points (
@@ -117,6 +121,9 @@ export interface SeedingConfigRow {
   tracking_mode: string
   reset_cron: string
   poll_interval_seconds: number
+  seeding_window_enabled: boolean
+  seeding_window_start: string
+  seeding_window_end: string
   last_poll_at: Date | null
   last_poll_status: string | null
   last_poll_message: string | null

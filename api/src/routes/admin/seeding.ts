@@ -42,6 +42,9 @@ export default async function seedingRoutes(app: FastifyInstance) {
         tracking_mode:               config.trackingMode,
         reset_cron:                  config.resetCron,
         poll_interval_seconds:       config.pollIntervalSeconds,
+        seeding_window_enabled:      config.seedingWindowEnabled,
+        seeding_window_start:        config.seedingWindowStart,
+        seeding_window_end:          config.seedingWindowEnd,
         enabled:                     config.enabled,
         last_poll_at:                config.lastPollAt?.toISOString() ?? null,
         last_poll_status:            config.lastPollStatus,
@@ -69,6 +72,9 @@ export default async function seedingRoutes(app: FastifyInstance) {
       tracking_mode?: string
       reset_cron?: string
       poll_interval_seconds?: number
+      seeding_window_enabled?: boolean
+      seeding_window_start?: string
+      seeding_window_end?: string
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -144,6 +150,9 @@ export default async function seedingRoutes(app: FastifyInstance) {
         trackingMode:           trackingMode,
         resetCron:              body.reset_cron              ?? "0 0 * * *",
         pollIntervalSeconds:    body.poll_interval_seconds   ?? 60,
+        seedingWindowEnabled:   body.seeding_window_enabled  ?? false,
+        seedingWindowStart:     body.seeding_window_start    ?? "07:00",
+        seedingWindowEnd:       body.seeding_window_end      ?? "22:00",
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -160,6 +169,9 @@ export default async function seedingRoutes(app: FastifyInstance) {
         trackingMode:           trackingMode,
         resetCron:              body.reset_cron              ?? existing?.resetCron              ?? "0 0 * * *",
         pollIntervalSeconds:    body.poll_interval_seconds   ?? existing?.pollIntervalSeconds    ?? 60,
+        seedingWindowEnabled:   body.seeding_window_enabled  ?? existing?.seedingWindowEnabled   ?? false,
+        seedingWindowStart:     body.seeding_window_start    ?? existing?.seedingWindowStart     ?? "07:00",
+        seedingWindowEnd:       body.seeding_window_end      ?? existing?.seedingWindowEnd       ?? "22:00",
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },

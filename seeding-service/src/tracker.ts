@@ -74,6 +74,34 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     return
   }
 
+  // Check seeding time window (if enabled)
+  if (cfg.seeding_window_enabled) {
+    const now = new Date()
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const [startH, startM] = cfg.seeding_window_start.split(":").map(Number)
+    const [endH, endM] = cfg.seeding_window_end.split(":").map(Number)
+    const windowStart = (startH ?? 7) * 60 + (startM ?? 0)
+    const windowEnd = (endH ?? 22) * 60 + (endM ?? 0)
+
+    let inWindow: boolean
+    if (windowStart <= windowEnd) {
+      // Normal window: e.g. 07:00 - 22:00
+      inWindow = currentMinutes >= windowStart && currentMinutes < windowEnd
+    } else {
+      // Overnight window: e.g. 22:00 - 07:00
+      inWindow = currentMinutes >= windowStart || currentMinutes < windowEnd
+    }
+
+    if (!inWindow) {
+      await db.updatePollStatus(
+        guildId,
+        "ok",
+        `Outside seeding window (${cfg.seeding_window_start} - ${cfg.seeding_window_end}). Currently ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
+      )
+      return
+    }
+  }
+
   // Get online players
   const players = await squadjs.getOnlinePlayers(guildKey)
   const playerCount = players.length

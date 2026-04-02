@@ -229,6 +229,9 @@ export interface SeedingConfig {
   tracking_mode: "fixed_reset" | "incremental";
   reset_cron: string;
   poll_interval_seconds: number;
+  seeding_window_enabled: boolean;
+  seeding_window_start: string;
+  seeding_window_end: string;
   enabled: boolean;
   last_poll_at: string | null;
   last_poll_status: "ok" | "error" | null;

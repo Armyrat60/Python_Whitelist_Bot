@@ -189,7 +189,8 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function Sel({ value, onChange, children, className }: { value: string; onChange: (v: string) => void; children: React.ReactNode; className?: string }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
-      className={`flex h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-xs text-white/80 ${className ?? ""}`}
+      className={`flex h-8 w-full rounded-md border border-white/[0.08] px-3 text-xs text-white/80 appearance-none cursor-pointer ${className ?? ""}`}
+      style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
     >{children}</select>
   );
 }
@@ -223,13 +224,16 @@ export default function SeedingPage() {
   const [rewardWhitelistId, setRewardWhitelistId] = useState<string>("");
   const [rewardGroupName, setRewardGroupName] = useState("reserve");
   const [rewardDurationHours, setRewardDurationHours] = useState("168");
-  const [resetFrequency, setResetFrequency] = useState("daily");
+  const [resetFrequency, setResetFrequency] = useState("monthly");
   const [resetHour, setResetHour] = useState("12");
   const [resetMinute, setResetMinute] = useState("0");
   const [resetAmPm, setResetAmPm] = useState("AM");
   const [resetDayOfWeek, setResetDayOfWeek] = useState("1");
   const [resetDayOfMonth, setResetDayOfMonth] = useState("1");
   const [customCron, setCustomCron] = useState("0 0 * * *");
+  const [windowEnabled, setWindowEnabled] = useState(false);
+  const [windowStart, setWindowStart] = useState("07:00");
+  const [windowEnd, setWindowEnd] = useState("22:00");
   const [leaderboardPublic, setLeaderboardPublic] = useState(false);
   const [grantSteamId, setGrantSteamId] = useState("");
   const [grantPointsVal, setGrantPointsVal] = useState("60");
@@ -248,6 +252,9 @@ export default function SeedingPage() {
     setResetFrequency(p.frequency); setResetHour(String(p.hour)); setResetMinute(String(p.minute));
     setResetAmPm(p.ampm); setResetDayOfWeek(String(p.dayOfWeek)); setResetDayOfMonth(String(p.dayOfMonth));
     if (p.frequency === "custom") setCustomCron(existing.reset_cron);
+    setWindowEnabled(existing.seeding_window_enabled);
+    setWindowStart(existing.seeding_window_start);
+    setWindowEnd(existing.seeding_window_end);
     setLeaderboardPublic(existing.leaderboard_public);
   }, [existing?.id]);
 
@@ -263,7 +270,9 @@ export default function SeedingPage() {
       seeding_start_player_count: parseInt(startCount, 10) || 2, seeding_player_threshold: parseInt(threshold, 10) || 50,
       points_required: pts || 120, reward_whitelist_id: rewardWhitelistId ? parseInt(rewardWhitelistId, 10) : null,
       reward_group_name: rewardGroupName, reward_duration_hours: parseInt(rewardDurationHours, 10) || 168,
-      tracking_mode: "fixed_reset" as const, reset_cron: cron, enabled, leaderboard_public: leaderboardPublic,
+      tracking_mode: "fixed_reset" as const, reset_cron: cron,
+      seeding_window_enabled: windowEnabled, seeding_window_start: windowStart, seeding_window_end: windowEnd,
+      enabled, leaderboard_public: leaderboardPublic,
     };
   }
 
@@ -447,6 +456,30 @@ export default function SeedingPage() {
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground/70">Seeding mode active when server has {startCount} to {threshold} players</p>
+          </Card>
+
+          <Card title="Seeding Time Window">
+            <div className="flex items-center gap-3 mb-2">
+              <Switch checked={windowEnabled} onCheckedChange={setWindowEnabled} />
+              <Label className="text-sm">{windowEnabled ? "Time window enabled — only track during set hours" : "Time window disabled — track 24/7"}</Label>
+            </div>
+            {windowEnabled && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Start Time</Label>
+                  <Input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">End Time</Label>
+                  <Input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+                </div>
+              </div>
+            )}
+            {windowEnabled && (
+              <p className="text-[10px] text-muted-foreground/70">
+                Points only accumulate between {windowStart} and {windowEnd} (server time). Prevents overnight AFK farming.
+              </p>
+            )}
           </Card>
 
           <Card title="Reward">
