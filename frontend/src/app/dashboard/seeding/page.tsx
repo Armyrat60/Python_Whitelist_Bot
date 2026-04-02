@@ -248,7 +248,7 @@ export default function SeedingPage() {
   }
 
   const leaderboard = leaderboardData?.players ?? [];
-  const leaderboardPointsRequired = leaderboardData?.points_required ?? parseInt(pointsRequired, 10) || 120;
+  const leaderboardPointsRequired = leaderboardData?.points_required ?? (parseInt(pointsRequired, 10) || 120);
 
   return (
     <div className="max-w-2xl space-y-6">
