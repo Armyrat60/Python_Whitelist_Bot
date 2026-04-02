@@ -373,6 +373,13 @@ export async function ensureSeedingWhitelist(
       )
       console.log(`[seeding/db] Updated seeding whitelist group to "${groupName}" for guild ${guildId}`)
     }
+    // Ensure the group exists and has correct (safe) permissions
+    await pool.query(
+      `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+       VALUES ($1, $2, 'reserve', 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
+       ON CONFLICT (guild_id, group_name) DO NOTHING`,
+      [guildId, groupName],
+    )
     return wl.id
   }
 
@@ -387,10 +394,11 @@ export async function ensureSeedingWhitelist(
     [guildId, groupName],
   )
 
-  // Ensure the squad group exists
+  // Ensure the squad group exists with only 'reserve' permission
+  // Use the group name as-is but always set permissions to just 'reserve' for safety
   await pool.query(
     `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-     VALUES ($1, $2, $2, 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
+     VALUES ($1, $2, 'reserve', 'Auto-created for seeding rewards', FALSE, NOW(), NOW())
      ON CONFLICT (guild_id, group_name) DO NOTHING`,
     [guildId, groupName],
   )
