@@ -78,6 +78,8 @@ export default async function seedingRoutes(app: FastifyInstance) {
         custom_embed_image_url:      config.customEmbedImageUrl,
         custom_embed_color:          config.customEmbedColor,
         population_tracking_enabled: config.populationTrackingEnabled,
+        webhook_url:                 config.webhookUrl,
+        webhook_enabled:             config.webhookEnabled,
         leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
@@ -133,6 +135,8 @@ export default async function seedingRoutes(app: FastifyInstance) {
       custom_embed_image_url?: string | null
       custom_embed_color?: string | null
       population_tracking_enabled?: boolean
+      webhook_url?: string | null
+      webhook_enabled?: boolean
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -264,6 +268,8 @@ export default async function seedingRoutes(app: FastifyInstance) {
         customEmbedImageUrl:   body.custom_embed_image_url   ?? null,
         customEmbedColor:      body.custom_embed_color       ?? null,
         populationTrackingEnabled: body.population_tracking_enabled ?? false,
+        webhookUrl:             body.webhook_url              ?? null,
+        webhookEnabled:         body.webhook_enabled          ?? false,
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -312,6 +318,8 @@ export default async function seedingRoutes(app: FastifyInstance) {
         customEmbedImageUrl:   body.custom_embed_image_url !== undefined ? body.custom_embed_image_url : (existing?.customEmbedImageUrl ?? null),
         customEmbedColor:      body.custom_embed_color !== undefined ? body.custom_embed_color : (existing?.customEmbedColor ?? null),
         populationTrackingEnabled: body.population_tracking_enabled ?? existing?.populationTrackingEnabled ?? false,
+        webhookUrl:             body.webhook_url !== undefined ? body.webhook_url : (existing?.webhookUrl ?? null),
+        webhookEnabled:         body.webhook_enabled          ?? existing?.webhookEnabled          ?? false,
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },
@@ -593,6 +601,36 @@ export default async function seedingRoutes(app: FastifyInstance) {
           created_at: r.createdAt.toISOString(),
         }
       }),
+    })
+  })
+
+  // ── GET /seeding/population ────────────────────────────────────────────────
+
+  app.get<{
+    Querystring: { hours?: string }
+  }>("/seeding/population", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const hours = Math.min(parseInt(req.query.hours ?? "24", 10) || 24, 168) // max 7 days
+
+    const snapshots = await app.prisma.$queryRaw<Array<{
+      player_count: number
+      is_seeding: boolean
+      created_at: Date
+    }>>`
+      SELECT player_count, is_seeding, created_at
+      FROM population_snapshots
+      WHERE guild_id = ${guildId}
+        AND created_at > NOW() - make_interval(hours => ${hours})
+      ORDER BY created_at ASC
+    `
+
+    return reply.send({
+      hours,
+      snapshots: snapshots.map((s) => ({
+        player_count: s.player_count,
+        is_seeding: s.is_seeding,
+        time: s.created_at.toISOString(),
+      })),
     })
   })
 

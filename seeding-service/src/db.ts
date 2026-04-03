@@ -133,6 +133,8 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_image_url VARCHAR(500) NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_color VARCHAR(7) NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS population_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS webhook_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   // Streak fields on seeding_points
   await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS current_streak INT NOT NULL DEFAULT 0`)
   await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS last_seed_date VARCHAR(10) NULL`)
@@ -251,6 +253,8 @@ export interface SeedingConfigRow {
   bonus_multiplier_start: Date | null
   bonus_multiplier_end: Date | null
   population_tracking_enabled: boolean
+  webhook_url: string | null
+  webhook_enabled: boolean
   leaderboard_public: boolean
 }
 
@@ -664,6 +668,17 @@ export async function cleanOldSnapshots(): Promise<void> {
   )
 }
 
+// ─── Org settings ────────────────────────────────────────────────────────────
+
+/** Get the guild's timezone from bot_settings (falls back to UTC). */
+export async function getGuildTimezone(guildId: bigint): Promise<string> {
+  const result = await pool.query<{ setting_value: string }>(
+    `SELECT setting_value FROM bot_settings WHERE guild_id = $1 AND setting_key = 'timezone'`,
+    [guildId],
+  )
+  return result.rows[0]?.setting_value || "UTC"
+}
+
 // ─── Streak tracking ─────────────────────────────────────────────────────────
 
 /** Update streak for a player. Called once per day when they seed. */
@@ -702,6 +717,26 @@ export async function updateStreak(
   )
 
   return newStreak
+}
+
+// ─── Webhook ─────────────────────────────────────────────────────────────────
+
+/** Send a webhook notification for a seeding event. Fire-and-forget. */
+export async function sendWebhook(
+  webhookUrl: string,
+  eventType: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: eventType, timestamp: new Date().toISOString(), ...payload }),
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch (err) {
+    console.error(`[seeding/db] Webhook failed for ${eventType}:`, err instanceof Error ? err.message : err)
+  }
 }
 
 // ─── Notification queue ──────────────────────────────────────────────────────

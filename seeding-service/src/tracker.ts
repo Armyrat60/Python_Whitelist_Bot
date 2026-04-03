@@ -95,10 +95,20 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     return
   }
 
-  // Check seeding time window (if enabled)
+  // Check seeding time window (if enabled) — uses guild's timezone from org settings
   if (cfg.seeding_window_enabled) {
     const now = new Date()
-    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const tz = await db.getGuildTimezone(guildId)
+    let localHour: number, localMinute: number
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "numeric", hour12: false, timeZone: tz }).formatToParts(now)
+      localHour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10)
+      localMinute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10)
+    } catch {
+      localHour = now.getUTCHours()
+      localMinute = now.getUTCMinutes()
+    }
+    const currentMinutes = localHour * 60 + localMinute
     const [startH, startM] = cfg.seeding_window_start.split(":").map(Number)
     const [endH, endM] = cfg.seeding_window_end.split(":").map(Number)
     const windowStart = (startH ?? 7) * 60 + (startM ?? 0)
@@ -143,12 +153,18 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
       : `Player count (${playerCount}) above threshold (${cfg.seeding_player_threshold})`
 
     // Check for server live event (was seeding, now above threshold)
-    if (wasSeeding.get(guildKey) && playerCount > cfg.seeding_player_threshold && cfg.discord_notify_channel_id) {
-      await db.queueNotification(guildId, "seeding_server_live", {
-        player_count: playerCount,
-        threshold: cfg.seeding_player_threshold,
-        channel_id: cfg.discord_notify_channel_id,
-      })
+    if (wasSeeding.get(guildKey) && playerCount > cfg.seeding_player_threshold) {
+      if (cfg.discord_notify_channel_id) {
+        await db.queueNotification(guildId, "seeding_server_live", {
+          player_count: playerCount, threshold: cfg.seeding_player_threshold,
+          channel_id: cfg.discord_notify_channel_id,
+        })
+      }
+      if (cfg.webhook_enabled && cfg.webhook_url) {
+        db.sendWebhook(cfg.webhook_url, "seeding_server_live", {
+          guild_id: String(guildId), player_count: playerCount, threshold: cfg.seeding_player_threshold,
+        }).catch(() => {})
+      }
     }
 
     // Check for auto-seed alert (below minimum, with cooldown)
@@ -338,6 +354,15 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
                 duration_hours: duration,
                 channel_id: cfg.discord_notify_channel_id,
               }).catch(() => {}) // non-blocking
+            }
+
+            // Send webhook if configured
+            if (cfg.webhook_enabled && cfg.webhook_url) {
+              db.sendWebhook(cfg.webhook_url, "seeding_reward_granted", {
+                guild_id: String(guildId), steam_id: q.steam_id,
+                player_name: q.player_name, tier_label: tierLabel || "Standard",
+                duration_hours: duration,
+              }).catch(() => {})
             }
 
             // Queue Discord role assignment

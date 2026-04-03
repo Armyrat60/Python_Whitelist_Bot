@@ -278,6 +278,10 @@ export default function SeedingSettingsPage() {
   // ── Population ──
   const [populationTrackingEnabled, setPopulationTrackingEnabled] = useState(false);
 
+  // ── Webhooks ──
+  const [webhookEnabled, setWebhookEnabled] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+
   // ── Public Leaderboard ──
   const [leaderboardPublic, setLeaderboardPublic] = useState(false);
 
@@ -329,6 +333,8 @@ export default function SeedingSettingsPage() {
     if (existing.custom_embed_image_url) setCustomEmbedImageUrl(existing.custom_embed_image_url);
     if (existing.custom_embed_color) setCustomEmbedColor(existing.custom_embed_color);
     setPopulationTrackingEnabled(existing.population_tracking_enabled);
+    setWebhookEnabled(existing.webhook_enabled);
+    if (existing.webhook_url) setWebhookUrl(existing.webhook_url);
 
     if (existing.discord_notify_channel_id) setDiscordNotifyChannelId(existing.discord_notify_channel_id);
     setDiscordRoleRewardEnabled(existing.discord_role_reward_enabled);
@@ -391,6 +397,8 @@ export default function SeedingSettingsPage() {
       custom_embed_image_url: customEmbedImageUrl.trim() || null,
       custom_embed_color: customEmbedColor.trim() || null,
       population_tracking_enabled: populationTrackingEnabled,
+      webhook_enabled: webhookEnabled,
+      webhook_url: webhookUrl.trim() || null,
     };
   }
 
@@ -963,6 +971,26 @@ export default function SeedingSettingsPage() {
             <p className="text-[10px] text-muted-foreground/60">
               Pings this role when server drops below the seeding threshold. Cooldown prevents
               alert spam (min 5 minutes, max 120 minutes).
+            </p>
+          </div>
+        )}
+      </Card>
+
+      {/* Webhook Notifications */}
+      <Card title="Webhook Notifications">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={webhookEnabled} onCheckedChange={setWebhookEnabled} />
+          <Label className="text-sm">{webhookEnabled ? "Webhooks enabled" : "Webhooks disabled"}</Label>
+        </div>
+        {webhookEnabled && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Webhook URL</Label>
+              <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://your-server.com/webhook" className="h-8 text-xs" />
+            </div>
+            <p className="text-[10px] text-muted-foreground/70">
+              Receives JSON POST for events: seeding_reward_granted, seeding_server_live, seeding_needs_seeders.
+              Payload includes event type, timestamp, and event-specific data.
             </p>
           </div>
         )}

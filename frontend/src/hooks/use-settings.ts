@@ -1013,6 +1013,20 @@ export function useSeedingStats() {
   });
 }
 
+export function useSeedingPopulation(hours = 24) {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{
+    hours: number;
+    snapshots: Array<{ player_count: number; is_seeding: boolean; time: string }>;
+  }>({
+    queryKey: ["seeding-population", guildId, hours],
+    queryFn: () => api.get(`/api/admin/seeding/population?hours=${hours}`),
+    enabled: !!guildId,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useSeedingPublicLeaderboard() {
   const { data: session } = useSession();
   const guildId = session?.active_guild_id;

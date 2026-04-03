@@ -265,6 +265,8 @@ export interface SeedingConfig {
   custom_embed_image_url: string | null;
   custom_embed_color: string | null;
   population_tracking_enabled: boolean;
+  webhook_url: string | null;
+  webhook_enabled: boolean;
   leaderboard_public: boolean;
   created_at?: string;
   updated_at?: string;

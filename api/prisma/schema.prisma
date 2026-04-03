@@ -374,6 +374,8 @@ model SeedingConfig {
   customEmbedColor          String?   @map("custom_embed_color") @db.VarChar(7)
   // Population snapshots toggle
   populationTrackingEnabled Boolean   @default(false) @map("population_tracking_enabled")
+  webhookUrl                String?   @map("webhook_url") @db.VarChar(500)
+  webhookEnabled            Boolean   @default(false) @map("webhook_enabled")
   leaderboardPublic         Boolean   @default(false) @map("leaderboard_public")
   createdAt                 DateTime  @default(now()) @map("created_at")
   updatedAt                 DateTime  @updatedAt @map("updated_at")
