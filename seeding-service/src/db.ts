@@ -661,11 +661,10 @@ export async function savePopulationSnapshot(
   )
 }
 
-/** Clean up old snapshots (keep last 7 days). */
-export async function cleanOldSnapshots(): Promise<void> {
-  await pool.query(
-    `DELETE FROM population_snapshots WHERE created_at < NOW() - INTERVAL '7 days'`,
-  )
+/** Clean up old snapshots (keep last 7 days) and processed notifications (keep 1 day). */
+export async function cleanOldData(): Promise<void> {
+  await pool.query(`DELETE FROM population_snapshots WHERE created_at < NOW() - INTERVAL '7 days'`)
+  await pool.query(`DELETE FROM seeding_notifications WHERE processed = TRUE AND created_at < NOW() - INTERVAL '1 day'`)
 }
 
 // ─── Org settings ────────────────────────────────────────────────────────────

@@ -241,15 +241,21 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
 
   // ── Streak tracking ───────────────────────────────────────────────────
   if (cfg.streak_enabled) {
-    const today = new Date().toISOString().slice(0, 10)
+    // Use guild timezone for streak date tracking
+    const tz = await db.getGuildTimezone(guildId)
+    let today: string
+    try {
+      today = new Date().toLocaleDateString("en-CA", { timeZone: tz }) // YYYY-MM-DD format
+    } catch {
+      today = new Date().toISOString().slice(0, 10)
+    }
     for (const p of playerInputs) {
       const streak = await db.updateStreak(guildId, p.steamId, today)
-      // Apply streak multiplier if they've hit the threshold
       if (streak >= cfg.streak_days_required && cfg.streak_multiplier > 1) {
-        // Award bonus points for streak (extra points on top of normal)
-        const bonusPoints = Math.floor(cfg.streak_multiplier - 1) // e.g., 1.5x = 0.5 extra, but at least 1
-        if (bonusPoints >= 1) {
-          await db.awardPoints(guildId, [p]) // extra point for streak
+        // Award at least 1 bonus point for streak (ceil ensures 1.5x gives 1 extra)
+        const bonusPoints = Math.max(1, Math.ceil(cfg.streak_multiplier - 1))
+        for (let i = 0; i < bonusPoints; i++) {
+          await db.awardPoints(guildId, [p])
         }
       }
     }
@@ -493,5 +499,5 @@ export async function runExpiryCleanup(): Promise<void> {
     console.log(`[seeding/tracker] Expired ${expired} seeding reward(s)`)
   }
   // Clean up old population snapshots (keep 7 days)
-  await db.cleanOldSnapshots().catch(() => {})
+  await db.cleanOldData().catch(() => {})
 }

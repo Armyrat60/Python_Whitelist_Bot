@@ -202,6 +202,12 @@ export default async function seedingRoutes(app: FastifyInstance) {
     if (body.decay_points_per_day !== undefined && (body.decay_points_per_day < 1 || body.decay_points_per_day > 1000)) {
       return reply.code(400).send({ error: "decay_points_per_day must be 1-1000" })
     }
+    if (body.bonus_multiplier_value !== undefined && (body.bonus_multiplier_value < 1 || body.bonus_multiplier_value > 10)) {
+      return reply.code(400).send({ error: "bonus_multiplier_value must be 1-10" })
+    }
+    if (body.streak_multiplier !== undefined && (body.streak_multiplier < 1 || body.streak_multiplier > 5)) {
+      return reply.code(400).send({ error: "streak_multiplier must be 1-5" })
+    }
 
     // Validate reward group safety
     const groupName = body.reward_group_name ?? existing?.rewardGroupName ?? "Reserve"
@@ -458,7 +464,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       points_required: pointsRequired,
       players: players.map((p) => ({
         steam_id:    p.steamId,
-        player_name: p.playerName,
+        player_name: p.playerName ?? `Seeder_${p.steamId.slice(-6)}`,
         points:      p.points,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
         rewarded:    p.rewarded,
@@ -505,7 +511,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       total,
       players: players.map((p) => ({
         steam_id:    p.steamId,
-        player_name: p.playerName,
+        player_name: p.playerName ?? `Seeder_${p.steamId.slice(-6)}`,
         points:      p.points,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
         rewarded:    p.rewarded,
@@ -588,16 +594,17 @@ export default async function seedingRoutes(app: FastifyInstance) {
       total_seeding_hours: totalSeedingHours,
       pending_discord_link: pendingDiscordLink,
       top_5: top5.map((p) => ({
-        player_name: p.playerName,
+        player_name: p.playerName ?? `Seeder_${p.steamId.slice(-6)}`,
         points: p.points,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
         rewarded: p.rewarded,
       })),
       recent_rewards: recentRewards.map((r) => {
-        const d = typeof r.details === "string" ? JSON.parse(r.details) : r.details
+        let d: Record<string, unknown> = {}
+        try { d = typeof r.details === "string" ? JSON.parse(r.details) : (r.details as unknown as Record<string, unknown>) ?? {} } catch { /* ignore */ }
         return {
-          player_name: (d as Record<string, unknown>)?.player_name ?? "Unknown",
-          tier_label: (d as Record<string, unknown>)?.tier_label ?? "Standard",
+          player_name: String(d.player_name ?? "Unknown"),
+          tier_label: String(d.tier_label ?? "Standard"),
           created_at: r.createdAt.toISOString(),
         }
       }),
