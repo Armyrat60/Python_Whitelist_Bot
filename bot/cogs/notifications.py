@@ -185,6 +185,23 @@ class NotificationsCog(commands.Cog):
         if not guild:
             return
 
+        # Fetch custom embed settings
+        embed_cfg = await self.bot.db.fetchone(
+            """SELECT custom_embed_title, custom_embed_description,
+                      custom_embed_image_url, custom_embed_color
+               FROM seeding_configs WHERE guild_id = %s""",
+            (guild_id,),
+        )
+        custom_title = embed_cfg[0] if embed_cfg and embed_cfg[0] else None
+        custom_desc = embed_cfg[1] if embed_cfg and embed_cfg[1] else None
+        custom_image = embed_cfg[2] if embed_cfg and embed_cfg[2] else None
+        custom_color = None
+        if embed_cfg and embed_cfg[3]:
+            try:
+                custom_color = int(embed_cfg[3].lstrip("#"), 16)
+            except (ValueError, TypeError):
+                pass
+
         if event_type == "seeding_reward_granted" and channel:
             player = payload.get("player_name") or payload.get("steam_id", "Unknown")
             tier = payload.get("tier_label", "Standard")
@@ -205,11 +222,16 @@ class NotificationsCog(commands.Cog):
         elif event_type == "seeding_server_live" and channel:
             count = payload.get("player_count", 0)
             threshold = payload.get("threshold", 0)
+            title = custom_title or "Server Is Live!"
+            desc = custom_desc or f"Server has reached **{count}** players (threshold: {threshold}). Seeding complete!"
+            desc = desc.replace("{player_count}", str(count)).replace("{threshold}", str(threshold))
             embed = discord.Embed(
-                title="Server Is Live!",
-                description=f"Server has reached **{count}** players (threshold: {threshold}). Seeding complete!",
-                color=0x10b981,
+                title=title,
+                description=desc,
+                color=custom_color or 0x10b981,
             )
+            if custom_image:
+                embed.set_image(url=custom_image)
             try:
                 await channel.send(embed=embed)
             except (discord.Forbidden, discord.HTTPException):

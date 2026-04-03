@@ -61,6 +61,22 @@ export default async function seedingRoutes(app: FastifyInstance) {
         auto_seed_alert_role_id:     config.autoSeedAlertRoleId,
         auto_seed_alert_cooldown_min: config.autoSeedAlertCooldownMin,
         discord_notify_channel_id:   config.discordNotifyChannelId,
+        rcon_broadcast_enabled:      config.rconBroadcastEnabled,
+        rcon_broadcast_message:      config.rconBroadcastMessage,
+        rcon_broadcast_interval_min: config.rconBroadcastIntervalMin,
+        reward_cooldown_hours:       config.rewardCooldownHours,
+        streak_enabled:              config.streakEnabled,
+        streak_days_required:        config.streakDaysRequired,
+        streak_multiplier:           config.streakMultiplier,
+        bonus_multiplier_enabled:    config.bonusMultiplierEnabled,
+        bonus_multiplier_value:      config.bonusMultiplierValue,
+        bonus_multiplier_start:      config.bonusMultiplierStart?.toISOString() ?? null,
+        bonus_multiplier_end:        config.bonusMultiplierEnd?.toISOString() ?? null,
+        custom_embed_title:          config.customEmbedTitle,
+        custom_embed_description:    config.customEmbedDescription,
+        custom_embed_image_url:      config.customEmbedImageUrl,
+        custom_embed_color:          config.customEmbedColor,
+        population_tracking_enabled: config.populationTrackingEnabled,
         leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
@@ -99,6 +115,22 @@ export default async function seedingRoutes(app: FastifyInstance) {
       auto_seed_alert_role_id?: string | null
       auto_seed_alert_cooldown_min?: number
       discord_notify_channel_id?: string | null
+      rcon_broadcast_enabled?: boolean
+      rcon_broadcast_message?: string
+      rcon_broadcast_interval_min?: number
+      reward_cooldown_hours?: number
+      streak_enabled?: boolean
+      streak_days_required?: number
+      streak_multiplier?: number
+      bonus_multiplier_enabled?: boolean
+      bonus_multiplier_value?: number
+      bonus_multiplier_start?: string | null
+      bonus_multiplier_end?: string | null
+      custom_embed_title?: string | null
+      custom_embed_description?: string | null
+      custom_embed_image_url?: string | null
+      custom_embed_color?: string | null
+      population_tracking_enabled?: boolean
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -213,6 +245,22 @@ export default async function seedingRoutes(app: FastifyInstance) {
         autoSeedAlertRoleId:    body.auto_seed_alert_role_id ?? null,
         autoSeedAlertCooldownMin: body.auto_seed_alert_cooldown_min ?? 30,
         discordNotifyChannelId: body.discord_notify_channel_id ?? null,
+        rconBroadcastEnabled:  body.rcon_broadcast_enabled   ?? false,
+        rconBroadcastMessage:  body.rcon_broadcast_message   ?? "This server is in seeding mode! Earn whitelist rewards by staying online.",
+        rconBroadcastIntervalMin: body.rcon_broadcast_interval_min ?? 10,
+        rewardCooldownHours:   body.reward_cooldown_hours    ?? 0,
+        streakEnabled:         body.streak_enabled           ?? false,
+        streakDaysRequired:    body.streak_days_required     ?? 3,
+        streakMultiplier:      body.streak_multiplier        ?? 1.5,
+        bonusMultiplierEnabled: body.bonus_multiplier_enabled ?? false,
+        bonusMultiplierValue:  body.bonus_multiplier_value   ?? 2.0,
+        bonusMultiplierStart:  body.bonus_multiplier_start ? new Date(body.bonus_multiplier_start) : null,
+        bonusMultiplierEnd:    body.bonus_multiplier_end ? new Date(body.bonus_multiplier_end) : null,
+        customEmbedTitle:      body.custom_embed_title       ?? null,
+        customEmbedDescription: body.custom_embed_description ?? null,
+        customEmbedImageUrl:   body.custom_embed_image_url   ?? null,
+        customEmbedColor:      body.custom_embed_color       ?? null,
+        populationTrackingEnabled: body.population_tracking_enabled ?? false,
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -244,6 +292,22 @@ export default async function seedingRoutes(app: FastifyInstance) {
         autoSeedAlertRoleId:    body.auto_seed_alert_role_id !== undefined ? body.auto_seed_alert_role_id : (existing?.autoSeedAlertRoleId ?? null),
         autoSeedAlertCooldownMin: body.auto_seed_alert_cooldown_min ?? existing?.autoSeedAlertCooldownMin ?? 30,
         discordNotifyChannelId: body.discord_notify_channel_id !== undefined ? body.discord_notify_channel_id : (existing?.discordNotifyChannelId ?? null),
+        rconBroadcastEnabled:  body.rcon_broadcast_enabled   ?? existing?.rconBroadcastEnabled   ?? false,
+        rconBroadcastMessage:  body.rcon_broadcast_message   ?? existing?.rconBroadcastMessage   ?? "This server is in seeding mode!",
+        rconBroadcastIntervalMin: body.rcon_broadcast_interval_min ?? existing?.rconBroadcastIntervalMin ?? 10,
+        rewardCooldownHours:   body.reward_cooldown_hours    ?? existing?.rewardCooldownHours    ?? 0,
+        streakEnabled:         body.streak_enabled           ?? existing?.streakEnabled           ?? false,
+        streakDaysRequired:    body.streak_days_required     ?? existing?.streakDaysRequired     ?? 3,
+        streakMultiplier:      body.streak_multiplier        ?? existing?.streakMultiplier       ?? 1.5,
+        bonusMultiplierEnabled: body.bonus_multiplier_enabled ?? existing?.bonusMultiplierEnabled ?? false,
+        bonusMultiplierValue:  body.bonus_multiplier_value   ?? existing?.bonusMultiplierValue   ?? 2.0,
+        bonusMultiplierStart:  body.bonus_multiplier_start !== undefined ? (body.bonus_multiplier_start ? new Date(body.bonus_multiplier_start) : null) : (existing?.bonusMultiplierStart ?? null),
+        bonusMultiplierEnd:    body.bonus_multiplier_end !== undefined ? (body.bonus_multiplier_end ? new Date(body.bonus_multiplier_end) : null) : (existing?.bonusMultiplierEnd ?? null),
+        customEmbedTitle:      body.custom_embed_title !== undefined ? body.custom_embed_title : (existing?.customEmbedTitle ?? null),
+        customEmbedDescription: body.custom_embed_description !== undefined ? body.custom_embed_description : (existing?.customEmbedDescription ?? null),
+        customEmbedImageUrl:   body.custom_embed_image_url !== undefined ? body.custom_embed_image_url : (existing?.customEmbedImageUrl ?? null),
+        customEmbedColor:      body.custom_embed_color !== undefined ? body.custom_embed_color : (existing?.customEmbedColor ?? null),
+        populationTrackingEnabled: body.population_tracking_enabled ?? existing?.populationTrackingEnabled ?? false,
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },

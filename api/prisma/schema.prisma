@@ -350,6 +350,28 @@ model SeedingConfig {
   autoSeedAlertRoleId       String?  @map("auto_seed_alert_role_id") @db.VarChar(32)
   autoSeedAlertCooldownMin  Int      @default(30) @map("auto_seed_alert_cooldown_min")
   discordNotifyChannelId    String?  @map("discord_notify_channel_id") @db.VarChar(32)
+  // In-game broadcasts
+  rconBroadcastEnabled      Boolean  @default(false) @map("rcon_broadcast_enabled")
+  rconBroadcastMessage      String   @default("This server is in seeding mode! Earn whitelist rewards by staying online.") @map("rcon_broadcast_message")
+  rconBroadcastIntervalMin  Int      @default(10) @map("rcon_broadcast_interval_min")
+  // Cooldown
+  rewardCooldownHours       Int      @default(0) @map("reward_cooldown_hours")
+  // Streak bonuses
+  streakEnabled             Boolean  @default(false) @map("streak_enabled")
+  streakDaysRequired        Int      @default(3) @map("streak_days_required")
+  streakMultiplier          Float    @default(1.5) @map("streak_multiplier")
+  // Bonus multiplier events
+  bonusMultiplierEnabled    Boolean  @default(false) @map("bonus_multiplier_enabled")
+  bonusMultiplierValue      Float    @default(2.0) @map("bonus_multiplier_value")
+  bonusMultiplierStart      DateTime? @map("bonus_multiplier_start")
+  bonusMultiplierEnd        DateTime? @map("bonus_multiplier_end")
+  // Custom Discord embeds
+  customEmbedTitle          String?  @map("custom_embed_title") @db.VarChar(255)
+  customEmbedDescription    String?  @map("custom_embed_description")
+  customEmbedImageUrl       String?  @map("custom_embed_image_url") @db.VarChar(500)
+  customEmbedColor          String?  @map("custom_embed_color") @db.VarChar(7)
+  // Population snapshots toggle
+  populationTrackingEnabled Boolean  @default(false) @map("population_tracking_enabled")
   leaderboardPublic       Boolean   @default(false) @map("leaderboard_public")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
@@ -369,6 +391,17 @@ model SeedingNotification {
   @@map("seeding_notifications")
 }
 
+model PopulationSnapshot {
+  id          Int      @id @default(autoincrement())
+  guildId     BigInt   @map("guild_id")
+  playerCount Int      @map("player_count")
+  isSeeding   Boolean  @map("is_seeding")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([guildId, createdAt(sort: Desc)])
+  @@map("population_snapshots")
+}
+
 model SeedingPoints {
   id          Int       @id @default(autoincrement())
   guildId     BigInt    @map("guild_id")
@@ -379,6 +412,8 @@ model SeedingPoints {
   lastResetAt DateTime? @map("last_reset_at")
   rewarded    Boolean   @default(false)
   rewardedAt  DateTime? @map("rewarded_at")
+  currentStreak Int     @default(0) @map("current_streak")
+  lastSeedDate  String? @map("last_seed_date") @db.VarChar(10)
 
   @@unique([guildId, steamId])
   @@index([guildId, points(sort: Desc)])

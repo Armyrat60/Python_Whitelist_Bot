@@ -97,6 +97,36 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS auto_seed_alert_role_id VARCHAR(32) NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS auto_seed_alert_cooldown_min INT NOT NULL DEFAULT 30`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS discord_notify_channel_id VARCHAR(32) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_broadcast_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_broadcast_message TEXT NOT NULL DEFAULT 'This server is in seeding mode! Earn whitelist rewards by staying online.'`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_broadcast_interval_min INT NOT NULL DEFAULT 10`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS reward_cooldown_hours INT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_days_required INT NOT NULL DEFAULT 3`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_multiplier REAL NOT NULL DEFAULT 1.5`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS bonus_multiplier_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS bonus_multiplier_value REAL NOT NULL DEFAULT 2.0`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS bonus_multiplier_start TIMESTAMP NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS bonus_multiplier_end TIMESTAMP NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_title VARCHAR(255) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_description TEXT NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_image_url VARCHAR(500) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS custom_embed_color VARCHAR(7) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS population_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  // Streak fields on seeding_points
+  await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS current_streak INT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS last_seed_date VARCHAR(10) NULL`)
+  // Population snapshots table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS population_snapshots (
+      id            SERIAL PRIMARY KEY,
+      guild_id      BIGINT    NOT NULL,
+      player_count  INT       NOT NULL,
+      is_seeding    BOOLEAN   NOT NULL,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS pop_snap_guild_time_idx ON population_snapshots (guild_id, created_at DESC)`)
 
   // Create seeding_notifications table for Discord event queue
   await pool.query(`
@@ -188,6 +218,18 @@ export interface SeedingConfigRow {
   auto_seed_alert_role_id: string | null
   auto_seed_alert_cooldown_min: number
   discord_notify_channel_id: string | null
+  rcon_broadcast_enabled: boolean
+  rcon_broadcast_message: string
+  rcon_broadcast_interval_min: number
+  reward_cooldown_hours: number
+  streak_enabled: boolean
+  streak_days_required: number
+  streak_multiplier: number
+  bonus_multiplier_enabled: boolean
+  bonus_multiplier_value: number
+  bonus_multiplier_start: Date | null
+  bonus_multiplier_end: Date | null
+  population_tracking_enabled: boolean
   leaderboard_public: boolean
 }
 
@@ -589,6 +631,68 @@ export async function logAudit(
      VALUES ($1, $2, $3, NOW())`,
     [guildId, actionType, details],
   )
+}
+
+// ─── Population snapshots ────────────────────────────────────────────────────
+
+/** Store a population snapshot for graphing. */
+export async function savePopulationSnapshot(
+  guildId: bigint,
+  playerCount: number,
+  isSeeding: boolean,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO population_snapshots (guild_id, player_count, is_seeding, created_at)
+     VALUES ($1, $2, $3, NOW())`,
+    [guildId, playerCount, isSeeding],
+  )
+}
+
+/** Clean up old snapshots (keep last 7 days). */
+export async function cleanOldSnapshots(): Promise<void> {
+  await pool.query(
+    `DELETE FROM population_snapshots WHERE created_at < NOW() - INTERVAL '7 days'`,
+  )
+}
+
+// ─── Streak tracking ─────────────────────────────────────────────────────────
+
+/** Update streak for a player. Called once per day when they seed. */
+export async function updateStreak(
+  guildId: bigint,
+  steamId: string,
+  today: string, // YYYY-MM-DD format
+): Promise<number> {
+  // Get current streak info
+  const result = await pool.query<{ current_streak: number; last_seed_date: string | null }>(
+    `SELECT current_streak, last_seed_date FROM seeding_points
+     WHERE guild_id = $1 AND steam_id = $2`,
+    [guildId, steamId],
+  )
+  if (result.rows.length === 0) return 0
+
+  const row = result.rows[0]
+  if (row.last_seed_date === today) return row.current_streak // Already counted today
+
+  // Check if yesterday was the last seed date (streak continues)
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().slice(0, 10)
+
+  let newStreak: number
+  if (row.last_seed_date === yesterdayStr) {
+    newStreak = row.current_streak + 1
+  } else {
+    newStreak = 1 // Streak broken, start fresh
+  }
+
+  await pool.query(
+    `UPDATE seeding_points SET current_streak = $3, last_seed_date = $4
+     WHERE guild_id = $1 AND steam_id = $2`,
+    [guildId, steamId, newStreak, today],
+  )
+
+  return newStreak
 }
 
 // ─── Notification queue ──────────────────────────────────────────────────────

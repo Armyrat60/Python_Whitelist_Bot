@@ -132,6 +132,11 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     playerCount >= cfg.seeding_start_player_count &&
     playerCount <= cfg.seeding_player_threshold
 
+  // Store population snapshot regardless of seeding mode
+  if (cfg.population_tracking_enabled) {
+    await db.savePopulationSnapshot(guildId, playerCount, isSeedingMode).catch(() => {})
+  }
+
   if (!isSeedingMode) {
     const reason = playerCount < cfg.seeding_start_player_count
       ? `Player count (${playerCount}) below minimum (${cfg.seeding_start_player_count})`
@@ -170,13 +175,69 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
 
   wasSeeding.set(guildKey, true)
 
+  // ── In-game seeding broadcast ─────────────────────────────────────────
+  if (cfg.rcon_broadcast_enabled && cfg.rcon_broadcast_message) {
+    const broadcastKey = `broadcast:${guildKey}`
+    const lastBroadcast = lastAutoSeedAlert.get(broadcastKey) ?? 0
+    const intervalMs = (cfg.rcon_broadcast_interval_min ?? 10) * 60 * 1000
+    if (Date.now() - lastBroadcast > intervalMs) {
+      // Broadcast to all players on the server
+      const broadcastMsg = cfg.rcon_broadcast_message
+        .replace(/\{player_count\}/g, String(playerCount))
+        .replace(/\{threshold\}/g, String(cfg.seeding_player_threshold))
+      for (const p of players) {
+        squadjs.warnPlayer(guildKey, p.steamId, broadcastMsg).catch(() => {})
+      }
+      lastAutoSeedAlert.set(broadcastKey, Date.now())
+    }
+  }
+
   // Server is in seeding mode — award points
   const playerInputs: db.PlayerInput[] = players.map((p) => ({
     steamId: p.steamId,
     name: p.name,
   }))
 
-  const awarded = await db.awardPoints(guildId, playerInputs)
+  // Calculate effective point multiplier
+  let pointMultiplier = 1
+  if (cfg.bonus_multiplier_enabled && cfg.bonus_multiplier_start && cfg.bonus_multiplier_end) {
+    const now = Date.now()
+    const start = new Date(cfg.bonus_multiplier_start).getTime()
+    const end = new Date(cfg.bonus_multiplier_end).getTime()
+    if (now >= start && now <= end) {
+      pointMultiplier = cfg.bonus_multiplier_value ?? 2
+    }
+  }
+
+  // Award points (with multiplier if active)
+  let awarded: number
+  if (pointMultiplier > 1) {
+    // Award multiplied points by calling awardPoints multiple times or using a custom amount
+    // For simplicity, just call awardPoints ceil(multiplier) times with fractional handling
+    const fullPoints = Math.floor(pointMultiplier)
+    awarded = 0
+    for (let i = 0; i < fullPoints; i++) {
+      awarded += await db.awardPoints(guildId, playerInputs)
+    }
+  } else {
+    awarded = await db.awardPoints(guildId, playerInputs)
+  }
+
+  // ── Streak tracking ───────────────────────────────────────────────────
+  if (cfg.streak_enabled) {
+    const today = new Date().toISOString().slice(0, 10)
+    for (const p of playerInputs) {
+      const streak = await db.updateStreak(guildId, p.steamId, today)
+      // Apply streak multiplier if they've hit the threshold
+      if (streak >= cfg.streak_days_required && cfg.streak_multiplier > 1) {
+        // Award bonus points for streak (extra points on top of normal)
+        const bonusPoints = Math.floor(cfg.streak_multiplier - 1) // e.g., 1.5x = 0.5 extra, but at least 1
+        if (bonusPoints >= 1) {
+          await db.awardPoints(guildId, [p]) // extra point for streak
+        }
+      }
+    }
+  }
 
   // ── RCON milestone warnings ───────────────────────────────────────────
   if (cfg.rcon_warnings_enabled) {
@@ -220,7 +281,22 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     ? Math.min(...tiers.map((t) => t.points))
     : cfg.points_required
 
-  const qualifiers = await db.getUnrewardedQualifiers(guildId, minThreshold)
+  let qualifiers = await db.getUnrewardedQualifiers(guildId, minThreshold)
+
+  // Apply cooldown filter — skip players rewarded too recently
+  if (cfg.reward_cooldown_hours > 0 && qualifiers.length > 0) {
+    const cooldownMs = cfg.reward_cooldown_hours * 60 * 60 * 1000
+    const now = Date.now()
+    // Check rewarded_at for recently rewarded players (via a batch query)
+    const recentlyRewarded = await pool.query<{ steam_id: string }>(
+      `SELECT steam_id FROM seeding_points
+       WHERE guild_id = $1 AND rewarded_at IS NOT NULL
+         AND rewarded_at > NOW() - make_interval(hours => $2)`,
+      [guildId, cfg.reward_cooldown_hours],
+    )
+    const cooldownSet = new Set(recentlyRewarded.rows.map((r) => r.steam_id))
+    qualifiers = qualifiers.filter((q) => !cooldownSet.has(q.steam_id))
+  }
 
   if (qualifiers.length > 0) {
     // Group is hardcoded to SeedReserve:reserve — no safety check needed
@@ -388,4 +464,6 @@ export async function runExpiryCleanup(): Promise<void> {
   if (expired > 0) {
     console.log(`[seeding/tracker] Expired ${expired} seeding reward(s)`)
   }
+  // Clean up old population snapshots (keep 7 days)
+  await db.cleanOldSnapshots().catch(() => {})
 }
