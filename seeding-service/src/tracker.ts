@@ -301,7 +301,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
   if (qualifiers.length > 0) {
     // Group is hardcoded to SeedReserve:reserve — no safety check needed
     {
-      const whitelistId = await db.ensureSeedingWhitelist(guildId)
+      const whitelistId = await db.getMainWhitelistId(guildId)
 
       if (whitelistId) {
         // Sort tiers descending for highest-first matching

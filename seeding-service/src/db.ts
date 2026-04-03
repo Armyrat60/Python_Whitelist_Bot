@@ -71,19 +71,38 @@ export async function ensureTables(): Promise<void> {
     ON CONFLICT (guild_id, group_name) DO NOTHING
   `)
 
-  // Clean up any seeding rewards that were mistakenly added to the main whitelist
-  // (before the ensureSeedingWhitelist fix). Remove entries from non-seeding whitelists.
+  // Migrate seeding rewards from the old separate whitelist to the main whitelist.
+  // Move whitelist_users and whitelist_identifiers from 'seeding-rewards' to the default whitelist.
   await pool.query(`
-    DELETE FROM whitelist_identifiers
-    WHERE verification_source = 'seeding_reward'
-      AND whitelist_id IS NOT NULL
-      AND whitelist_id NOT IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+    UPDATE whitelist_users u
+    SET whitelist_id = (
+      SELECT w.id FROM whitelists w
+      WHERE w.guild_id = u.guild_id AND w.is_default = TRUE AND w.enabled = TRUE
+      LIMIT 1
+    )
+    WHERE u.created_via = 'seeding_reward'
+      AND u.whitelist_id IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+      AND EXISTS (
+        SELECT 1 FROM whitelists w
+        WHERE w.guild_id = u.guild_id AND w.is_default = TRUE AND w.enabled = TRUE
+      )
   `)
   await pool.query(`
-    DELETE FROM whitelist_users
-    WHERE created_via = 'seeding_reward'
-      AND whitelist_id NOT IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+    UPDATE whitelist_identifiers i
+    SET whitelist_id = (
+      SELECT w.id FROM whitelists w
+      WHERE w.guild_id = i.guild_id AND w.is_default = TRUE AND w.enabled = TRUE
+      LIMIT 1
+    )
+    WHERE i.verification_source = 'seeding_reward'
+      AND i.whitelist_id IN (SELECT id FROM whitelists WHERE slug = 'seeding-rewards')
+      AND EXISTS (
+        SELECT 1 FROM whitelists w
+        WHERE w.guild_id = i.guild_id AND w.is_default = TRUE AND w.enabled = TRUE
+      )
   `)
+  // Delete the old separate seeding whitelist (entries already migrated)
+  await pool.query(`DELETE FROM whitelists WHERE slug = 'seeding-rewards'`)
 
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS reward_tiers JSONB NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warnings_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
@@ -431,19 +450,17 @@ const SEEDING_GROUP_NAME = "SeedReserve"
 const SEEDING_GROUP_PERMS = "reserve"
 
 /**
- * Ensure a dedicated "Seeding Rewards" whitelist exists for this guild
- * with the hardcoded SeedReserve group (reserve permission only).
+ * Get the main (default) whitelist ID for this guild.
+ * Seeding rewards go into the MAIN whitelist — not a separate one.
+ * The SeedReserve group is ensured to exist so seeding players get
+ * only reserve permission even though they're on the same whitelist.
  *
- * The group name and permissions are NOT configurable — they are always
- * SeedReserve:reserve. This prevents accidental permission escalation.
- *
- * Returns the whitelist ID to use for seeding rewards.
+ * Returns the main whitelist ID.
  */
-export async function ensureSeedingWhitelist(
+export async function getMainWhitelistId(
   guildId: bigint,
-): Promise<number> {
+): Promise<number | null> {
   // Always ensure the SeedReserve group exists with ONLY reserve permission
-  // Use DO UPDATE to fix any corrupted permissions
   await pool.query(
     `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
      VALUES ($1, $2, $3, 'Seeding rewards (reserve only, cannot be changed)', FALSE, NOW(), NOW())
@@ -453,40 +470,23 @@ export async function ensureSeedingWhitelist(
     [guildId, SEEDING_GROUP_NAME, SEEDING_GROUP_PERMS],
   )
 
-  // Check if a seeding whitelist already exists
-  const existing = await pool.query<{ id: number; squad_group: string }>(
-    `SELECT id, squad_group FROM whitelists
-     WHERE guild_id = $1 AND slug = 'seeding-rewards'
+  // Find the main (default) whitelist
+  const result = await pool.query<{ id: number }>(
+    `SELECT id FROM whitelists
+     WHERE guild_id = $1 AND is_default = TRUE AND enabled = TRUE
      LIMIT 1`,
     [guildId],
   )
+  if (result.rows.length > 0) return result.rows[0].id
 
-  if (existing.rows.length > 0) {
-    const wl = existing.rows[0]
-    // Force the group to SeedReserve if it was changed
-    if (wl.squad_group !== SEEDING_GROUP_NAME) {
-      await pool.query(
-        `UPDATE whitelists SET squad_group = $1, updated_at = NOW() WHERE id = $2`,
-        [SEEDING_GROUP_NAME, wl.id],
-      )
-      console.log(`[seeding/db] Fixed seeding whitelist group to "${SEEDING_GROUP_NAME}" for guild ${guildId}`)
-    }
-    return wl.id
-  }
-
-  // Create a new seeding whitelist with hardcoded group
-  const result = await pool.query<{ id: number }>(
-    `INSERT INTO whitelists
-       (guild_id, name, slug, enabled, squad_group, output_filename,
-        default_slot_limit, stack_roles, is_default, is_manual, created_at, updated_at)
-     VALUES ($1, 'Seeding Rewards', 'seeding-rewards', TRUE, $2, 'seeding_rewards.txt',
-             1, FALSE, FALSE, FALSE, NOW(), NOW())
-     RETURNING id`,
-    [guildId, SEEDING_GROUP_NAME],
+  // Fallback: first enabled whitelist
+  const fallback = await pool.query<{ id: number }>(
+    `SELECT id FROM whitelists
+     WHERE guild_id = $1 AND enabled = TRUE
+     ORDER BY id ASC LIMIT 1`,
+    [guildId],
   )
-
-  console.log(`[seeding/db] Created seeding whitelist (id=${result.rows[0].id}) with group "${SEEDING_GROUP_NAME}" for guild ${guildId}`)
-  return result.rows[0].id
+  return fallback.rows[0]?.id ?? null
 }
 
 // ─── Whitelist reward creation ───────────────────────────────────────────────
