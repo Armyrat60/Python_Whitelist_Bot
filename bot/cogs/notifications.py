@@ -10,10 +10,12 @@ class NotificationsCog(commands.Cog):
         self.bot = bot
         self.expiry_check.start()
         self.bridge_health_check.start()
+        self.seeding_notification_check.start()
 
     def cog_unload(self):
         self.expiry_check.cancel()
         self.bridge_health_check.cancel()
+        self.seeding_notification_check.cancel()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -130,6 +132,139 @@ class NotificationsCog(commands.Cog):
 
     @bridge_health_check.before_loop
     async def _before_bridge_health(self):
+        await self.bot.wait_until_ready()
+
+    # ── Seeding event notifications ──────────────────────────────────────────
+
+    @tasks.loop(seconds=30)
+    async def seeding_notification_check(self):
+        """Poll seeding_notifications table and send Discord messages."""
+        try:
+            rows = await self.bot.db.fetchall(
+                """
+                SELECT id, guild_id, event_type, payload
+                FROM seeding_notifications
+                WHERE processed = FALSE
+                ORDER BY created_at ASC
+                LIMIT 20
+                """
+            )
+            if not rows:
+                return
+
+            for row in rows:
+                notif_id, guild_id, event_type, payload = row
+                try:
+                    await self._handle_seeding_notification(guild_id, event_type, payload or {})
+                except Exception as e:
+                    log.error("Failed to process seeding notification %s: %s", notif_id, e)
+                finally:
+                    # Mark as processed regardless of success to prevent infinite retry
+                    await self.bot.db.execute(
+                        "UPDATE seeding_notifications SET processed = TRUE WHERE id = %s",
+                        (notif_id,),
+                    )
+        except Exception as e:
+            log.error("Seeding notification poll failed: %s", e)
+
+    async def _handle_seeding_notification(self, guild_id, event_type, payload):
+        """Process a single seeding notification."""
+        import json
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+
+        channel_id = payload.get("channel_id")
+        channel = None
+        if channel_id:
+            try:
+                channel = self.bot.get_channel(int(channel_id))
+            except (ValueError, TypeError):
+                pass
+
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+
+        if event_type == "seeding_reward_granted" and channel:
+            player = payload.get("player_name") or payload.get("steam_id", "Unknown")
+            tier = payload.get("tier_label", "Standard")
+            duration = payload.get("duration_hours", 0)
+            days = round(duration / 24, 1) if duration else "?"
+            embed = discord.Embed(
+                title="Seeding Reward Granted",
+                description=f"**{player}** earned a seeding reward!",
+                color=0x10b981,
+            )
+            embed.add_field(name="Tier", value=tier, inline=True)
+            embed.add_field(name="Duration", value=f"{days} days", inline=True)
+            try:
+                await channel.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        elif event_type == "seeding_server_live" and channel:
+            count = payload.get("player_count", 0)
+            threshold = payload.get("threshold", 0)
+            embed = discord.Embed(
+                title="Server Is Live!",
+                description=f"Server has reached **{count}** players (threshold: {threshold}). Seeding complete!",
+                color=0x10b981,
+            )
+            try:
+                await channel.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        elif event_type == "seeding_needs_seeders" and channel:
+            count = payload.get("player_count", 0)
+            threshold = payload.get("threshold", 0)
+            role_id = payload.get("role_id")
+            role_mention = f"<@&{role_id}>" if role_id else ""
+            embed = discord.Embed(
+                title="Server Needs Seeders!",
+                description=f"Server is at **{count}** players. Help us reach {threshold}!",
+                color=0xeab308,
+            )
+            try:
+                await channel.send(content=role_mention, embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        elif event_type == "seeding_role_grant":
+            role_id = payload.get("role_id")
+            steam_id = payload.get("steam_id")
+            if not role_id or not steam_id:
+                return
+            # Find the Discord member linked to this Steam ID
+            try:
+                linked = await self.bot.db.fetchone(
+                    """SELECT discord_id FROM squad_players
+                       WHERE guild_id = %s AND steam_id = %s AND discord_id IS NOT NULL
+                       LIMIT 1""",
+                    (guild_id, steam_id),
+                )
+                if not linked:
+                    linked = await self.bot.db.fetchone(
+                        """SELECT DISTINCT discord_id FROM whitelist_identifiers
+                           WHERE guild_id = %s AND id_type IN ('steam64', 'steamid')
+                             AND id_value = %s AND discord_id > 0
+                           LIMIT 1""",
+                        (guild_id, steam_id),
+                    )
+                if linked:
+                    discord_id = linked[0]
+                    member = guild.get_member(int(discord_id))
+                    if not member:
+                        member = await guild.fetch_member(int(discord_id))
+                    role = guild.get_role(int(role_id))
+                    if member and role and role not in member.roles:
+                        await member.add_roles(role, reason="Seeding reward")
+                        log.info("Assigned seeding role %s to %s in guild %s", role_id, discord_id, guild_id)
+            except Exception as e:
+                log.error("Failed to assign seeding role for steam %s in guild %s: %s", steam_id, guild_id, e)
+
+    @seeding_notification_check.before_loop
+    async def _before_seeding_notif(self):
         await self.bot.wait_until_ready()
 
 

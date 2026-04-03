@@ -50,7 +50,12 @@ const configLinks = [
   { href: "/dashboard/panels", label: "Signup Panels", icon: PanelTop },
   { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
   { href: "/dashboard/squad-groups", label: "Permission Groups", icon: Layers },
-  { href: "/dashboard/seeding", label: "Seeding", icon: Sprout },
+];
+
+const seedingLinks = [
+  { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
+  { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/seeding/settings", label: "Settings", icon: Settings2 },
 ];
 
 const bottomLinks = [
@@ -212,6 +217,11 @@ export function Sidebar() {
           <>
             <SectionLabel>Configuration</SectionLabel>
             {configLinks.map((link) => (
+              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+            ))}
+
+            <SectionLabel>Seeding</SectionLabel>
+            {seedingLinks.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
             ))}
           </>

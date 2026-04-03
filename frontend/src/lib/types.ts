@@ -241,6 +241,13 @@ export interface SeedingConfig {
   rcon_warning_message: string;
   decay_days_threshold: number;
   decay_points_per_day: number;
+  discord_role_reward_enabled: boolean;
+  discord_role_reward_id: string | null;
+  discord_remove_role_on_expiry: boolean;
+  auto_seed_alert_enabled: boolean;
+  auto_seed_alert_role_id: string | null;
+  auto_seed_alert_cooldown_min: number;
+  discord_notify_channel_id: string | null;
   leaderboard_public: boolean;
   created_at?: string;
   updated_at?: string;

@@ -18,6 +18,12 @@ const MILESTONES = [100, 75, 50, 25, 10]
 /** Tracks last warned percentage per player to avoid duplicate warnings. Memory-only. */
 const lastWarnedPct = new Map<string, number>()
 
+/** Tracks whether guild was in seeding mode on last poll (for server live / needs seeders events). */
+const wasSeeding = new Map<string, boolean>()
+
+/** Tracks last auto-seed alert time per guild (for cooldown). */
+const lastAutoSeedAlert = new Map<string, number>()
+
 /** Format an RCON warning message with template variables. */
 function formatWarning(template: string, progress: number, points: number, required: number, playerName: string): string {
   return template
@@ -131,9 +137,38 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
       ? `Player count (${playerCount}) below minimum (${cfg.seeding_start_player_count})`
       : `Player count (${playerCount}) above threshold (${cfg.seeding_player_threshold})`
 
+    // Check for server live event (was seeding, now above threshold)
+    if (wasSeeding.get(guildKey) && playerCount > cfg.seeding_player_threshold && cfg.discord_notify_channel_id) {
+      await db.queueNotification(guildId, "seeding_server_live", {
+        player_count: playerCount,
+        threshold: cfg.seeding_player_threshold,
+        channel_id: cfg.discord_notify_channel_id,
+      })
+    }
+
+    // Check for auto-seed alert (below minimum, with cooldown)
+    if (cfg.auto_seed_alert_enabled && cfg.auto_seed_alert_role_id && cfg.discord_notify_channel_id &&
+        playerCount < cfg.seeding_start_player_count) {
+      const now = Date.now()
+      const lastAlert = lastAutoSeedAlert.get(guildKey) ?? 0
+      const cooldownMs = (cfg.auto_seed_alert_cooldown_min ?? 30) * 60 * 1000
+      if (now - lastAlert > cooldownMs) {
+        await db.queueNotification(guildId, "seeding_needs_seeders", {
+          player_count: playerCount,
+          threshold: cfg.seeding_player_threshold,
+          role_id: cfg.auto_seed_alert_role_id,
+          channel_id: cfg.discord_notify_channel_id,
+        })
+        lastAutoSeedAlert.set(guildKey, now)
+      }
+    }
+
+    wasSeeding.set(guildKey, false)
     await db.updatePollStatus(guildId, "ok", `Not seeding: ${reason}`)
     return
   }
+
+  wasSeeding.set(guildKey, true)
 
   // Server is in seeding mode — award points
   const playerInputs: db.PlayerInput[] = players.map((p) => ({
@@ -220,6 +255,26 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
             await db.markRewarded(guildId, q.steam_id)
             rewarded++
             console.log(`[seeding/tracker] Reward granted: ${q.player_name ?? q.steam_id} → ${tierLabel || "standard"} (${duration}h) in guild ${guildId}`)
+
+            // Queue Discord notification for reward
+            if (cfg.discord_notify_channel_id) {
+              await db.queueNotification(guildId, "seeding_reward_granted", {
+                steam_id: q.steam_id,
+                player_name: q.player_name,
+                tier_label: tierLabel || "Standard",
+                duration_hours: duration,
+                channel_id: cfg.discord_notify_channel_id,
+              }).catch(() => {}) // non-blocking
+            }
+
+            // Queue Discord role assignment
+            if (cfg.discord_role_reward_enabled && cfg.discord_role_reward_id) {
+              await db.queueNotification(guildId, "seeding_role_grant", {
+                steam_id: q.steam_id,
+                player_name: q.player_name,
+                role_id: cfg.discord_role_reward_id,
+              }).catch(() => {})
+            }
           }
         }
       } else {

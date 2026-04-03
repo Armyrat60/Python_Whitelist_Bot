@@ -90,6 +90,26 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_warning_message TEXT NOT NULL DEFAULT 'Seeding Progress: {progress}% ({points}/{required}). Keep seeding!'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS decay_days_threshold INT NOT NULL DEFAULT 3`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS decay_points_per_day INT NOT NULL DEFAULT 10`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS discord_role_reward_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS discord_role_reward_id VARCHAR(32) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS discord_remove_role_on_expiry BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS auto_seed_alert_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS auto_seed_alert_role_id VARCHAR(32) NULL`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS auto_seed_alert_cooldown_min INT NOT NULL DEFAULT 30`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS discord_notify_channel_id VARCHAR(32) NULL`)
+
+  // Create seeding_notifications table for Discord event queue
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS seeding_notifications (
+      id         SERIAL PRIMARY KEY,
+      guild_id   BIGINT      NOT NULL,
+      event_type VARCHAR(50) NOT NULL,
+      payload    JSONB       NOT NULL DEFAULT '{}',
+      processed  BOOLEAN     NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP   NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS seeding_notif_guild_proc_idx ON seeding_notifications (guild_id, processed, created_at)`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS seeding_points (
@@ -161,6 +181,13 @@ export interface SeedingConfigRow {
   rcon_warning_message: string
   decay_days_threshold: number
   decay_points_per_day: number
+  discord_role_reward_enabled: boolean
+  discord_role_reward_id: string | null
+  discord_remove_role_on_expiry: boolean
+  auto_seed_alert_enabled: boolean
+  auto_seed_alert_role_id: string | null
+  auto_seed_alert_cooldown_min: number
+  discord_notify_channel_id: string | null
   leaderboard_public: boolean
 }
 
@@ -560,6 +587,24 @@ export async function logAudit(
     `INSERT INTO audit_log (guild_id, action_type, details, created_at)
      VALUES ($1, $2, $3, NOW())`,
     [guildId, actionType, details],
+  )
+}
+
+// ─── Notification queue ──────────────────────────────────────────────────────
+
+/**
+ * Queue a notification for the Python bot to pick up and send to Discord.
+ * Event types: seeding_reward_granted, seeding_server_live, seeding_needs_seeders
+ */
+export async function queueNotification(
+  guildId: bigint,
+  eventType: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
+     VALUES ($1, $2, $3, NOW())`,
+    [guildId, eventType, JSON.stringify(payload)],
   )
 }
 

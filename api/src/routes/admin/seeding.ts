@@ -54,6 +54,13 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rcon_warning_message:        config.rconWarningMessage,
         decay_days_threshold:        config.decayDaysThreshold,
         decay_points_per_day:        config.decayPointsPerDay,
+        discord_role_reward_enabled: config.discordRoleRewardEnabled,
+        discord_role_reward_id:      config.discordRoleRewardId,
+        discord_remove_role_on_expiry: config.discordRemoveRoleOnExpiry,
+        auto_seed_alert_enabled:     config.autoSeedAlertEnabled,
+        auto_seed_alert_role_id:     config.autoSeedAlertRoleId,
+        auto_seed_alert_cooldown_min: config.autoSeedAlertCooldownMin,
+        discord_notify_channel_id:   config.discordNotifyChannelId,
         leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
@@ -85,6 +92,13 @@ export default async function seedingRoutes(app: FastifyInstance) {
       rcon_warning_message?: string
       decay_days_threshold?: number
       decay_points_per_day?: number
+      discord_role_reward_enabled?: boolean
+      discord_role_reward_id?: string | null
+      discord_remove_role_on_expiry?: boolean
+      auto_seed_alert_enabled?: boolean
+      auto_seed_alert_role_id?: string | null
+      auto_seed_alert_cooldown_min?: number
+      discord_notify_channel_id?: string | null
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -192,6 +206,13 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rconWarningMessage:     body.rcon_warning_message    ?? "Seeding Progress: {progress}% ({points}/{required}). Keep seeding!",
         decayDaysThreshold:     body.decay_days_threshold    ?? 3,
         decayPointsPerDay:      body.decay_points_per_day    ?? 10,
+        discordRoleRewardEnabled: body.discord_role_reward_enabled ?? false,
+        discordRoleRewardId:    body.discord_role_reward_id  ?? null,
+        discordRemoveRoleOnExpiry: body.discord_remove_role_on_expiry ?? false,
+        autoSeedAlertEnabled:   body.auto_seed_alert_enabled ?? false,
+        autoSeedAlertRoleId:    body.auto_seed_alert_role_id ?? null,
+        autoSeedAlertCooldownMin: body.auto_seed_alert_cooldown_min ?? 30,
+        discordNotifyChannelId: body.discord_notify_channel_id ?? null,
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -216,6 +237,13 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rconWarningMessage:     body.rcon_warning_message    ?? existing?.rconWarningMessage     ?? "Seeding Progress: {progress}% ({points}/{required}). Keep seeding!",
         decayDaysThreshold:     body.decay_days_threshold    ?? existing?.decayDaysThreshold     ?? 3,
         decayPointsPerDay:      body.decay_points_per_day    ?? existing?.decayPointsPerDay      ?? 10,
+        discordRoleRewardEnabled: body.discord_role_reward_enabled ?? existing?.discordRoleRewardEnabled ?? false,
+        discordRoleRewardId:    body.discord_role_reward_id !== undefined ? body.discord_role_reward_id : (existing?.discordRoleRewardId ?? null),
+        discordRemoveRoleOnExpiry: body.discord_remove_role_on_expiry ?? existing?.discordRemoveRoleOnExpiry ?? false,
+        autoSeedAlertEnabled:   body.auto_seed_alert_enabled ?? existing?.autoSeedAlertEnabled   ?? false,
+        autoSeedAlertRoleId:    body.auto_seed_alert_role_id !== undefined ? body.auto_seed_alert_role_id : (existing?.autoSeedAlertRoleId ?? null),
+        autoSeedAlertCooldownMin: body.auto_seed_alert_cooldown_min ?? existing?.autoSeedAlertCooldownMin ?? 30,
+        discordNotifyChannelId: body.discord_notify_channel_id !== undefined ? body.discord_notify_channel_id : (existing?.discordNotifyChannelId ?? null),
         enabled:                body.enabled                 ?? existing?.enabled                ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? existing?.leaderboardPublic      ?? false,
       },

@@ -343,11 +343,30 @@ model SeedingConfig {
   rconWarningMessage      String    @default("Seeding Progress: {progress}% ({points}/{required}). Keep seeding!") @map("rcon_warning_message")
   decayDaysThreshold      Int       @default(3) @map("decay_days_threshold")
   decayPointsPerDay       Int       @default(10) @map("decay_points_per_day")
+  discordRoleRewardEnabled  Boolean  @default(false) @map("discord_role_reward_enabled")
+  discordRoleRewardId       String?  @map("discord_role_reward_id") @db.VarChar(32)
+  discordRemoveRoleOnExpiry Boolean  @default(false) @map("discord_remove_role_on_expiry")
+  autoSeedAlertEnabled      Boolean  @default(false) @map("auto_seed_alert_enabled")
+  autoSeedAlertRoleId       String?  @map("auto_seed_alert_role_id") @db.VarChar(32)
+  autoSeedAlertCooldownMin  Int      @default(30) @map("auto_seed_alert_cooldown_min")
+  discordNotifyChannelId    String?  @map("discord_notify_channel_id") @db.VarChar(32)
   leaderboardPublic       Boolean   @default(false) @map("leaderboard_public")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
   @@map("seeding_configs")
+}
+
+model SeedingNotification {
+  id        Int      @id @default(autoincrement())
+  guildId   BigInt   @map("guild_id")
+  eventType String   @map("event_type") @db.VarChar(50)
+  payload   Json     @default("{}")
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([guildId, processed, createdAt])
+  @@map("seeding_notifications")
 }
 
 model SeedingPoints {
