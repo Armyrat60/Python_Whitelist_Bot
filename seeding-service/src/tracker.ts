@@ -223,13 +223,9 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
   const qualifiers = await db.getUnrewardedQualifiers(guildId, minThreshold)
 
   if (qualifiers.length > 0) {
-    const safety = await validateRewardGroup(pool, guildId, cfg.reward_group_name)
-
-    if (!safety.safe) {
-      console.warn(`[seeding/tracker] Guild ${guildId}: Skipping rewards — ${safety.reason}`)
-      await db.logAudit(guildId, "seeding_reward_blocked", JSON.stringify({ reason: safety.reason, qualifiers: qualifiers.length }))
-    } else {
-      const whitelistId = await db.ensureSeedingWhitelist(guildId, cfg.reward_group_name)
+    // Group is hardcoded to SeedReserve:reserve — no safety check needed
+    {
+      const whitelistId = await db.ensureSeedingWhitelist(guildId)
 
       if (whitelistId) {
         // Sort tiers descending for highest-first matching

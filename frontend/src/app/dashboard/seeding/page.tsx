@@ -13,8 +13,6 @@ import {
 import {
   useSeedingConfig,
   useSaveSeedingConfig,
-  useWhitelists,
-  useGroups,
 } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import type { SeedingConfig } from "@/lib/types";
 
-const DANGEROUS_PERMS = new Set(["ban", "kick", "immune", "changemap", "config", "cameraman", "canseeadminchat", "manageserver", "cheat"]);
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function getConnectionStatus(config: SeedingConfig | null): "green" | "yellow" | "red" | "grey" {
@@ -83,9 +80,6 @@ function Sel({ value, onChange, children, className }: { value: string; onChange
 export default function SeedingDashboard() {
   const { data, isLoading } = useSeedingConfig();
   const save = useSaveSeedingConfig();
-  const { data: whitelistsList } = useWhitelists();
-  const { data: groupsList } = useGroups();
-
   const existing = data?.config ?? null;
   const connStatus = getConnectionStatus(existing);
 
@@ -93,8 +87,6 @@ export default function SeedingDashboard() {
   const [seedingMinutes, setSeedingMinutes] = useState("0");
   const [startCount, setStartCount] = useState("2");
   const [threshold, setThreshold] = useState("50");
-  const [rewardWhitelistId, setRewardWhitelistId] = useState<string>("");
-  const [rewardGroupName, setRewardGroupName] = useState("SeedReserve");
   const [rewardDurationHours, setRewardDurationHours] = useState("168");
   const [resetFrequency, setResetFrequency] = useState("monthly");
   const [resetHour, setResetHour] = useState("12");
@@ -122,8 +114,7 @@ export default function SeedingDashboard() {
     const pts = existing.points_required;
     setSeedingHours(String(Math.floor(pts / 60))); setSeedingMinutes(String(pts % 60));
     setStartCount(String(existing.seeding_start_player_count)); setThreshold(String(existing.seeding_player_threshold));
-    setRewardWhitelistId(existing.reward_whitelist_id ? String(existing.reward_whitelist_id) : "");
-    setRewardGroupName(existing.reward_group_name); setRewardDurationHours(String(existing.reward_duration_hours));
+    setRewardDurationHours(String(existing.reward_duration_hours));
     const p = parseCron(existing.reset_cron);
     setResetFrequency(p.frequency); setResetHour(String(p.hour)); setResetMinute(String(p.minute));
     setResetAmPm(p.ampm); setResetDayOfWeek(String(p.dayOfWeek)); setResetDayOfMonth(String(p.dayOfMonth));
@@ -139,16 +130,13 @@ export default function SeedingDashboard() {
     setDecayPointsPerDay(String(existing.decay_points_per_day));
   }, [existing?.id]);
 
-  const safeGroups = (groupsList ?? []).filter((g) => !g.permissions.split(",").some((p) => DANGEROUS_PERMS.has(p.trim().toLowerCase())));
-  const whitelists = whitelistsList ?? [];
-
   function buildPayload() {
     const pts = (parseInt(seedingHours, 10) || 0) * 60 + (parseInt(seedingMinutes, 10) || 0);
     const cron = buildCron(resetFrequency, parseInt(resetHour, 10) || 12, parseInt(resetMinute, 10) || 0, resetAmPm, parseInt(resetDayOfWeek, 10) || 1, parseInt(resetDayOfMonth, 10) || 1, customCron);
     return {
       seeding_start_player_count: parseInt(startCount, 10) || 2, seeding_player_threshold: parseInt(threshold, 10) || 50,
-      points_required: pts || 120, reward_whitelist_id: rewardWhitelistId ? parseInt(rewardWhitelistId, 10) : null,
-      reward_group_name: rewardGroupName, reward_duration_hours: parseInt(rewardDurationHours, 10) || 168,
+      points_required: pts || 120,
+      reward_duration_hours: parseInt(rewardDurationHours, 10) || 168,
       tracking_mode: trackingMode, reset_cron: cron,
       seeding_window_enabled: windowEnabled, seeding_window_start: windowStart, seeding_window_end: windowEnd,
       reward_tiers: tiersEnabled ? tiers.map((t) => ({ points: (parseInt(t.hours, 10) || 0) * 60 + (parseInt(t.minutes, 10) || 0), duration_hours: parseInt(t.durationHours, 10) || 24, label: t.label.trim() || "Tier" })) : null,
@@ -254,25 +242,16 @@ export default function SeedingDashboard() {
         )}
       </Card>
 
-      {/* Whitelist & Group */}
-      <Card title="Reward Whitelist & Permissions">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Whitelist</Label>
-            <Sel value={rewardWhitelistId} onChange={setRewardWhitelistId}>
-              <option value="">Auto (Seeding Rewards)</option>
-              {whitelists.map((wl) => <option key={wl.id} value={String(wl.id)}>{wl.name}{wl.is_default ? " (default)" : ""}</option>)}
-            </Sel>
+      {/* Whitelist Info */}
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-white/80">Seeding Rewards Whitelist</p>
+            <p className="text-[10px] text-muted-foreground">Output: <code className="bg-white/[0.06] px-1 rounded">seeding_rewards.txt</code> — Group: <code className="bg-white/[0.06] px-1 rounded">SeedReserve:reserve</code></p>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Permission Group</Label>
-            <Sel value={rewardGroupName} onChange={setRewardGroupName}>
-              {safeGroups.map((g) => <option key={g.group_name} value={g.group_name}>{g.group_name} ({g.permissions})</option>)}
-              {safeGroups.length === 0 && <option value="SeedReserve">SeedReserve (reserve)</option>}
-            </Sel>
-          </div>
+          <Badge variant="secondary" className="text-[10px]">Auto-managed</Badge>
         </div>
-      </Card>
+      </div>
 
       {/* Point Management */}
       <Card title="Point Management">

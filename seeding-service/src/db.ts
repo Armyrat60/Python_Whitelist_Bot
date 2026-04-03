@@ -379,18 +379,36 @@ export async function getLeaderboard(
 // ─── Seeding whitelist management ────────────────────────────────────────────
 
 /**
+ * Hardcoded seeding group name and permissions.
+ * This is NEVER configurable — seeding rewards always use reserve only.
+ * This prevents any accidental permission escalation.
+ */
+const SEEDING_GROUP_NAME = "SeedReserve"
+const SEEDING_GROUP_PERMS = "reserve"
+
+/**
  * Ensure a dedicated "Seeding Rewards" whitelist exists for this guild
- * with the correct squad_group set to the configured reward group (e.g. "reserve").
+ * with the hardcoded SeedReserve group (reserve permission only).
  *
- * This prevents seeding rewards from inheriting the main whitelist's group
- * (which might have cameraman, admin, etc.).
+ * The group name and permissions are NOT configurable — they are always
+ * SeedReserve:reserve. This prevents accidental permission escalation.
  *
  * Returns the whitelist ID to use for seeding rewards.
  */
 export async function ensureSeedingWhitelist(
   guildId: bigint,
-  groupName: string,
 ): Promise<number> {
+  // Always ensure the SeedReserve group exists with ONLY reserve permission
+  // Use DO UPDATE to fix any corrupted permissions
+  await pool.query(
+    `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
+     VALUES ($1, $2, $3, 'Seeding rewards (reserve only, cannot be changed)', FALSE, NOW(), NOW())
+     ON CONFLICT (guild_id, group_name) DO UPDATE SET
+       permissions = EXCLUDED.permissions,
+       description = EXCLUDED.description`,
+    [guildId, SEEDING_GROUP_NAME, SEEDING_GROUP_PERMS],
+  )
+
   // Check if a seeding whitelist already exists
   const existing = await pool.query<{ id: number; squad_group: string }>(
     `SELECT id, squad_group FROM whitelists
@@ -401,26 +419,18 @@ export async function ensureSeedingWhitelist(
 
   if (existing.rows.length > 0) {
     const wl = existing.rows[0]
-    // Update squad_group if it changed
-    if (wl.squad_group !== groupName) {
+    // Force the group to SeedReserve if it was changed
+    if (wl.squad_group !== SEEDING_GROUP_NAME) {
       await pool.query(
-        `UPDATE whitelists SET squad_group = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [groupName, wl.id],
+        `UPDATE whitelists SET squad_group = $1, updated_at = NOW() WHERE id = $2`,
+        [SEEDING_GROUP_NAME, wl.id],
       )
-      console.log(`[seeding/db] Updated seeding whitelist group to "${groupName}" for guild ${guildId}`)
+      console.log(`[seeding/db] Fixed seeding whitelist group to "${SEEDING_GROUP_NAME}" for guild ${guildId}`)
     }
-    // Ensure the group exists and has correct (safe) permissions
-    await pool.query(
-      `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-       VALUES ($1, $2, 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW())
-       ON CONFLICT (guild_id, group_name) DO NOTHING`,
-      [guildId, groupName],
-    )
     return wl.id
   }
 
-  // Create a new seeding whitelist
+  // Create a new seeding whitelist with hardcoded group
   const result = await pool.query<{ id: number }>(
     `INSERT INTO whitelists
        (guild_id, name, slug, enabled, squad_group, output_filename,
@@ -428,19 +438,10 @@ export async function ensureSeedingWhitelist(
      VALUES ($1, 'Seeding Rewards', 'seeding-rewards', TRUE, $2, 'seeding_rewards.txt',
              1, FALSE, FALSE, FALSE, NOW(), NOW())
      RETURNING id`,
-    [guildId, groupName],
+    [guildId, SEEDING_GROUP_NAME],
   )
 
-  // Ensure the squad group exists with only 'reserve' permission
-  // Use the group name as-is but always set permissions to just 'reserve' for safety
-  await pool.query(
-    `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-     VALUES ($1, $2, 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW())
-     ON CONFLICT (guild_id, group_name) DO NOTHING`,
-    [guildId, groupName],
-  )
-
-  console.log(`[seeding/db] Created seeding whitelist (id=${result.rows[0].id}) with group "${groupName}" for guild ${guildId}`)
+  console.log(`[seeding/db] Created seeding whitelist (id=${result.rows[0].id}) with group "${SEEDING_GROUP_NAME}" for guild ${guildId}`)
   return result.rows[0].id
 }
 
