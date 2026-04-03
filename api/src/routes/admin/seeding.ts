@@ -438,6 +438,69 @@ export default async function seedingRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── GET /seeding/stats ────────────────────────────────────────────────────
+
+  app.get("/seeding/stats", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const config = await app.prisma.seedingConfig.findUnique({ where: { guildId } })
+    const pointsRequired = config?.pointsRequired ?? 120
+
+    // Total seeders with any points
+    const totalSeeders = await app.prisma.seedingPoints.count({
+      where: { guildId, points: { gt: 0 } },
+    })
+
+    // Total rewarded
+    const totalRewarded = await app.prisma.seedingPoints.count({
+      where: { guildId, rewarded: true },
+    })
+
+    // Total points across all players (seeding hours)
+    const pointsAgg = await app.prisma.seedingPoints.aggregate({
+      where: { guildId },
+      _sum: { points: true },
+    })
+    const totalPoints = pointsAgg._sum.points ?? 0
+    const totalSeedingHours = Math.round(totalPoints / 60 * 10) / 10
+
+    // Top 5 seeders
+    const top5 = await app.prisma.seedingPoints.findMany({
+      where: { guildId, points: { gt: 0 } },
+      orderBy: { points: "desc" },
+      take: 5,
+    })
+
+    // Recent rewards (last 10 from audit log)
+    const recentRewards = await app.prisma.auditLog.findMany({
+      where: { guildId, actionType: "seeding_reward_granted" },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { details: true, createdAt: true },
+    })
+
+    return reply.send({
+      points_required: pointsRequired,
+      total_seeders: totalSeeders,
+      total_rewarded: totalRewarded,
+      total_seeding_hours: totalSeedingHours,
+      top_5: top5.map((p) => ({
+        player_name: p.playerName,
+        points: p.points,
+        progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
+        rewarded: p.rewarded,
+      })),
+      recent_rewards: recentRewards.map((r) => {
+        const d = typeof r.details === "string" ? JSON.parse(r.details) : r.details
+        return {
+          player_name: (d as Record<string, unknown>)?.player_name ?? "Unknown",
+          tier_label: (d as Record<string, unknown>)?.tier_label ?? "Standard",
+          created_at: r.createdAt.toISOString(),
+        }
+      }),
+    })
+  })
+
   // ── POST /seeding/reset ──────────────────────────────────────────────────
 
   app.post("/seeding/reset", { preHandler: adminHook }, async (req, reply) => {

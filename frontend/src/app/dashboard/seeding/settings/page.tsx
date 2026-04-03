@@ -148,6 +148,41 @@ function Card({
   );
 }
 
+const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function parseCron(cron: string) {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return { frequency: "custom", hour: 12, minute: 0, ampm: "AM", dayOfWeek: 1, dayOfMonth: 1 };
+  const [min, hr, dom, , dow] = parts;
+  const hour24 = parseInt(hr, 10); const minute = parseInt(min, 10);
+  const ampm = hour24 >= 12 ? "PM" : "AM";
+  const hour = hour24 === 0 ? 12 : hour24 > 12 ? (hour24 - 12) : hour24;
+  if (dom !== "*" && dow === "*") return { frequency: "monthly", hour, minute, ampm, dayOfWeek: 1, dayOfMonth: parseInt(dom, 10) || 1 };
+  if (dow !== "*" && dom === "*") return { frequency: "weekly", hour, minute, ampm, dayOfWeek: parseInt(dow, 10) || 0, dayOfMonth: 1 };
+  if (dom === "*" && dow === "*") return { frequency: "daily", hour, minute, ampm, dayOfWeek: 1, dayOfMonth: 1 };
+  return { frequency: "custom", hour, minute, ampm, dayOfWeek: 1, dayOfMonth: 1 };
+}
+function buildCron(freq: string, hour: number, minute: number, ampm: string, dow: number, dom: number, custom: string): string {
+  if (freq === "custom") return custom;
+  let h24 = hour % 12; if (ampm === "PM") h24 += 12;
+  if (freq === "daily") return `${minute} ${h24} * * *`;
+  if (freq === "weekly") return `${minute} ${h24} * * ${dow}`;
+  if (freq === "monthly") return `${minute} ${h24} ${dom} * *`;
+  return `${minute} ${h24} * * *`;
+}
+function cronToReadable(cron: string): string {
+  const p = parseCron(cron);
+  const t = `${p.hour}:${String(p.minute).padStart(2, "0")} ${p.ampm}`;
+  if (p.frequency === "daily") return `Resets daily at ${t}`;
+  if (p.frequency === "weekly") return `Resets every ${DAYS_OF_WEEK[p.dayOfWeek]} at ${t}`;
+  if (p.frequency === "monthly") return `Resets on day ${p.dayOfMonth} of each month at ${t}`;
+  return `Custom schedule: ${cron}`;
+}
+
+function Sel({ value, onChange, children, className }: { value: string; onChange: (v: string) => void; children: React.ReactNode; className?: string }) {
+  return <select value={value} onChange={(e) => onChange(e.target.value)} className={`flex h-8 w-full rounded-md border border-white/[0.08] px-3 text-xs text-white/80 appearance-none cursor-pointer ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}>{children}</select>;
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SeedingSettingsPage() {
@@ -185,6 +220,33 @@ export default function SeedingSettingsPage() {
   const [autoSeedAlertRoleId, setAutoSeedAlertRoleId] = useState("");
   const [autoSeedAlertCooldownMin, setAutoSeedAlertCooldownMin] = useState("30");
 
+  // ── Reward Config ──
+  const [seedingHours, setSeedingHours] = useState("2");
+  const [seedingMinutes, setSeedingMinutes] = useState("0");
+  const [startCount, setStartCount] = useState("2");
+  const [threshold, setThreshold] = useState("50");
+  const [rewardDurationDays, setRewardDurationDays] = useState("7");
+  const [rewardDurationHoursR, setRewardDurationHoursR] = useState("0");
+  const [resetFrequency, setResetFrequency] = useState("monthly");
+  const [resetHour, setResetHour] = useState("12");
+  const [resetMinuteVal, setResetMinuteVal] = useState("0");
+  const [resetAmPm, setResetAmPm] = useState("AM");
+  const [resetDayOfWeek, setResetDayOfWeek] = useState("1");
+  const [resetDayOfMonth, setResetDayOfMonth] = useState("1");
+  const [customCron, setCustomCron] = useState("0 0 * * *");
+  const [windowEnabled, setWindowEnabled] = useState(false);
+  const [windowStart, setWindowStart] = useState("07:00");
+  const [windowEnd, setWindowEnd] = useState("22:00");
+  const [tiersEnabled, setTiersEnabled] = useState(false);
+  const [tiers, setTiers] = useState([
+    { label: "Bronze", hours: "1", minutes: "0", durationHours: "24" },
+    { label: "Silver", hours: "4", minutes: "0", durationHours: "168" },
+    { label: "Gold", hours: "8", minutes: "0", durationHours: "720" },
+  ]);
+  const [trackingMode, setTrackingMode] = useState<"fixed_reset" | "daily_decay">("fixed_reset");
+  const [decayDaysThreshold, setDecayDaysThreshold] = useState("3");
+  const [decayPointsPerDay, setDecayPointsPerDay] = useState("10");
+
   // ── Public Leaderboard ──
   const [leaderboardPublic, setLeaderboardPublic] = useState(false);
 
@@ -199,6 +261,25 @@ export default function SeedingSettingsPage() {
     setRconWarningMessage(existing.rcon_warning_message);
     setLeaderboardPublic(existing.leaderboard_public);
 
+    // Reward config
+    const pts = existing.points_required;
+    setSeedingHours(String(Math.floor(pts / 60))); setSeedingMinutes(String(pts % 60));
+    setStartCount(String(existing.seeding_start_player_count)); setThreshold(String(existing.seeding_player_threshold));
+    const durH = existing.reward_duration_hours;
+    setRewardDurationDays(String(Math.floor(durH / 24))); setRewardDurationHoursR(String(durH % 24));
+    setWindowEnabled(existing.seeding_window_enabled);
+    setWindowStart(existing.seeding_window_start); setWindowEnd(existing.seeding_window_end);
+    if (existing.reward_tiers?.length) {
+      setTiersEnabled(true);
+      setTiers(existing.reward_tiers.map((t) => ({ label: t.label, hours: String(Math.floor(t.points / 60)), minutes: String(t.points % 60), durationHours: String(t.duration_hours) })));
+    }
+    setTrackingMode(existing.tracking_mode);
+    setDecayDaysThreshold(String(existing.decay_days_threshold)); setDecayPointsPerDay(String(existing.decay_points_per_day));
+    const p = parseCron(existing.reset_cron);
+    setResetFrequency(p.frequency); setResetHour(String(p.hour)); setResetMinuteVal(String(p.minute));
+    setResetAmPm(p.ampm); setResetDayOfWeek(String(p.dayOfWeek)); setResetDayOfMonth(String(p.dayOfMonth));
+    if (p.frequency === "custom") setCustomCron(existing.reset_cron);
+
     if (existing.discord_notify_channel_id) setDiscordNotifyChannelId(existing.discord_notify_channel_id);
     setDiscordRoleRewardEnabled(existing.discord_role_reward_enabled);
     if (existing.discord_role_reward_id) setDiscordRoleRewardId(existing.discord_role_reward_id);
@@ -210,15 +291,30 @@ export default function SeedingSettingsPage() {
 
   // ── Build payload ──
   function buildPayload() {
+    const pts = (parseInt(seedingHours, 10) || 0) * 60 + (parseInt(seedingMinutes, 10) || 0);
+    const cron = buildCron(resetFrequency, parseInt(resetHour, 10) || 12, parseInt(resetMinuteVal, 10) || 0, resetAmPm, parseInt(resetDayOfWeek, 10) || 1, parseInt(resetDayOfMonth, 10) || 1, customCron);
     return {
       squadjs_host: host.trim(),
       squadjs_port: parseInt(port, 10) || 3000,
       squadjs_token: token === MASKED ? MASKED : token,
       enabled,
+      // Reward config
+      seeding_start_player_count: parseInt(startCount, 10) || 2,
+      seeding_player_threshold: parseInt(threshold, 10) || 50,
+      points_required: pts || 120,
+      reward_duration_hours: (parseInt(rewardDurationDays, 10) || 0) * 24 + (parseInt(rewardDurationHoursR, 10) || 0),
+      seeding_window_enabled: windowEnabled,
+      seeding_window_start: windowStart,
+      seeding_window_end: windowEnd,
+      reward_tiers: tiersEnabled ? tiers.map((t) => ({ points: (parseInt(t.hours, 10) || 0) * 60 + (parseInt(t.minutes, 10) || 0), duration_hours: parseInt(t.durationHours, 10) || 24, label: t.label.trim() || "Tier" })) : null,
+      tracking_mode: trackingMode,
+      reset_cron: cron,
+      decay_days_threshold: parseInt(decayDaysThreshold, 10) || 3,
+      decay_points_per_day: parseInt(decayPointsPerDay, 10) || 10,
+      // Notifications
       rcon_warnings_enabled: rconWarningsEnabled,
       rcon_warning_message: rconWarningMessage,
       leaderboard_public: leaderboardPublic,
-      // New Batch 2 fields
       discord_notify_channel_id: discordNotifyChannelId.trim() || null,
       discord_role_reward_enabled: discordRoleRewardEnabled,
       discord_role_reward_id: discordRoleRewardId.trim() || null,
@@ -392,6 +488,100 @@ export default function SeedingSettingsPage() {
           </Label>
         </div>
       </Card>
+
+      {/* ── Reward Configuration ───────────────────────────────────────── */}
+
+      <Card title="Reward Tiers">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={tiersEnabled} onCheckedChange={setTiersEnabled} />
+          <Label className="text-sm">{tiersEnabled ? "Tiered rewards — multiple levels" : "Single reward — one threshold"}</Label>
+        </div>
+        {tiersEnabled ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 text-[10px] text-muted-foreground font-medium uppercase tracking-wide px-1">
+              <span>Label</span><span>Hours</span><span>Min</span><span>Duration (h)</span><span></span>
+            </div>
+            {tiers.map((tier, idx) => (
+              <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center">
+                <Input value={tier.label} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], label: e.target.value }; setTiers(t); }} className="h-8 text-xs" />
+                <Input type="number" min={0} max={166} value={tier.hours} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], hours: e.target.value }; setTiers(t); }} className="h-8 text-xs w-16" />
+                <Input type="number" min={0} max={59} value={tier.minutes} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], minutes: e.target.value }; setTiers(t); }} className="h-8 text-xs w-16" />
+                <Input type="number" min={1} max={8760} value={tier.durationHours} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], durationHours: e.target.value }; setTiers(t); }} className="h-8 text-xs w-20" />
+                {tiers.length > 2 && <button onClick={() => setTiers(tiers.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-300 text-xs px-1">x</button>}
+              </div>
+            ))}
+            {tiers.length < 5 && <button onClick={() => setTiers([...tiers, { label: `Tier ${tiers.length + 1}`, hours: "0", minutes: "0", durationHours: "24" }])} className="text-xs hover:underline" style={{ color: "var(--accent-primary)" }}>+ Add tier</button>}
+          </div>
+        ) : (
+          <>
+            <div className="flex items-end gap-2">
+              <div className="space-y-1"><Label className="text-xs text-muted-foreground">Hours</Label><Input type="number" min={0} max={166} value={seedingHours} onChange={(e) => setSeedingHours(e.target.value)} className="h-8 text-xs w-20" /></div>
+              <span className="text-xs text-muted-foreground pb-2">h</span>
+              <div className="space-y-1"><Label className="text-xs text-muted-foreground">Minutes</Label><Input type="number" min={0} max={59} value={seedingMinutes} onChange={(e) => setSeedingMinutes(e.target.value)} className="h-8 text-xs w-20" /></div>
+              <span className="text-xs text-muted-foreground pb-2">m required</span>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Reward Duration</Label>
+              <div className="flex items-end gap-2">
+                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Days</Label><Input type="number" min={0} max={365} value={rewardDurationDays} onChange={(e) => setRewardDurationDays(e.target.value)} className="h-8 text-xs w-20" /></div>
+                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Hours</Label><Input type="number" min={0} max={23} value={rewardDurationHoursR} onChange={(e) => setRewardDurationHoursR(e.target.value)} className="h-8 text-xs w-20" /></div>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card title="Seeding Thresholds">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Min Players</Label><Input type="number" min={1} max={100} value={startCount} onChange={(e) => setStartCount(e.target.value)} className="h-8 text-xs" /></div>
+          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Max Players</Label><Input type="number" min={2} max={100} value={threshold} onChange={(e) => setThreshold(e.target.value)} className="h-8 text-xs" /></div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/70">Seeding mode active when server has {startCount} to {threshold} players</p>
+      </Card>
+
+      <Card title="Seeding Time Window">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={windowEnabled} onCheckedChange={setWindowEnabled} />
+          <Label className="text-sm">{windowEnabled ? "Only track during set hours" : "Track 24/7"}</Label>
+        </div>
+        {windowEnabled && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Start</Label><Input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">End</Label><Input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} /></div>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Point Management">
+        <div className="flex gap-2">
+          <button onClick={() => setTrackingMode("fixed_reset")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "fixed_reset" ? "border-white/20" : "border-white/[0.06] opacity-60"}`} style={trackingMode === "fixed_reset" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
+            <p className="text-xs font-medium text-white/80">Fixed Reset</p><p className="text-[10px] text-muted-foreground">Reset on schedule</p>
+          </button>
+          <button onClick={() => setTrackingMode("daily_decay")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "daily_decay" ? "border-white/20" : "border-white/[0.06] opacity-60"}`} style={trackingMode === "daily_decay" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
+            <p className="text-xs font-medium text-white/80">Daily Decay</p><p className="text-[10px] text-muted-foreground">Points decrease when inactive</p>
+          </button>
+        </div>
+        {trackingMode === "fixed_reset" && (() => { const currentCron = buildCron(resetFrequency, parseInt(resetHour, 10) || 12, parseInt(resetMinuteVal, 10) || 0, resetAmPm, parseInt(resetDayOfWeek, 10) || 1, parseInt(resetDayOfMonth, 10) || 1, customCron); return (
+          <div className="space-y-3 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Frequency</Label><Sel value={resetFrequency} onChange={setResetFrequency}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom">Custom</option></Sel></div>
+              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Time</Label><div className="flex gap-1.5"><Input type="number" min={1} max={12} value={resetHour} onChange={(e) => setResetHour(e.target.value)} className="h-8 text-xs w-16" /><span className="text-muted-foreground text-xs self-center">:</span><Input type="number" min={0} max={59} value={resetMinuteVal} onChange={(e) => setResetMinuteVal(e.target.value)} className="h-8 text-xs w-16" /><Sel value={resetAmPm} onChange={setResetAmPm} className="w-20"><option value="AM">AM</option><option value="PM">PM</option></Sel></div></div>
+            </div>
+            {resetFrequency === "weekly" && <div className="flex gap-1.5 flex-wrap">{DAYS_OF_WEEK.map((day, idx) => <button key={day} onClick={() => setResetDayOfWeek(String(idx))} className={`px-3 py-1.5 rounded-md text-xs font-medium ${String(idx) === resetDayOfWeek ? "text-black" : "bg-white/[0.04] border border-white/[0.08] text-white/60"}`} style={String(idx) === resetDayOfWeek ? { background: "var(--accent-primary)" } : undefined}>{day.slice(0, 3)}</button>)}</div>}
+            {resetFrequency === "monthly" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Day</Label><Input type="number" min={1} max={28} value={resetDayOfMonth} onChange={(e) => setResetDayOfMonth(e.target.value)} className="h-8 text-xs w-20" /></div>}
+            {resetFrequency === "custom" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Cron</Label><Input value={customCron} onChange={(e) => setCustomCron(e.target.value)} className="h-8 text-xs font-mono" /></div>}
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2"><p className="text-xs text-white/70">{cronToReadable(currentCron)}</p></div>
+          </div>
+        ); })()}
+        {trackingMode === "daily_decay" && (
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Days before decay</Label><Input type="number" min={1} max={30} value={decayDaysThreshold} onChange={(e) => setDecayDaysThreshold(e.target.value)} className="h-8 text-xs" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Points lost per day</Label><Input type="number" min={1} max={1000} value={decayPointsPerDay} onChange={(e) => setDecayPointsPerDay(e.target.value)} className="h-8 text-xs" /></div>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Notifications ──────────────────────────────────────────────── */}
 
       {/* C. In-Game Notifications */}
       <Card title="In-Game Notifications">

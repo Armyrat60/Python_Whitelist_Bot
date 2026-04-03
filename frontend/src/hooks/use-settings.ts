@@ -994,6 +994,24 @@ export function useGrantSeedingPoints() {
   });
 }
 
+export function useSeedingStats() {
+  const { data: session } = useSession();
+  const guildId = session?.active_guild_id;
+  return useQuery<{
+    points_required: number;
+    total_seeders: number;
+    total_rewarded: number;
+    total_seeding_hours: number;
+    top_5: Array<{ player_name: string | null; points: number; progress_pct: number; rewarded: boolean }>;
+    recent_rewards: Array<{ player_name: string; tier_label: string; created_at: string }>;
+  }>({
+    queryKey: ["seeding-stats", guildId],
+    queryFn: () => api.get("/api/admin/seeding/stats"),
+    enabled: !!guildId,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useSeedingPublicLeaderboard() {
   const { data: session } = useSession();
   const guildId = session?.active_guild_id;
