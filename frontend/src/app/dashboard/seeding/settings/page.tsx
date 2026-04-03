@@ -247,6 +247,34 @@ export default function SeedingSettingsPage() {
   const [decayDaysThreshold, setDecayDaysThreshold] = useState("3");
   const [decayPointsPerDay, setDecayPointsPerDay] = useState("10");
 
+  // ── In-Game Broadcasts ──
+  const [rconBroadcastEnabled, setRconBroadcastEnabled] = useState(false);
+  const [rconBroadcastMessage, setRconBroadcastMessage] = useState("This server is in seeding mode! Earn whitelist rewards by staying online.");
+  const [rconBroadcastInterval, setRconBroadcastInterval] = useState("10");
+
+  // ── Cooldown ──
+  const [rewardCooldownHours, setRewardCooldownHours] = useState("0");
+
+  // ── Streaks ──
+  const [streakEnabled, setStreakEnabled] = useState(false);
+  const [streakDaysRequired, setStreakDaysRequired] = useState("3");
+  const [streakMultiplier, setStreakMultiplier] = useState("1.5");
+
+  // ── Bonus Multiplier Events ──
+  const [bonusMultiplierEnabled, setBonusMultiplierEnabled] = useState(false);
+  const [bonusMultiplierValue, setBonusMultiplierValue] = useState("2.0");
+  const [bonusMultiplierStart, setBonusMultiplierStart] = useState("");
+  const [bonusMultiplierEnd, setBonusMultiplierEnd] = useState("");
+
+  // ── Custom Embeds ──
+  const [customEmbedTitle, setCustomEmbedTitle] = useState("");
+  const [customEmbedDescription, setCustomEmbedDescription] = useState("");
+  const [customEmbedImageUrl, setCustomEmbedImageUrl] = useState("");
+  const [customEmbedColor, setCustomEmbedColor] = useState("#10b981");
+
+  // ── Population ──
+  const [populationTrackingEnabled, setPopulationTrackingEnabled] = useState(false);
+
   // ── Public Leaderboard ──
   const [leaderboardPublic, setLeaderboardPublic] = useState(false);
 
@@ -280,6 +308,24 @@ export default function SeedingSettingsPage() {
     setResetAmPm(p.ampm); setResetDayOfWeek(String(p.dayOfWeek)); setResetDayOfMonth(String(p.dayOfMonth));
     if (p.frequency === "custom") setCustomCron(existing.reset_cron);
 
+    // New features
+    setRconBroadcastEnabled(existing.rcon_broadcast_enabled);
+    setRconBroadcastMessage(existing.rcon_broadcast_message);
+    setRconBroadcastInterval(String(existing.rcon_broadcast_interval_min));
+    setRewardCooldownHours(String(existing.reward_cooldown_hours));
+    setStreakEnabled(existing.streak_enabled);
+    setStreakDaysRequired(String(existing.streak_days_required));
+    setStreakMultiplier(String(existing.streak_multiplier));
+    setBonusMultiplierEnabled(existing.bonus_multiplier_enabled);
+    setBonusMultiplierValue(String(existing.bonus_multiplier_value));
+    if (existing.bonus_multiplier_start) setBonusMultiplierStart(existing.bonus_multiplier_start.slice(0, 16));
+    if (existing.bonus_multiplier_end) setBonusMultiplierEnd(existing.bonus_multiplier_end.slice(0, 16));
+    if (existing.custom_embed_title) setCustomEmbedTitle(existing.custom_embed_title);
+    if (existing.custom_embed_description) setCustomEmbedDescription(existing.custom_embed_description);
+    if (existing.custom_embed_image_url) setCustomEmbedImageUrl(existing.custom_embed_image_url);
+    if (existing.custom_embed_color) setCustomEmbedColor(existing.custom_embed_color);
+    setPopulationTrackingEnabled(existing.population_tracking_enabled);
+
     if (existing.discord_notify_channel_id) setDiscordNotifyChannelId(existing.discord_notify_channel_id);
     setDiscordRoleRewardEnabled(existing.discord_role_reward_enabled);
     if (existing.discord_role_reward_id) setDiscordRoleRewardId(existing.discord_role_reward_id);
@@ -311,7 +357,19 @@ export default function SeedingSettingsPage() {
       reset_cron: cron,
       decay_days_threshold: parseInt(decayDaysThreshold, 10) || 3,
       decay_points_per_day: parseInt(decayPointsPerDay, 10) || 10,
+      // Cooldown + streaks + multipliers
+      reward_cooldown_hours: parseInt(rewardCooldownHours, 10) || 0,
+      streak_enabled: streakEnabled,
+      streak_days_required: parseInt(streakDaysRequired, 10) || 3,
+      streak_multiplier: parseFloat(streakMultiplier) || 1.5,
+      bonus_multiplier_enabled: bonusMultiplierEnabled,
+      bonus_multiplier_value: parseFloat(bonusMultiplierValue) || 2.0,
+      bonus_multiplier_start: bonusMultiplierStart ? new Date(bonusMultiplierStart).toISOString() : null,
+      bonus_multiplier_end: bonusMultiplierEnd ? new Date(bonusMultiplierEnd).toISOString() : null,
       // Notifications
+      rcon_broadcast_enabled: rconBroadcastEnabled,
+      rcon_broadcast_message: rconBroadcastMessage,
+      rcon_broadcast_interval_min: parseInt(rconBroadcastInterval, 10) || 10,
       rcon_warnings_enabled: rconWarningsEnabled,
       rcon_warning_message: rconWarningMessage,
       leaderboard_public: leaderboardPublic,
@@ -322,6 +380,12 @@ export default function SeedingSettingsPage() {
       auto_seed_alert_enabled: autoSeedAlertEnabled,
       auto_seed_alert_role_id: autoSeedAlertRoleId.trim() || null,
       auto_seed_alert_cooldown_min: parseInt(autoSeedAlertCooldownMin, 10) || 30,
+      // Custom embeds + population
+      custom_embed_title: customEmbedTitle.trim() || null,
+      custom_embed_description: customEmbedDescription.trim() || null,
+      custom_embed_image_url: customEmbedImageUrl.trim() || null,
+      custom_embed_color: customEmbedColor.trim() || null,
+      population_tracking_enabled: populationTrackingEnabled,
     };
   }
 
@@ -581,9 +645,119 @@ export default function SeedingSettingsPage() {
         )}
       </Card>
 
+      {/* ── Advanced Reward Features ─────────────────────────────────── */}
+
+      <Card title="Reward Cooldown">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Cooldown (hours)</Label>
+            <Input type="number" min={0} max={720} value={rewardCooldownHours} onChange={(e) => setRewardCooldownHours(e.target.value)} className="h-8 text-xs" />
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/70">
+          {parseInt(rewardCooldownHours, 10) > 0
+            ? `After earning a reward, players must wait ${rewardCooldownHours} hours before earning again.`
+            : "No cooldown — players can earn again immediately after being rewarded."}
+        </p>
+      </Card>
+
+      <Card title="Streak Bonuses">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={streakEnabled} onCheckedChange={setStreakEnabled} />
+          <Label className="text-sm">{streakEnabled ? "Streak bonuses enabled" : "Streak bonuses disabled"}</Label>
+        </div>
+        {streakEnabled && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Days required for streak</Label>
+              <Input type="number" min={2} max={30} value={streakDaysRequired} onChange={(e) => setStreakDaysRequired(e.target.value)} className="h-8 text-xs" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Point multiplier</Label>
+              <Input type="number" min={1.1} max={5} step={0.1} value={streakMultiplier} onChange={(e) => setStreakMultiplier(e.target.value)} className="h-8 text-xs" />
+            </div>
+          </div>
+        )}
+        {streakEnabled && (
+          <p className="text-[10px] text-muted-foreground/70">
+            Players who seed {streakDaysRequired} days in a row earn {streakMultiplier}x points.
+          </p>
+        )}
+      </Card>
+
+      <Card title="Bonus Multiplier Event">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={bonusMultiplierEnabled} onCheckedChange={setBonusMultiplierEnabled} />
+          <Label className="text-sm">{bonusMultiplierEnabled ? "Event active — bonus points!" : "No active event"}</Label>
+        </div>
+        {bonusMultiplierEnabled && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Multiplier</Label>
+              <Sel value={bonusMultiplierValue} onChange={setBonusMultiplierValue}>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x (Double)</option>
+                <option value="3">3x (Triple)</option>
+                <option value="5">5x</option>
+              </Sel>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Start</Label>
+                <Input type="datetime-local" value={bonusMultiplierStart} onChange={(e) => setBonusMultiplierStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">End</Label>
+                <Input type="datetime-local" value={bonusMultiplierEnd} onChange={(e) => setBonusMultiplierEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground/70">
+              All seeding points are multiplied by {bonusMultiplierValue}x during this period. Great for events and server launches.
+            </p>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Population Tracking">
+        <div className="flex items-center gap-3">
+          <Switch checked={populationTrackingEnabled} onCheckedChange={setPopulationTrackingEnabled} />
+          <Label className="text-sm">{populationTrackingEnabled ? "Tracking player counts for analytics" : "Population tracking disabled"}</Label>
+        </div>
+        <p className="text-[10px] text-muted-foreground/70">
+          Stores server player count on every poll. Data is kept for 7 days and will power population graphs in a future update.
+        </p>
+      </Card>
+
       {/* ── Notifications ──────────────────────────────────────────────── */}
 
-      {/* C. In-Game Notifications */}
+      <Card title="In-Game Seeding Broadcasts">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={rconBroadcastEnabled} onCheckedChange={setRconBroadcastEnabled} />
+          <Label className="text-sm">{rconBroadcastEnabled ? "Broadcasts enabled" : "Broadcasts disabled"}</Label>
+        </div>
+        {rconBroadcastEnabled && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Broadcast message</Label>
+              <textarea
+                value={rconBroadcastMessage}
+                onChange={(e) => setRconBroadcastMessage(e.target.value)}
+                rows={2}
+                className="flex w-full rounded-md border border-white/[0.08] px-3 py-2 text-xs text-white/80 resize-none"
+                style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
+              />
+              <p className="text-[10px] text-muted-foreground/70">Variables: {"{player_count}"} {"{threshold}"}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Interval (minutes)</Label>
+              <Input type="number" min={5} max={60} value={rconBroadcastInterval} onChange={(e) => setRconBroadcastInterval(e.target.value)} className="h-8 text-xs w-20" />
+              <p className="text-[10px] text-muted-foreground/70">How often to send the broadcast to all online players during seeding mode.</p>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* C. In-Game Milestone Notifications */}
       <Card title="In-Game Notifications">
         <div className="flex items-center gap-3">
           <Switch checked={rconWarningsEnabled} onCheckedChange={setRconWarningsEnabled} />
@@ -647,6 +821,44 @@ export default function SeedingSettingsPage() {
         <p className="text-[10px] text-muted-foreground/60">
           Enable Developer Mode in Discord, right-click a channel, and select "Copy Channel ID"
         </p>
+      </Card>
+
+      {/* Custom Discord Embeds */}
+      <Card title="Custom Discord Embeds">
+        <p className="text-[10px] text-muted-foreground/70 mb-2">
+          Customize the Discord notification for &quot;Server Is Live&quot; events. Leave blank for defaults.
+        </p>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Embed Title</Label>
+            <Input value={customEmbedTitle} onChange={(e) => setCustomEmbedTitle(e.target.value)} placeholder="Server Is Live!" className="h-8 text-xs" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Embed Description</Label>
+            <textarea
+              value={customEmbedDescription}
+              onChange={(e) => setCustomEmbedDescription(e.target.value)}
+              rows={2}
+              className="flex w-full rounded-md border border-white/[0.08] px-3 py-2 text-xs text-white/80 resize-none"
+              style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
+              placeholder="Server has reached {player_count} players!"
+            />
+            <p className="text-[10px] text-muted-foreground/70">Variables: {"{player_count}"} {"{threshold}"}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Image URL</Label>
+              <Input value={customEmbedImageUrl} onChange={(e) => setCustomEmbedImageUrl(e.target.value)} placeholder="https://..." className="h-8 text-xs" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Color</Label>
+              <div className="flex gap-2 items-center">
+                <input type="color" value={customEmbedColor} onChange={(e) => setCustomEmbedColor(e.target.value)} className="h-8 w-10 rounded border border-white/[0.08] cursor-pointer" style={{ backgroundColor: "transparent" }} />
+                <Input value={customEmbedColor} onChange={(e) => setCustomEmbedColor(e.target.value)} placeholder="#10b981" className="h-8 text-xs font-mono flex-1" />
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* E. Discord Role Rewards */}
