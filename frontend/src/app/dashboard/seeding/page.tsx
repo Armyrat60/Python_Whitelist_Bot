@@ -87,7 +87,8 @@ export default function SeedingDashboard() {
   const [seedingMinutes, setSeedingMinutes] = useState("0");
   const [startCount, setStartCount] = useState("2");
   const [threshold, setThreshold] = useState("50");
-  const [rewardDurationHours, setRewardDurationHours] = useState("168");
+  const [rewardDurationDays, setRewardDurationDays] = useState("7");
+  const [rewardDurationHoursRemainder, setRewardDurationHoursRemainder] = useState("0");
   const [resetFrequency, setResetFrequency] = useState("monthly");
   const [resetHour, setResetHour] = useState("12");
   const [resetMinute, setResetMinute] = useState("0");
@@ -114,7 +115,9 @@ export default function SeedingDashboard() {
     const pts = existing.points_required;
     setSeedingHours(String(Math.floor(pts / 60))); setSeedingMinutes(String(pts % 60));
     setStartCount(String(existing.seeding_start_player_count)); setThreshold(String(existing.seeding_player_threshold));
-    setRewardDurationHours(String(existing.reward_duration_hours));
+    const durH = existing.reward_duration_hours;
+    setRewardDurationDays(String(Math.floor(durH / 24)));
+    setRewardDurationHoursRemainder(String(durH % 24));
     const p = parseCron(existing.reset_cron);
     setResetFrequency(p.frequency); setResetHour(String(p.hour)); setResetMinute(String(p.minute));
     setResetAmPm(p.ampm); setResetDayOfWeek(String(p.dayOfWeek)); setResetDayOfMonth(String(p.dayOfMonth));
@@ -136,7 +139,7 @@ export default function SeedingDashboard() {
     return {
       seeding_start_player_count: parseInt(startCount, 10) || 2, seeding_player_threshold: parseInt(threshold, 10) || 50,
       points_required: pts || 120,
-      reward_duration_hours: parseInt(rewardDurationHours, 10) || 168,
+      reward_duration_hours: (parseInt(rewardDurationDays, 10) || 0) * 24 + (parseInt(rewardDurationHoursRemainder, 10) || 0),
       tracking_mode: trackingMode, reset_cron: cron,
       seeding_window_enabled: windowEnabled, seeding_window_start: windowStart, seeding_window_end: windowEnd,
       reward_tiers: tiersEnabled ? tiers.map((t) => ({ points: (parseInt(t.hours, 10) || 0) * 60 + (parseInt(t.minutes, 10) || 0), duration_hours: parseInt(t.durationHours, 10) || 24, label: t.label.trim() || "Tier" })) : null,
@@ -211,9 +214,11 @@ export default function SeedingDashboard() {
               <span className="text-xs text-muted-foreground pb-2">m required</span>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Reward Duration (hours)</Label>
-              <Input type="number" min={1} max={8760} value={rewardDurationHours} onChange={(e) => setRewardDurationHours(e.target.value)} className="h-8 text-xs w-32" />
-              <p className="text-[10px] text-muted-foreground/70">= {Math.round((parseInt(rewardDurationHours, 10) || 0) / 24 * 10) / 10} days</p>
+              <Label className="text-xs text-muted-foreground">Reward Duration</Label>
+              <div className="flex items-end gap-2">
+                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Days</Label><Input type="number" min={0} max={365} value={rewardDurationDays} onChange={(e) => setRewardDurationDays(e.target.value)} className="h-8 text-xs w-20" /></div>
+                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Hours</Label><Input type="number" min={0} max={23} value={rewardDurationHoursRemainder} onChange={(e) => setRewardDurationHoursRemainder(e.target.value)} className="h-8 text-xs w-20" /></div>
+              </div>
             </div>
           </>
         )}

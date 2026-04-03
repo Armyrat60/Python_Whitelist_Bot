@@ -288,24 +288,83 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
  * Run the fixed_reset point reset for all guilds.
  * Called on each guild's reset_cron schedule.
  */
+/** Track last reset time per guild to avoid resetting more than once per period. */
+const lastResetRun = new Map<string, number>()
+
 export async function runPointResets(): Promise<void> {
   const configs = await db.loadEnabledConfigs()
 
   for (const cfg of configs) {
     if (cfg.tracking_mode !== "fixed_reset") continue
 
-    // The cron scheduler in index.ts handles per-guild reset timing.
-    // This function is called when the reset is due.
+    // Check if the guild's reset_cron matches the current time window.
+    // We use a simple approach: check if enough time has passed since last reset.
+    const guildKey = String(cfg.guild_id)
+    const now = Date.now()
+    const lastReset = lastResetRun.get(guildKey) ?? 0
+
+    // Determine the minimum interval between resets from the cron expression
+    const minIntervalMs = getResetIntervalMs(cfg.reset_cron)
+
+    if (now - lastReset < minIntervalMs) continue // Not time yet
+
+    // Check if the cron matches current time (simple check for hour)
+    if (!shouldResetNow(cfg.reset_cron)) continue
+
     const count = await db.resetPoints(cfg.guild_id)
+    lastResetRun.set(guildKey, now)
+
     if (count > 0) {
-      console.log(`[seeding/tracker] Reset ${count} player points for guild ${cfg.guild_id}`)
+      console.log(`[seeding/tracker] Reset ${count} player points for guild ${cfg.guild_id} (cron: ${cfg.reset_cron})`)
       await db.logAudit(
         cfg.guild_id,
         "seeding_points_reset",
-        JSON.stringify({ players_reset: count, mode: "fixed_reset" }),
+        JSON.stringify({ players_reset: count, mode: "fixed_reset", cron: cfg.reset_cron }),
       )
     }
   }
+}
+
+/** Parse a cron expression and check if it should fire now (within the current hour). */
+function shouldResetNow(cron: string): boolean {
+  const parts = cron.trim().split(/\s+/)
+  if (parts.length !== 5) return false
+
+  const [cronMin, cronHr, cronDom, cronMon, cronDow] = parts
+  const now = new Date()
+  const hour = now.getHours()
+  const dow = now.getDay()
+  const dom = now.getDate()
+  const month = now.getMonth() + 1
+
+  // Check hour
+  if (cronHr !== "*" && !cronHr.startsWith("*/")) {
+    if (parseInt(cronHr, 10) !== hour) return false
+  }
+  // Check day of week
+  if (cronDow !== "*") {
+    if (parseInt(cronDow, 10) !== dow) return false
+  }
+  // Check day of month
+  if (cronDom !== "*") {
+    if (parseInt(cronDom, 10) !== dom) return false
+  }
+  // Check month
+  if (cronMon !== "*") {
+    if (parseInt(cronMon, 10) !== month) return false
+  }
+  return true
+}
+
+/** Get the minimum interval between resets (prevents running twice in same period). */
+function getResetIntervalMs(cron: string): number {
+  const parts = cron.trim().split(/\s+/)
+  if (parts.length !== 5) return 24 * 60 * 60 * 1000 // default: 1 day
+
+  const [, , cronDom, , cronDow] = parts
+  if (cronDom !== "*") return 25 * 24 * 60 * 60 * 1000 // monthly: 25 days
+  if (cronDow !== "*") return 6 * 24 * 60 * 60 * 1000  // weekly: 6 days
+  return 23 * 60 * 60 * 1000                            // daily: 23 hours
 }
 
 /**

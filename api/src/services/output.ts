@@ -2,25 +2,20 @@
  * Whitelist output file generator.
  *
  * Builds Squad RemoteAdminList format files from DB data.
- * Port of bot/output.py — generate_output_files().
  *
  * Each whitelist always gets its own file (separate mode only).
- * combined_filename and output_mode are no longer used.
+ * Entries are grouped by source with comment headers for readability:
+ *   // ─── Discord Roster ───
+ *   // ─── Manual Roster ────
+ *   // ─── Seeding Rewards ──
  *
  * Format:
  *   Group=Whitelist:reserve
- *   Group=Admin:kick,ban,chat,cameraman,immune,reserve
- *
  *   Admin=76561198012345678:Whitelist // PlayerName
- *   Admin=76561198087654321:Admin // AdminPlayer [EOS]
  */
 import type { PrismaClient } from "@prisma/client"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type OutputMap = Record<string, string>  // filename -> file content
-
-// ─── Main export ─────────────────────────────────────────────────────────────
+type OutputMap = Record<string, string>
 
 /**
  * Generate all whitelist output files for a guild.
@@ -30,47 +25,46 @@ export async function syncOutputs(
   prisma: PrismaClient,
   guildId: bigint,
 ): Promise<OutputMap> {
-  // ── Settings ──────────────────────────────────────────────────────────────
   const settingsRows = await prisma.botSetting.findMany({
     where: { guildId },
     select: { settingKey: true, settingValue: true },
   })
   const settings = Object.fromEntries(settingsRows.map((r) => [r.settingKey, r.settingValue]))
-
   const dedupe = toBool(settings["duplicate_output_dedupe"] ?? "true")
 
-  // ── Whitelists ────────────────────────────────────────────────────────────
   const whitelists = await prisma.whitelist.findMany({
     where: { guildId },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   })
 
-  // ── Squad groups → permissions map ────────────────────────────────────────
   const groups = await prisma.squadGroup.findMany({ where: { guildId } })
   const groupPerms = Object.fromEntries(groups.map((g) => [g.groupName, g.permissions]))
 
-  // ── Active export rows ────────────────────────────────────────────────────
+  // Query includes created_via and category for section grouping
   const rows = await prisma.$queryRaw<ExportRow[]>`
     SELECT
       w.slug             AS "wlSlug",
       w.output_filename  AS "outputFilename",
+      w.is_manual        AS "isManual",
       u.discord_id       AS "discordId",
       u.discord_name     AS "discordName",
       u.effective_slot_limit AS "slotLimit",
+      u.created_via      AS "createdVia",
+      u.category_id      AS "categoryId",
       i.id_type          AS "idType",
-      i.id_value         AS "idValue"
+      i.id_value         AS "idValue",
+      c.name             AS "categoryName"
     FROM whitelist_users u
     JOIN whitelists w ON w.id = u.whitelist_id
     JOIN whitelist_identifiers i
       ON u.guild_id = i.guild_id
      AND u.discord_id = i.discord_id
      AND u.whitelist_id = i.whitelist_id
+    LEFT JOIN whitelist_categories c ON c.id = u.category_id
     WHERE u.guild_id = ${guildId}
       AND u.status = 'active'
-    ORDER BY w.slug, u.discord_name, i.id_type, i.id_value
+    ORDER BY w.slug, u.created_via, c.name, u.discord_name, i.id_type, i.id_value
   `
-
-  // ── Build helpers ─────────────────────────────────────────────────────────
 
   function buildGroupHeaders(usedGroups: Set<string>): string[] {
     const lines: string[] = []
@@ -78,7 +72,7 @@ export async function syncOutputs(
       const perms = groupPerms[name] ?? "reserve"
       lines.push(`Group=${name}:${perms}`)
     }
-    if (lines.length > 0) lines.push("", "")
+    if (lines.length > 0) lines.push("")
     return lines
   }
 
@@ -87,28 +81,37 @@ export async function syncOutputs(
     return `Admin=${idValue}:${groupName} // ${name}${suffix}`
   }
 
-  // ── Per-whitelist output (always separate mode) ───────────────────────────
-  const enabledWhitelists = whitelists.filter((w) => w.enabled)
+  /**
+   * Determine a human-readable section label for a row.
+   * Used to group entries with comment headers.
+   */
+  function getSectionLabel(row: ExportRow): string {
+    if (row.createdVia === "seeding_reward") return "Seeding Rewards"
+    if (row.isManual) {
+      return row.categoryName ? `Manual Roster - ${row.categoryName}` : "Manual Roster"
+    }
+    return "Discord Roster"
+  }
 
-  const perWlLines:  Record<string, string[]> = {}
-  const perWlSeen:   Record<string, Set<string>> = {}
-  const perWlGroups: Record<string, Set<string>> = {}
+  // ── Build per-whitelist output ──────────────────────────────────────────
+
+  const enabledWhitelists = whitelists.filter((w) => w.enabled)
+  const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
+
+  // Structured output: section -> lines
+  const perWlSections: Record<string, Map<string, string[]>> = {}
+  const perWlSeen:     Record<string, Set<string>> = {}
+  const perWlGroups:   Record<string, Set<string>> = {}
+  const userIdCounts = new Map<string, number>()
 
   for (const wl of enabledWhitelists) {
     perWlGroups[wl.slug] = new Set([wl.squadGroup])
   }
 
-  // Build slug -> whitelist lookup
-  const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
-
-  // Track how many IDs have been exported per user per whitelist (for slot limit enforcement)
-  const userIdCounts = new Map<string, number>()
-
   for (const row of rows) {
     const wl = wlBySlug[row.wlSlug]
     if (!wl || !wl.enabled) continue
 
-    // Enforce slot limit — skip IDs beyond the user's effective_slot_limit
     const userKey = `${row.wlSlug}:${String(row.discordId)}`
     const exported = userIdCounts.get(userKey) ?? 0
     if (row.slotLimit > 0 && exported >= row.slotLimit) continue
@@ -117,27 +120,46 @@ export async function syncOutputs(
     const line      = buildLine(row.idType, row.idValue, row.discordName, groupName)
     const dedupKey  = dedupe ? `${row.idType}:${row.idValue}` : line
     const slug      = row.wlSlug
+    const section   = getSectionLabel(row)
 
-    perWlLines[slug]  ??= []
-    perWlSeen[slug]   ??= new Set()
-    perWlGroups[slug] ??= new Set([groupName])
+    perWlSections[slug] ??= new Map()
+    perWlSeen[slug]     ??= new Set()
+    perWlGroups[slug]   ??= new Set([groupName])
 
     if (!perWlSeen[slug].has(dedupKey)) {
-      perWlLines[slug].push(line)
+      if (!perWlSections[slug].has(section)) {
+        perWlSections[slug].set(section, [])
+      }
+      perWlSections[slug].get(section)!.push(line)
       perWlSeen[slug].add(dedupKey)
       perWlGroups[slug].add(groupName)
       userIdCounts.set(userKey, exported + 1)
     }
   }
 
-  // ── Assemble outputs ──────────────────────────────────────────────────────
+  // ── Assemble outputs with section headers ─────────────────────────────
+
   const outputs: OutputMap = {}
 
   for (const wl of enabledWhitelists) {
     const filename = wl.outputFilename || `${wl.slug}.txt`
-    const lines    = perWlLines[wl.slug]  ?? []
     const wlGroups = perWlGroups[wl.slug] ?? new Set([wl.squadGroup])
-    outputs[filename] = [...buildGroupHeaders(wlGroups), ...lines].join("\n")
+    const sections = perWlSections[wl.slug]
+
+    const allLines: string[] = [...buildGroupHeaders(wlGroups)]
+
+    if (sections && sections.size > 0) {
+      for (const [sectionName, lines] of sections) {
+        // Only add section headers if there are multiple sections
+        if (sections.size > 1) {
+          allLines.push(`// ─── ${sectionName} ${"─".repeat(Math.max(0, 40 - sectionName.length))}`)
+        }
+        allLines.push(...lines)
+        if (sections.size > 1) allLines.push("")
+      }
+    }
+
+    outputs[filename] = allLines.join("\n")
   }
 
   return outputs
@@ -148,11 +170,15 @@ export async function syncOutputs(
 interface ExportRow {
   wlSlug:         string
   outputFilename: string
+  isManual:       boolean
   discordId:      bigint
   discordName:    string
   slotLimit:      number
+  createdVia:     string | null
+  categoryId:     number | null
   idType:         string
   idValue:        string
+  categoryName:   string | null
 }
 
 function toBool(val: string): boolean {
