@@ -116,8 +116,8 @@ export async function syncOutputs(
     const exported = userIdCounts.get(userKey) ?? 0
     if (row.slotLimit > 0 && exported >= row.slotLimit) continue
 
-    // Seeding rewards always use SeedReserve group regardless of whitelist's group
-    const groupName = row.createdVia === "seeding_reward" ? "SeedReserve" : (wl.squadGroup || "Whitelist")
+    // Seeding rewards always use Reserve group regardless of whitelist's group
+    const groupName = row.createdVia === "seeding_reward" ? "Reserve" : (wl.squadGroup || "Whitelist")
     const line      = buildLine(row.idType, row.idValue, row.discordName, groupName)
     const dedupKey  = dedupe ? `${row.idType}:${row.idValue}` : line
     const slug      = row.wlSlug

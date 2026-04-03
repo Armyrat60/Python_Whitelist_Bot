@@ -250,7 +250,7 @@ export default function SeedingDashboard() {
       {/* Whitelist info */}
       <div className="rounded-lg border border-white/[0.06] bg-white/[0.01] px-4 py-2 flex items-center justify-between">
         <div className="text-[10px] text-muted-foreground">
-          Seeding rewards added to main whitelist — Group: <code className="bg-white/[0.06] px-1 rounded">SeedReserve:reserve</code>
+          Seeding rewards added to main whitelist — Group: <code className="bg-white/[0.06] px-1 rounded">Reserve:reserve</code>
         </div>
         <Badge variant="secondary" className="text-[9px]">Reserve only</Badge>
       </div>

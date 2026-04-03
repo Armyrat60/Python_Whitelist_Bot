@@ -39,7 +39,7 @@ export async function ensureTables(): Promise<void> {
       seeding_player_threshold    INT          NOT NULL DEFAULT 50,
       points_required             INT          NOT NULL DEFAULT 120,
       reward_whitelist_id         INT          NULL,
-      reward_group_name           VARCHAR(100) NOT NULL DEFAULT 'SeedReserve',
+      reward_group_name           VARCHAR(100) NOT NULL DEFAULT 'Reserve',
       reward_duration_hours       INT          NOT NULL DEFAULT 168,
       tracking_mode               VARCHAR(20)  NOT NULL DEFAULT 'fixed_reset',
       reset_cron                  VARCHAR(50)  NOT NULL DEFAULT '0 0 * * *',
@@ -61,12 +61,12 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_start VARCHAR(5) NOT NULL DEFAULT '07:00'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS seeding_window_end VARCHAR(5) NOT NULL DEFAULT '22:00'`)
-  // Rename old 'reserve' group to 'SeedReserve' for clarity
-  await pool.query(`UPDATE seeding_configs SET reward_group_name = 'SeedReserve' WHERE reward_group_name = 'reserve'`)
-  await pool.query(`UPDATE whitelists SET squad_group = 'SeedReserve' WHERE slug = 'seeding-rewards' AND squad_group = 'reserve'`)
+  // Rename old 'reserve' group to 'Reserve' for clarity
+  await pool.query(`UPDATE seeding_configs SET reward_group_name = 'Reserve' WHERE reward_group_name = 'reserve'`)
+  await pool.query(`UPDATE whitelists SET squad_group = 'Reserve' WHERE slug = 'seeding-rewards' AND squad_group = 'reserve'`)
   await pool.query(`
     INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
-    SELECT guild_id, 'SeedReserve', 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW()
+    SELECT guild_id, 'Reserve', 'reserve', 'Seeding reward group (reserve only)', FALSE, NOW(), NOW()
     FROM seeding_configs WHERE enabled = TRUE
     ON CONFLICT (guild_id, group_name) DO NOTHING
   `)
@@ -446,13 +446,13 @@ export async function getLeaderboard(
  * This is NEVER configurable — seeding rewards always use reserve only.
  * This prevents any accidental permission escalation.
  */
-const SEEDING_GROUP_NAME = "SeedReserve"
+const SEEDING_GROUP_NAME = "Reserve"
 const SEEDING_GROUP_PERMS = "reserve"
 
 /**
  * Get the main (default) whitelist ID for this guild.
  * Seeding rewards go into the MAIN whitelist — not a separate one.
- * The SeedReserve group is ensured to exist so seeding players get
+ * The Reserve group is ensured to exist so seeding players get
  * only reserve permission even though they're on the same whitelist.
  *
  * Returns the main whitelist ID.
@@ -460,7 +460,7 @@ const SEEDING_GROUP_PERMS = "reserve"
 export async function getMainWhitelistId(
   guildId: bigint,
 ): Promise<number | null> {
-  // Always ensure the SeedReserve group exists with ONLY reserve permission
+  // Always ensure the Reserve group exists with ONLY reserve permission
   await pool.query(
     `INSERT INTO squad_groups (guild_id, group_name, permissions, description, is_default, created_at, updated_at)
      VALUES ($1, $2, $3, 'Seeding rewards (reserve only, cannot be changed)', FALSE, NOW(), NOW())
