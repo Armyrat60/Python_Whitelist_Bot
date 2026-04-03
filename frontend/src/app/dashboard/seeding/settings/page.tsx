@@ -73,9 +73,9 @@ function getConnectionDetail(config: SeedingConfig | null): { label: string; des
       label: "Waiting for first poll",
       description: "The seeding service is starting up. First poll should happen within 60 seconds.",
       troubleshoot: [
-        "Verify the seeding-service is running on Railway",
-        "Check that DATABASE_URL is set on the seeding-service",
-        "Check Railway logs for startup errors",
+        "Verify the seeding service is running and healthy",
+        "Check that the database connection is configured correctly",
+        "Contact your server administrator if this persists",
       ],
     };
   }
@@ -88,14 +88,14 @@ function getConnectionDetail(config: SeedingConfig | null): { label: string; des
       tips.push("Ensure no firewall is blocking the connection");
       tips.push("Verify the authentication token is correct");
     } else if (msg.includes("timed out") || msg.includes("timeout")) {
-      tips.push("SquadJS may be unreachable \u2014 check if it\u2019s running");
+      tips.push("SquadJS may be unreachable — check if it's running");
       tips.push("Network latency or firewall may be blocking the connection");
       tips.push("Try using the IP address instead of hostname");
     } else if (msg.includes("token") || msg.includes("auth")) {
       tips.push("The SquadJS authentication token may be incorrect");
       tips.push("Regenerate the token in your SquadJS config and update it here");
     } else {
-      tips.push("Check the seeding-service logs on Railway for more details");
+      tips.push("Check the seeding service logs for more details");
       tips.push("Verify SquadJS is running and accessible");
       tips.push("Try the Test Connection button to diagnose");
     }
@@ -108,9 +108,9 @@ function getConnectionDetail(config: SeedingConfig | null): { label: string; des
       label: "Stale connection",
       description: `Last successful poll was ${mins} minute(s) ago. The service may have restarted.`,
       troubleshoot: [
-        "Check if the seeding-service is running on Railway",
-        "The service may be restarting \u2014 wait 1-2 minutes",
-        "Check Railway logs for crash or memory errors",
+        "The seeding service may be restarting after a deployment — wait 1-2 minutes",
+        "If this persists, check that the seeding service is running and healthy",
+        "Contact your server administrator if the issue continues",
       ],
     };
   }
