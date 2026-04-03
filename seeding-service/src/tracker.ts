@@ -322,6 +322,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
           const ok = await db.createWhitelistReward(
             guildId, q.steam_id, q.player_name,
             whitelistId, cfg.reward_group_name, duration,
+            cfg.require_discord_link,
           )
           if (ok) {
             await db.markRewarded(guildId, q.steam_id)
@@ -347,6 +348,8 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
                 role_id: cfg.discord_role_reward_id,
               }).catch(() => {})
             }
+          } else if (cfg.require_discord_link) {
+            console.log(`[seeding/tracker] Reward held for ${q.player_name ?? q.steam_id} — no Discord link (guild ${guildId})`)
           }
         }
       } else {

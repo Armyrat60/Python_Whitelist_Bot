@@ -252,6 +252,7 @@ export interface SeedingConfig {
   rcon_broadcast_message: string;
   rcon_broadcast_interval_min: number;
   reward_cooldown_hours: number;
+  require_discord_link: boolean;
   streak_enabled: boolean;
   streak_days_required: number;
   streak_multiplier: number;

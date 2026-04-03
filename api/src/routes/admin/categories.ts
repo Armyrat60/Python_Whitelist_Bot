@@ -363,7 +363,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         const key = `${ident.discordId}:${ident.whitelistId}`
         if (!identMap.has(key)) identMap.set(key, { steam_ids: [], eos_ids: [] })
         const entry = identMap.get(key)!
-        if (ident.idType === "steamid") entry.steam_ids.push(ident.idValue)
+        if (ident.idType === "steamid" || ident.idType === "steam64") entry.steam_ids.push(ident.idValue)
         if (ident.idType === "eosid")   entry.eos_ids.push(ident.idValue)
       }
 
@@ -425,11 +425,6 @@ export default async function categoryRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "steam_id is required" })
       }
 
-      // Check slot limit
-      if (category.slotLimit !== null && category._count.users >= category.slotLimit) {
-        return reply.code(409).send({ error: "Category is full" })
-      }
-
       const steamId    = body.steam_id.trim()
       const discordName = body.discord_name?.trim() || "[No Discord]"
 
@@ -452,46 +447,63 @@ export default async function categoryRoutes(app: FastifyInstance) {
       const wl = await prisma.whitelist.findFirst({ where: { id: whitelistId, guildId } })
       if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
 
-      await prisma.$transaction(async (tx) => {
-        await tx.whitelistUser.upsert({
-          where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
-          update: {
-            discordName,
-            categoryId,
-            notes:     body.notes ?? null,
-            expiresAt: body.expires_at ? new Date(body.expires_at) : null,
-            updatedAt: now,
-          },
-          create: {
-            guildId,
-            discordId,
-            whitelistId,
-            discordName,
-            categoryId,
-            status:             "active",
-            effectiveSlotLimit: wl.defaultSlotLimit,
-            notes:              body.notes ?? null,
-            expiresAt:          body.expires_at ? new Date(body.expires_at) : null,
-            createdVia,
-            createdAt:          now,
-            updatedAt:          now,
-          },
-        })
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Re-check slot limit inside transaction to prevent race condition
+          if (category.slotLimit !== null) {
+            const currentCount = await tx.whitelistUser.count({
+              where: { guildId, whitelistId, categoryId },
+            })
+            if (currentCount >= category.slotLimit) {
+              throw new Error("__CATEGORY_FULL__")
+            }
+          }
 
-        await tx.whitelistIdentifier.upsert({
-          where: {
-            guildId_discordId_whitelistId_idType_idValue: {
-              guildId, discordId, whitelistId, idType: "steamid", idValue: steamId,
+          await tx.whitelistUser.upsert({
+            where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId } },
+            update: {
+              discordName,
+              categoryId,
+              notes:     body.notes ?? null,
+              expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+              updatedAt: now,
             },
-          },
-          update: { updatedAt: now },
-          create: {
-            guildId, discordId, whitelistId,
-            idType: "steamid", idValue: steamId,
-            isVerified: false, createdAt: now, updatedAt: now,
-          },
+            create: {
+              guildId,
+              discordId,
+              whitelistId,
+              discordName,
+              categoryId,
+              status:             "active",
+              effectiveSlotLimit: wl.defaultSlotLimit,
+              notes:              body.notes ?? null,
+              expiresAt:          body.expires_at ? new Date(body.expires_at) : null,
+              createdVia,
+              createdAt:          now,
+              updatedAt:          now,
+            },
+          })
+
+          await tx.whitelistIdentifier.upsert({
+            where: {
+              guildId_discordId_whitelistId_idType_idValue: {
+                guildId, discordId, whitelistId, idType: "steam64", idValue: steamId,
+              },
+            },
+            update: { updatedAt: now },
+            create: {
+              guildId, discordId, whitelistId,
+              idType: "steam64", idValue: steamId,
+              isVerified: false, createdAt: now, updatedAt: now,
+            },
+          })
         })
-      })
+      } catch (err) {
+        if (err instanceof Error && err.message === "__CATEGORY_FULL__") {
+          return reply.code(409).send({ error: "Category is full" })
+        }
+        throw err
+      }
 
       return reply.code(201).send(safeJson({
         ok:           true,
@@ -630,9 +642,9 @@ export default async function categoryRoutes(app: FastifyInstance) {
               },
             })
             await tx.whitelistIdentifier.upsert({
-              where: { guildId_discordId_whitelistId_idType_idValue: { guildId, discordId, whitelistId, idType: "steamid", idValue: steamId } },
+              where: { guildId_discordId_whitelistId_idType_idValue: { guildId, discordId, whitelistId, idType: "steam64", idValue: steamId } },
               update: { updatedAt: now },
-              create: { guildId, discordId, whitelistId, idType: "steamid", idValue: steamId, isVerified: false, createdAt: now, updatedAt: now },
+              create: { guildId, discordId, whitelistId, idType: "steam64", idValue: steamId, isVerified: false, createdAt: now, updatedAt: now },
             })
           })
 

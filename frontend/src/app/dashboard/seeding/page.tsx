@@ -10,6 +10,7 @@ import {
   Settings2,
   ArrowRight,
   TrendingUp,
+  Link2,
 } from "lucide-react";
 import {
   useSeedingConfig,
@@ -135,10 +136,13 @@ export default function SeedingDashboard() {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className={`grid gap-3 ${config.require_discord_link && (stats?.pending_discord_link ?? 0) > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
         <StatCard icon={Users} label="Active Seeders" value={stats?.total_seeders ?? 0} sub="Players with points this cycle" />
         <StatCard icon={Gift} label="Rewards Given" value={stats?.total_rewarded ?? 0} sub="Players who earned whitelist" />
         <StatCard icon={TrendingUp} label="Total Seeding" value={`${stats?.total_seeding_hours ?? 0}h`} sub="Combined hours all players" />
+        {config.require_discord_link && (stats?.pending_discord_link ?? 0) > 0 && (
+          <StatCard icon={Link2} label="Pending Link" value={stats?.pending_discord_link ?? 0} sub="Qualified but no Discord linked" />
+        )}
       </div>
 
       {/* Two-column layout: Top seeders + Recent activity */}
@@ -230,6 +234,10 @@ export default function SeedingDashboard() {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Tiered Rewards</span>
             <span className="text-white/70">{config.reward_tiers ? `${config.reward_tiers.length} tiers` : "Single tier"}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Discord Link</span>
+            <span className="text-white/70">{config.require_discord_link ? "Required" : "Not required"}</span>
           </div>
         </div>
         <div className="pt-1">

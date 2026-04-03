@@ -65,6 +65,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rcon_broadcast_message:      config.rconBroadcastMessage,
         rcon_broadcast_interval_min: config.rconBroadcastIntervalMin,
         reward_cooldown_hours:       config.rewardCooldownHours,
+        require_discord_link:        config.requireDiscordLink,
         streak_enabled:              config.streakEnabled,
         streak_days_required:        config.streakDaysRequired,
         streak_multiplier:           config.streakMultiplier,
@@ -119,6 +120,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       rcon_broadcast_message?: string
       rcon_broadcast_interval_min?: number
       reward_cooldown_hours?: number
+      require_discord_link?: boolean
       streak_enabled?: boolean
       streak_days_required?: number
       streak_multiplier?: number
@@ -249,6 +251,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rconBroadcastMessage:  body.rcon_broadcast_message   ?? "This server is in seeding mode! Earn whitelist rewards by staying online.",
         rconBroadcastIntervalMin: body.rcon_broadcast_interval_min ?? 10,
         rewardCooldownHours:   body.reward_cooldown_hours    ?? 0,
+        requireDiscordLink:    body.require_discord_link     ?? false,
         streakEnabled:         body.streak_enabled           ?? false,
         streakDaysRequired:    body.streak_days_required     ?? 3,
         streakMultiplier:      body.streak_multiplier        ?? 1.5,
@@ -296,6 +299,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         rconBroadcastMessage:  body.rcon_broadcast_message   ?? existing?.rconBroadcastMessage   ?? "This server is in seeding mode!",
         rconBroadcastIntervalMin: body.rcon_broadcast_interval_min ?? existing?.rconBroadcastIntervalMin ?? 10,
         rewardCooldownHours:   body.reward_cooldown_hours    ?? existing?.rewardCooldownHours    ?? 0,
+        requireDiscordLink:    body.require_discord_link     ?? existing?.requireDiscordLink     ?? false,
         streakEnabled:         body.streak_enabled           ?? existing?.streakEnabled           ?? false,
         streakDaysRequired:    body.streak_days_required     ?? existing?.streakDaysRequired     ?? 3,
         streakMultiplier:      body.streak_multiplier        ?? existing?.streakMultiplier       ?? 1.5,
@@ -342,6 +346,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         last_poll_status:            config.lastPollStatus,
         last_poll_message:           config.lastPollMessage,
         leaderboard_public:          config.leaderboardPublic,
+        require_discord_link:        config.requireDiscordLink,
       },
     })
   })
@@ -543,11 +548,37 @@ export default async function seedingRoutes(app: FastifyInstance) {
       select: { details: true, createdAt: true },
     })
 
+    // Count players who qualified but have no Discord link (when require_discord_link is on)
+    let pendingDiscordLink = 0
+    if (config?.requireDiscordLink) {
+      const pendingResult = await app.prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*) as count
+        FROM seeding_points sp
+        WHERE sp.guild_id = ${guildId}
+          AND sp.points >= ${pointsRequired}
+          AND sp.rewarded = FALSE
+          AND NOT EXISTS (
+            SELECT 1 FROM whitelist_identifiers wi
+            WHERE wi.guild_id = sp.guild_id
+              AND wi.id_type IN ('steam64', 'steamid')
+              AND wi.id_value = sp.steam_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM squad_players sqp
+            WHERE sqp.guild_id = sp.guild_id
+              AND sqp.steam_id = sp.steam_id
+              AND sqp.discord_id IS NOT NULL
+          )
+      `
+      pendingDiscordLink = Number(pendingResult[0]?.count ?? 0)
+    }
+
     return reply.send({
       points_required: pointsRequired,
       total_seeders: totalSeeders,
       total_rewarded: totalRewarded,
       total_seeding_hours: totalSeedingHours,
+      pending_discord_link: pendingDiscordLink,
       top_5: top5.map((p) => ({
         player_name: p.playerName,
         points: p.points,

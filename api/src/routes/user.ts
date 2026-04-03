@@ -188,8 +188,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: `Too many IDs. Your slot limit is ${slotLimit} total.` })
     }
 
-    // Replace identifiers
-    await app.prisma.whitelistIdentifier.deleteMany({ where: { guildId, discordId, whitelistId: wl.id } })
+    // Replace identifiers atomically
     const now = new Date()
     const identifiers = [
       ...steam_ids.map((sid) => ({
@@ -205,30 +204,34 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         createdAt: now, updatedAt: now,
       })),
     ]
-    if (identifiers.length > 0) {
-      await app.prisma.whitelistIdentifier.createMany({ data: identifiers, skipDuplicates: true })
-    }
 
-    if (!user) {
-      await app.prisma.whitelistUser.create({
+    await app.prisma.$transaction(async (tx) => {
+      await tx.whitelistIdentifier.deleteMany({ where: { guildId, discordId, whitelistId: wl.id } })
+
+      if (identifiers.length > 0) {
+        await tx.whitelistIdentifier.createMany({ data: identifiers, skipDuplicates: true })
+      }
+
+      if (!user) {
+        await tx.whitelistUser.create({
+          data: {
+            guildId, discordId, whitelistId: wl.id,
+            discordName: req.session.username ?? "Unknown",
+            status: "active",
+            effectiveSlotLimit: slotLimit,
+            createdAt: now, updatedAt: now,
+          },
+        })
+      }
+
+      await tx.auditLog.create({
         data: {
-          guildId, discordId, whitelistId: wl.id,
-          discordName: req.session.username ?? "Unknown",
-          status: "active",
-          effectiveSlotLimit: slotLimit,
-          createdAt: now, updatedAt: now,
+          guildId, actionType: "web_update_ids",
+          actorDiscordId: discordId, targetDiscordId: discordId,
+          details: `Updated ${type} IDs via web: ${steam_ids.length} steam, ${eos_ids.length} eos`,
+          whitelistId: wl.id, createdAt: now,
         },
       })
-    }
-
-    // Audit
-    await app.prisma.auditLog.create({
-      data: {
-        guildId, actionType: "web_update_ids",
-        actorDiscordId: discordId, targetDiscordId: discordId,
-        details: `Updated ${type} IDs via web: ${steam_ids.length} steam, ${eos_ids.length} eos`,
-        whitelistId: wl.id, createdAt: now,
-      },
     })
 
     const outputs = await syncOutputs(app.prisma, guildId)

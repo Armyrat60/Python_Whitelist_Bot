@@ -255,6 +255,9 @@ export default function SeedingSettingsPage() {
   // ── Cooldown ──
   const [rewardCooldownHours, setRewardCooldownHours] = useState("0");
 
+  // ── Discord link requirement ──
+  const [requireDiscordLink, setRequireDiscordLink] = useState(false);
+
   // ── Streaks ──
   const [streakEnabled, setStreakEnabled] = useState(false);
   const [streakDaysRequired, setStreakDaysRequired] = useState("3");
@@ -313,6 +316,7 @@ export default function SeedingSettingsPage() {
     setRconBroadcastMessage(existing.rcon_broadcast_message);
     setRconBroadcastInterval(String(existing.rcon_broadcast_interval_min));
     setRewardCooldownHours(String(existing.reward_cooldown_hours));
+    setRequireDiscordLink(existing.require_discord_link);
     setStreakEnabled(existing.streak_enabled);
     setStreakDaysRequired(String(existing.streak_days_required));
     setStreakMultiplier(String(existing.streak_multiplier));
@@ -359,6 +363,7 @@ export default function SeedingSettingsPage() {
       decay_points_per_day: parseInt(decayPointsPerDay, 10) || 10,
       // Cooldown + streaks + multipliers
       reward_cooldown_hours: parseInt(rewardCooldownHours, 10) || 0,
+      require_discord_link: requireDiscordLink,
       streak_enabled: streakEnabled,
       streak_days_required: parseInt(streakDaysRequired, 10) || 3,
       streak_multiplier: parseFloat(streakMultiplier) || 1.5,
@@ -658,6 +663,20 @@ export default function SeedingSettingsPage() {
           {parseInt(rewardCooldownHours, 10) > 0
             ? `After earning a reward, players must wait ${rewardCooldownHours} hours before earning again.`
             : "No cooldown — players can earn again immediately after being rewarded."}
+        </p>
+      </Card>
+
+      <Card title="Discord Link Requirement">
+        <div className="flex items-center gap-3 mb-2">
+          <Switch checked={requireDiscordLink} onCheckedChange={setRequireDiscordLink} />
+          <Label className="text-sm">
+            {requireDiscordLink ? "Discord link required for rewards" : "Discord link not required"}
+          </Label>
+        </div>
+        <p className="text-[10px] text-muted-foreground/70">
+          {requireDiscordLink
+            ? "Players must link their Discord to their Steam ID before receiving seeding rewards. Points still accumulate normally. Players can link via the bot /whitelist command, the web dashboard, or a Discord panel button."
+            : "Rewards are granted automatically by Steam ID. Players do not need to join Discord or link accounts."}
         </p>
       </Card>
 

@@ -101,6 +101,7 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_broadcast_message TEXT NOT NULL DEFAULT 'This server is in seeding mode! Earn whitelist rewards by staying online.'`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS rcon_broadcast_interval_min INT NOT NULL DEFAULT 10`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS reward_cooldown_hours INT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS require_discord_link BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_days_required INT NOT NULL DEFAULT 3`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS streak_multiplier REAL NOT NULL DEFAULT 1.5`)
@@ -222,6 +223,7 @@ export interface SeedingConfigRow {
   rcon_broadcast_message: string
   rcon_broadcast_interval_min: number
   reward_cooldown_hours: number
+  require_discord_link: boolean
   streak_enabled: boolean
   streak_days_required: number
   streak_multiplier: number
@@ -505,6 +507,7 @@ export async function createWhitelistReward(
   whitelistId: number,
   _groupName: string,
   durationHours: number,
+  requireDiscordLink: boolean = false,
 ): Promise<boolean> {
   const client = await pool.connect()
   const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000)
@@ -535,6 +538,12 @@ export async function createWhitelistReward(
         [guildId, steamId],
       )
       discordId = spResult.rows[0]?.discord_id ?? null
+    }
+
+    // If no Discord link and it's required, hold the reward
+    if (!discordId && requireDiscordLink) {
+      await client.query("ROLLBACK")
+      return false
     }
 
     // If no Discord link, use a synthetic negative ID based on Steam ID hash

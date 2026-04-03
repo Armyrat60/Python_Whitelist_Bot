@@ -302,7 +302,7 @@ export default async function userRoutes(app: FastifyInstance) {
   app.post("/users", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const body    = req.body as {
-      discord_id:           string
+      discord_id?:          string
       discord_name:         string
       whitelist_slug:       string
       steam_ids?:           string[]
@@ -313,8 +313,8 @@ export default async function userRoutes(app: FastifyInstance) {
       category_id?:         number | null
     }
 
-    if (!body.discord_id || !body.discord_name || !body.whitelist_slug) {
-      return reply.code(400).send({ error: "discord_id, discord_name, and whitelist_slug are required" })
+    if (!body.discord_name || !body.whitelist_slug) {
+      return reply.code(400).send({ error: "discord_name and whitelist_slug are required" })
     }
 
     const wl = await prisma.whitelist.findUnique({
@@ -322,8 +322,21 @@ export default async function userRoutes(app: FastifyInstance) {
     })
     if (!wl) return reply.code(404).send({ error: "Whitelist not found" })
 
-    const discordId = BigInt(body.discord_id)
-    const now       = new Date()
+    // If no discord_id provided, generate a synthetic one from the first Steam ID
+    let discordId: bigint
+    const createdVia = body.discord_id ? "admin" : "manual_steam_only"
+    if (body.discord_id) {
+      discordId = BigInt(body.discord_id)
+    } else {
+      const firstSteam = (body.steam_ids ?? [])[0]?.trim()
+      const firstEos   = (body.eos_ids   ?? [])[0]?.trim()
+      const seed       = firstSteam || firstEos
+      if (!seed) {
+        return reply.code(400).send({ error: "discord_id or at least one steam/eos ID is required" })
+      }
+      discordId = BigInt("1" + seed.slice(-16).padStart(16, "0"))
+    }
+    const now = new Date()
 
     await prisma.$transaction(async (tx) => {
       await tx.whitelistUser.upsert({
@@ -350,7 +363,7 @@ export default async function userRoutes(app: FastifyInstance) {
           categoryId:        body.category_id ?? null,
           createdAt:         now,
           updatedAt:         now,
-          createdVia:        "admin",
+          createdVia,
         },
       })
 
@@ -361,13 +374,13 @@ export default async function userRoutes(app: FastifyInstance) {
         await tx.whitelistIdentifier.upsert({
           where: {
             guildId_discordId_whitelistId_idType_idValue: {
-              guildId, discordId, whitelistId: wl.id, idType: "steamid", idValue,
+              guildId, discordId, whitelistId: wl.id, idType: "steam64", idValue,
             },
           },
           update: { updatedAt: now },
           create: {
             guildId, discordId, whitelistId: wl.id,
-            idType: "steamid", idValue,
+            idType: "steam64", idValue,
             isVerified: false, createdAt: now, updatedAt: now,
           },
         })
@@ -407,7 +420,7 @@ export default async function userRoutes(app: FastifyInstance) {
 
     return reply.code(201).send(toJSON({
       ok:           true,
-      discord_id:   body.discord_id,
+      discord_id:   discordId.toString(),
       discord_name: body.discord_name,
     }))
   })
@@ -426,6 +439,8 @@ export default async function userRoutes(app: FastifyInstance) {
       expires_at?:          string | null
       notes?:               string | null
       category_id?:         number | null
+      steam_ids?:           string[]
+      eos_ids?:             string[]
     }
 
     // Roster managers cannot change expiry dates or admin notes
@@ -454,17 +469,64 @@ export default async function userRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Cannot edit users without an assigned category" })
     }
 
-    const data: Record<string, unknown> = { updatedAt: new Date() }
+    const now = new Date()
+    const data: Record<string, unknown> = { updatedAt: now }
     if (body.status              !== undefined) data.status            = body.status
     if (body.slot_limit_override !== undefined) data.slotLimitOverride = body.slot_limit_override
     if (body.expires_at          !== undefined) data.expiresAt         = body.expires_at ? new Date(body.expires_at) : null
     if (body.notes               !== undefined) data.notes             = body.notes ?? null
     if (body.category_id         !== undefined) data.categoryId        = body.category_id ?? null
 
-    await prisma.whitelistUser.update({
-      where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
-      data,
+    const steamIds = body.steam_ids
+    const eosIds   = body.eos_ids
+    const hasIdUpdate = steamIds !== undefined || eosIds !== undefined
+
+    await prisma.$transaction(async (tx) => {
+      await tx.whitelistUser.update({
+        where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
+        data,
+      })
+
+      if (hasIdUpdate) {
+        // Remove old identifiers for the types being replaced
+        if (steamIds !== undefined) {
+          await tx.whitelistIdentifier.deleteMany({
+            where: { guildId, discordId, whitelistId: wl.id, idType: { in: ["steam64", "steamid"] } },
+          })
+        }
+        if (eosIds !== undefined) {
+          await tx.whitelistIdentifier.deleteMany({
+            where: { guildId, discordId, whitelistId: wl.id, idType: "eosid" },
+          })
+        }
+
+        // Insert new identifiers
+        for (const idValue of steamIds ?? []) {
+          if (!idValue.trim()) continue
+          await tx.whitelistIdentifier.create({
+            data: {
+              guildId, discordId, whitelistId: wl.id,
+              idType: "steam64", idValue: idValue.trim(),
+              isVerified: false, createdAt: now, updatedAt: now,
+            },
+          })
+        }
+        for (const idValue of eosIds ?? []) {
+          if (!idValue.trim()) continue
+          await tx.whitelistIdentifier.create({
+            data: {
+              guildId, discordId, whitelistId: wl.id,
+              idType: "eosid", idValue: idValue.trim(),
+              isVerified: false, createdAt: now, updatedAt: now,
+            },
+          })
+        }
+      }
     })
+
+    const changes = Object.keys(data)
+    if (steamIds !== undefined) changes.push("steam_ids")
+    if (eosIds   !== undefined) changes.push("eos_ids")
 
     await prisma.auditLog.create({
       data: {
@@ -473,12 +535,13 @@ export default async function userRoutes(app: FastifyInstance) {
         actionType:      "user_updated",
         actorDiscordId:  req.session.userId ? BigInt(req.session.userId) : null,
         targetDiscordId: discordId,
-        details:         JSON.stringify({ changes: Object.keys(data) }),
-        createdAt:       new Date(),
+        details:         JSON.stringify({ changes }),
+        createdAt:       now,
       },
     })
 
     await triggerSync(app, guildId)
+    if (steamIds?.length) warmSteamCache(steamIds, app.prisma)
 
     return reply.send({ ok: true })
   })

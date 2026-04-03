@@ -451,7 +451,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
           whitelist_type: wl.slug,
           status: u.status,
           effective_slot_limit: u.effectiveSlotLimit,
-          steam_ids: ids.filter((i) => i.idType === "steam64").map((i) => i.idValue),
+          steam_ids: ids.filter((i) => i.idType === "steam64" || i.idType === "steamid").map((i) => i.idValue),
           eos_ids: ids.filter((i) => i.idType === "eosid").map((i) => i.idValue),
           updated_at: u.updatedAt.toISOString(),
         })
@@ -466,8 +466,10 @@ export default async function importExportRoutes(app: FastifyInstance) {
     if (normalFmt === "squad_cfg") {
       const lines = ["// Whitelist Export - Squad RemoteAdminList format"]
       for (const e of entries) {
+        const wl = wlBySlug.get(e.whitelist_type as string)
+        const group = wl?.squadGroup || "reserve"
         for (const sid of e.steam_ids as string[]) {
-          lines.push(`Admin=${sid}:reserve // ${e.discord_name}`)
+          lines.push(`Admin=${sid}:${group} // ${e.discord_name}`)
         }
       }
       reply.header("Content-Type", "text/plain")

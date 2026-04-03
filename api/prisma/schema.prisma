@@ -35,10 +35,10 @@ model Whitelist {
   createdAt        DateTime @map("created_at")
   updatedAt        DateTime @map("updated_at")
 
-  panels          Panel[]
-  users           WhitelistUser[]
-  identifiers     WhitelistIdentifier[]
-  categories      WhitelistCategory[]
+  panels      Panel[]
+  users       WhitelistUser[]
+  identifiers WhitelistIdentifier[]
+  categories  WhitelistCategory[]
 
   @@unique([guildId, slug])
   @@map("whitelists")
@@ -55,7 +55,7 @@ model WhitelistCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  whitelist Whitelist          @relation(fields: [whitelistId], references: [id], onDelete: Cascade)
+  whitelist Whitelist         @relation(fields: [whitelistId], references: [id], onDelete: Cascade)
   managers  CategoryManager[]
   users     WhitelistUser[]
 
@@ -90,34 +90,34 @@ model PanelRole {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  panel       Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
 
   @@unique([guildId, panelId, roleId])
   @@map("panel_roles")
 }
 
 model WhitelistUser {
-  guildId            BigInt   @default(0) @map("guild_id")
-  discordId          BigInt   @map("discord_id")
-  whitelistType      String?  @map("whitelist_type") @db.VarChar(20)
-  whitelistId        Int      @map("whitelist_id")
-  discordName        String   @map("discord_name") @db.VarChar(255)
-  status             String   @default("active") @db.VarChar(50)
-  slotLimitOverride  Int?     @map("slot_limit_override")
-  effectiveSlotLimit Int      @default(0) @map("effective_slot_limit")
-  lastPlanName       String?  @map("last_plan_name") @db.VarChar(255)
-  updatedAt          DateTime @map("updated_at")
-  createdAt          DateTime @map("created_at")
-  expiresAt          DateTime? @map("expires_at")
-  createdVia         String?  @map("created_via") @db.VarChar(50)
-  notes              String?  @db.VarChar(500)
-  categoryId         Int?     @map("category_id")
-  discordUsername    String?  @map("discord_username") @db.VarChar(255)
-  discordNick        String?  @map("discord_nick") @db.VarChar(255)
-  clanTag            String?  @map("clan_tag") @db.VarChar(50)
+  guildId            BigInt             @default(0) @map("guild_id")
+  discordId          BigInt             @map("discord_id")
+  whitelistType      String?            @map("whitelist_type") @db.VarChar(20)
+  whitelistId        Int                @map("whitelist_id")
+  discordName        String             @map("discord_name") @db.VarChar(255)
+  status             String             @default("active") @db.VarChar(50)
+  slotLimitOverride  Int?               @map("slot_limit_override")
+  effectiveSlotLimit Int                @default(0) @map("effective_slot_limit")
+  lastPlanName       String?            @map("last_plan_name") @db.VarChar(255)
+  updatedAt          DateTime           @map("updated_at")
+  createdAt          DateTime           @map("created_at")
+  expiresAt          DateTime?          @map("expires_at")
+  createdVia         String?            @map("created_via") @db.VarChar(50)
+  notes              String?            @db.VarChar(500)
+  categoryId         Int?               @map("category_id")
+  discordUsername    String?            @map("discord_username") @db.VarChar(255)
+  discordNick        String?            @map("discord_nick") @db.VarChar(255)
+  clanTag            String?            @map("clan_tag") @db.VarChar(50)
   category           WhitelistCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  whitelist          Whitelist @relation(fields: [whitelistId], references: [id])
+  whitelist Whitelist @relation(fields: [whitelistId], references: [id])
 
   @@id([guildId, discordId, whitelistId])
   @@map("whitelist_users")
@@ -136,7 +136,7 @@ model WhitelistIdentifier {
   createdAt          DateTime @map("created_at")
   updatedAt          DateTime @map("updated_at")
 
-  whitelist          Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
+  whitelist Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
 
   @@unique([guildId, discordId, whitelistId, idType, idValue])
   @@map("whitelist_identifiers")
@@ -179,15 +179,15 @@ model SquadGroup {
 }
 
 model Panel {
-  id               Int      @id @default(autoincrement())
-  guildId          BigInt   @default(0) @map("guild_id")
-  name             String   @db.VarChar(100)
-  channelId        BigInt?  @map("channel_id")
-  logChannelId     BigInt?  @map("log_channel_id")
-  whitelistId      Int?     @map("whitelist_id")
-  panelMessageId   BigInt?  @map("panel_message_id")
-  isDefault        Boolean  @default(false) @map("is_default")
-  enabled          Boolean  @default(true)
+  id               Int       @id @default(autoincrement())
+  guildId          BigInt    @default(0) @map("guild_id")
+  name             String    @db.VarChar(100)
+  channelId        BigInt?   @map("channel_id")
+  logChannelId     BigInt?   @map("log_channel_id")
+  whitelistId      Int?      @map("whitelist_id")
+  panelMessageId   BigInt?   @map("panel_message_id")
+  isDefault        Boolean   @default(false) @map("is_default")
+  enabled          Boolean   @default(true)
   showRoleMentions Boolean   @default(true) @map("show_role_mentions")
   lastPushStatus   String?   @map("last_push_status") @db.VarChar(20)
   lastPushError    String?   @map("last_push_error")
@@ -195,8 +195,8 @@ model Panel {
   createdAt        DateTime  @map("created_at")
   updatedAt        DateTime  @map("updated_at")
 
-  whitelist        Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
-  panelRoles       PanelRole[]
+  whitelist  Whitelist?  @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
+  panelRoles PanelRole[]
 
   @@map("panels")
 }
@@ -317,64 +317,66 @@ model SquadPlayer {
 // ─── Seeding Module ─────────────────────────────────────────────────────────
 
 model SeedingConfig {
-  id                      Int       @id @default(autoincrement())
-  guildId                 BigInt    @unique @map("guild_id")
-  enabled                 Boolean   @default(false)
-  squadjsHost             String    @default("") @map("squadjs_host") @db.VarChar(255)
-  squadjsPort             Int       @default(3000) @map("squadjs_port")
-  squadjsToken            String    @default("") @map("squadjs_token") @db.VarChar(500)
-  seedingStartPlayerCount Int       @default(2) @map("seeding_start_player_count")
-  seedingPlayerThreshold  Int       @default(50) @map("seeding_player_threshold")
-  pointsRequired          Int       @default(120) @map("points_required")
-  rewardWhitelistId       Int?      @map("reward_whitelist_id")
-  rewardGroupName         String    @default("SeedReserve") @map("reward_group_name") @db.VarChar(100)
-  rewardDurationHours     Int       @default(168) @map("reward_duration_hours")
-  trackingMode            String    @default("fixed_reset") @map("tracking_mode") @db.VarChar(20)
-  resetCron               String    @default("0 0 * * *") @map("reset_cron") @db.VarChar(50)
-  pollIntervalSeconds     Int       @default(60) @map("poll_interval_seconds")
-  seedingWindowEnabled    Boolean   @default(false) @map("seeding_window_enabled")
-  seedingWindowStart      String    @default("07:00") @map("seeding_window_start") @db.VarChar(5)
-  seedingWindowEnd        String    @default("22:00") @map("seeding_window_end") @db.VarChar(5)
-  lastPollAt              DateTime? @map("last_poll_at")
-  lastPollStatus          String?   @map("last_poll_status") @db.VarChar(20)
-  lastPollMessage         String?   @map("last_poll_message")
-  rewardTiers             Json?     @map("reward_tiers")
-  rconWarningsEnabled     Boolean   @default(false) @map("rcon_warnings_enabled")
-  rconWarningMessage      String    @default("Seeding Progress: {progress}% ({points}/{required}). Keep seeding!") @map("rcon_warning_message")
-  decayDaysThreshold      Int       @default(3) @map("decay_days_threshold")
-  decayPointsPerDay       Int       @default(10) @map("decay_points_per_day")
-  discordRoleRewardEnabled  Boolean  @default(false) @map("discord_role_reward_enabled")
-  discordRoleRewardId       String?  @map("discord_role_reward_id") @db.VarChar(32)
-  discordRemoveRoleOnExpiry Boolean  @default(false) @map("discord_remove_role_on_expiry")
-  autoSeedAlertEnabled      Boolean  @default(false) @map("auto_seed_alert_enabled")
-  autoSeedAlertRoleId       String?  @map("auto_seed_alert_role_id") @db.VarChar(32)
-  autoSeedAlertCooldownMin  Int      @default(30) @map("auto_seed_alert_cooldown_min")
-  discordNotifyChannelId    String?  @map("discord_notify_channel_id") @db.VarChar(32)
+  id                        Int       @id @default(autoincrement())
+  guildId                   BigInt    @unique @map("guild_id")
+  enabled                   Boolean   @default(false)
+  squadjsHost               String    @default("") @map("squadjs_host") @db.VarChar(255)
+  squadjsPort               Int       @default(3000) @map("squadjs_port")
+  squadjsToken              String    @default("") @map("squadjs_token") @db.VarChar(500)
+  seedingStartPlayerCount   Int       @default(2) @map("seeding_start_player_count")
+  seedingPlayerThreshold    Int       @default(50) @map("seeding_player_threshold")
+  pointsRequired            Int       @default(120) @map("points_required")
+  rewardWhitelistId         Int?      @map("reward_whitelist_id")
+  rewardGroupName           String    @default("SeedReserve") @map("reward_group_name") @db.VarChar(100)
+  rewardDurationHours       Int       @default(168) @map("reward_duration_hours")
+  trackingMode              String    @default("fixed_reset") @map("tracking_mode") @db.VarChar(20)
+  resetCron                 String    @default("0 0 * * *") @map("reset_cron") @db.VarChar(50)
+  pollIntervalSeconds       Int       @default(60) @map("poll_interval_seconds")
+  seedingWindowEnabled      Boolean   @default(false) @map("seeding_window_enabled")
+  seedingWindowStart        String    @default("07:00") @map("seeding_window_start") @db.VarChar(5)
+  seedingWindowEnd          String    @default("22:00") @map("seeding_window_end") @db.VarChar(5)
+  lastPollAt                DateTime? @map("last_poll_at")
+  lastPollStatus            String?   @map("last_poll_status") @db.VarChar(20)
+  lastPollMessage           String?   @map("last_poll_message")
+  rewardTiers               Json?     @map("reward_tiers")
+  rconWarningsEnabled       Boolean   @default(false) @map("rcon_warnings_enabled")
+  rconWarningMessage        String    @default("Seeding Progress: {progress}% ({points}/{required}). Keep seeding!") @map("rcon_warning_message")
+  decayDaysThreshold        Int       @default(3) @map("decay_days_threshold")
+  decayPointsPerDay         Int       @default(10) @map("decay_points_per_day")
+  discordRoleRewardEnabled  Boolean   @default(false) @map("discord_role_reward_enabled")
+  discordRoleRewardId       String?   @map("discord_role_reward_id") @db.VarChar(32)
+  discordRemoveRoleOnExpiry Boolean   @default(false) @map("discord_remove_role_on_expiry")
+  autoSeedAlertEnabled      Boolean   @default(false) @map("auto_seed_alert_enabled")
+  autoSeedAlertRoleId       String?   @map("auto_seed_alert_role_id") @db.VarChar(32)
+  autoSeedAlertCooldownMin  Int       @default(30) @map("auto_seed_alert_cooldown_min")
+  discordNotifyChannelId    String?   @map("discord_notify_channel_id") @db.VarChar(32)
   // In-game broadcasts
-  rconBroadcastEnabled      Boolean  @default(false) @map("rcon_broadcast_enabled")
-  rconBroadcastMessage      String   @default("This server is in seeding mode! Earn whitelist rewards by staying online.") @map("rcon_broadcast_message")
-  rconBroadcastIntervalMin  Int      @default(10) @map("rcon_broadcast_interval_min")
+  rconBroadcastEnabled      Boolean   @default(false) @map("rcon_broadcast_enabled")
+  rconBroadcastMessage      String    @default("This server is in seeding mode! Earn whitelist rewards by staying online.") @map("rcon_broadcast_message")
+  rconBroadcastIntervalMin  Int       @default(10) @map("rcon_broadcast_interval_min")
   // Cooldown
-  rewardCooldownHours       Int      @default(0) @map("reward_cooldown_hours")
+  rewardCooldownHours       Int       @default(0) @map("reward_cooldown_hours")
+  // Discord link requirement
+  requireDiscordLink        Boolean   @default(false) @map("require_discord_link")
   // Streak bonuses
-  streakEnabled             Boolean  @default(false) @map("streak_enabled")
-  streakDaysRequired        Int      @default(3) @map("streak_days_required")
-  streakMultiplier          Float    @default(1.5) @map("streak_multiplier")
+  streakEnabled             Boolean   @default(false) @map("streak_enabled")
+  streakDaysRequired        Int       @default(3) @map("streak_days_required")
+  streakMultiplier          Float     @default(1.5) @map("streak_multiplier")
   // Bonus multiplier events
-  bonusMultiplierEnabled    Boolean  @default(false) @map("bonus_multiplier_enabled")
-  bonusMultiplierValue      Float    @default(2.0) @map("bonus_multiplier_value")
+  bonusMultiplierEnabled    Boolean   @default(false) @map("bonus_multiplier_enabled")
+  bonusMultiplierValue      Float     @default(2.0) @map("bonus_multiplier_value")
   bonusMultiplierStart      DateTime? @map("bonus_multiplier_start")
   bonusMultiplierEnd        DateTime? @map("bonus_multiplier_end")
   // Custom Discord embeds
-  customEmbedTitle          String?  @map("custom_embed_title") @db.VarChar(255)
-  customEmbedDescription    String?  @map("custom_embed_description")
-  customEmbedImageUrl       String?  @map("custom_embed_image_url") @db.VarChar(500)
-  customEmbedColor          String?  @map("custom_embed_color") @db.VarChar(7)
+  customEmbedTitle          String?   @map("custom_embed_title") @db.VarChar(255)
+  customEmbedDescription    String?   @map("custom_embed_description")
+  customEmbedImageUrl       String?   @map("custom_embed_image_url") @db.VarChar(500)
+  customEmbedColor          String?   @map("custom_embed_color") @db.VarChar(7)
   // Population snapshots toggle
-  populationTrackingEnabled Boolean  @default(false) @map("population_tracking_enabled")
-  leaderboardPublic       Boolean   @default(false) @map("leaderboard_public")
-  createdAt               DateTime  @default(now()) @map("created_at")
-  updatedAt               DateTime  @updatedAt @map("updated_at")
+  populationTrackingEnabled Boolean   @default(false) @map("population_tracking_enabled")
+  leaderboardPublic         Boolean   @default(false) @map("leaderboard_public")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
   @@map("seeding_configs")
 }
@@ -403,17 +405,17 @@ model PopulationSnapshot {
 }
 
 model SeedingPoints {
-  id          Int       @id @default(autoincrement())
-  guildId     BigInt    @map("guild_id")
-  steamId     String    @map("steam_id") @db.VarChar(32)
-  playerName  String?   @map("player_name") @db.VarChar(255)
-  points      Int       @default(0)
-  lastAwardAt DateTime? @map("last_award_at")
-  lastResetAt DateTime? @map("last_reset_at")
-  rewarded    Boolean   @default(false)
-  rewardedAt  DateTime? @map("rewarded_at")
-  currentStreak Int     @default(0) @map("current_streak")
-  lastSeedDate  String? @map("last_seed_date") @db.VarChar(10)
+  id            Int       @id @default(autoincrement())
+  guildId       BigInt    @map("guild_id")
+  steamId       String    @map("steam_id") @db.VarChar(32)
+  playerName    String?   @map("player_name") @db.VarChar(255)
+  points        Int       @default(0)
+  lastAwardAt   DateTime? @map("last_award_at")
+  lastResetAt   DateTime? @map("last_reset_at")
+  rewarded      Boolean   @default(false)
+  rewardedAt    DateTime? @map("rewarded_at")
+  currentStreak Int       @default(0) @map("current_streak")
+  lastSeedDate  String?   @map("last_seed_date") @db.VarChar(10)
 
   @@unique([guildId, steamId])
   @@index([guildId, points(sort: Desc)])
