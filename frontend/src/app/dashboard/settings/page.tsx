@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
   Shield, User, Globe, Crown, Lock, ChevronRight, Clock,
-  Plus, Users, Tag, Send, Link2, BarChart3, FileText,
+  Plus, Users, Tag, Send, Link2, BarChart3, FileText, Sprout,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
 import { DataContent } from "@/app/dashboard/data/page";
@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/ui/combobox";
 
 /* ─── Types ─── */
-type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "data" | "audit";
+type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "seeding" | "data" | "audit";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "general",       label: "General",       icon: Settings2 },
@@ -66,6 +66,7 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "appearance",    label: "Appearance",     icon: Palette },
   { id: "permissions",   label: "Permissions",    icon: Shield },
   { id: "connections",   label: "Connections",    icon: Link2 },
+  { id: "seeding",       label: "Seeding",        icon: Sprout },
   { id: "data",          label: "Data",          icon: BarChart3 },
   { id: "audit",         label: "Audit Log",     icon: FileText },
   { id: "account",       label: "Account",        icon: User },
@@ -1239,6 +1240,24 @@ export default function SettingsPage() {
       {activeTab === "connections" && (
         <div className="max-w-2xl">
           <BridgeSettings />
+        </div>
+      )}
+
+      {activeTab === "seeding" && (
+        <div className="max-w-2xl space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Configure seeding rewards, connections, Discord integration, and more.
+          </p>
+          <a
+            href="/dashboard/seeding/settings"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-black"
+            style={{ background: "var(--accent-primary)" }}
+          >
+            <Sprout className="h-4 w-4" /> Open Seed Settings
+          </a>
+          <p className="text-xs text-muted-foreground/60">
+            Seeding settings are managed on a dedicated page for the full configuration experience.
+          </p>
         </div>
       )}
 

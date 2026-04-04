@@ -55,7 +55,6 @@ const configLinks = [
 const seedingLinks = [
   { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
-  { href: "/dashboard/seeding/settings", label: "Seed Settings", icon: Settings2 },
 ];
 
 const bottomLinks = [
