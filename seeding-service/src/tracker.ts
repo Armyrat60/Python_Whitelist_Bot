@@ -279,14 +279,18 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
     } catch {
       today = new Date().toISOString().slice(0, 10)
     }
-    for (const p of playerInputs) {
-      const streak = await db.updateStreak(guildId, p.steamId, today)
-      if (streak >= cfg.streak_days_required && cfg.streak_multiplier > 1) {
-        // Award at least 1 bonus point for streak (ceil ensures 1.5x gives 1 extra)
-        const bonusPoints = Math.max(1, Math.ceil(cfg.streak_multiplier - 1))
-        for (let i = 0; i < bonusPoints; i++) {
-          await db.awardPoints(guildId, [p], pointServerId)
-        }
+    // Batch streak updates with Promise.all to avoid N+1
+    const streakResults = await Promise.all(
+      playerInputs.map((p) => db.updateStreak(guildId, p.steamId, today))
+    )
+    // Award bonus points for players who hit the streak threshold
+    const bonusPlayers = playerInputs.filter((_, idx) =>
+      streakResults[idx] >= cfg.streak_days_required && cfg.streak_multiplier > 1
+    )
+    if (bonusPlayers.length > 0) {
+      const bonusPoints = Math.max(1, Math.ceil(cfg.streak_multiplier - 1))
+      for (let i = 0; i < bonusPoints; i++) {
+        await db.awardPoints(guildId, bonusPlayers, pointServerId)
       }
     }
   }
@@ -337,8 +341,6 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
 
   // Apply cooldown filter — skip players rewarded too recently
   if (cfg.reward_cooldown_hours > 0 && qualifiers.length > 0) {
-    const cooldownMs = cfg.reward_cooldown_hours * 60 * 60 * 1000
-    const now = Date.now()
     // Check rewarded_at for recently rewarded players (via a batch query)
     const recentlyRewarded = await pool.query<{ steam_id: string }>(
       `SELECT steam_id FROM seeding_points
