@@ -276,11 +276,12 @@ export default async function auditRoutes(app: FastifyInstance) {
       alerts.push({
         level:   "warning",
         message: `${duplicateSteamRows.length} Steam ID(s) are registered to multiple users — check for duplicate accounts`,
+        link:    "/dashboard/conflicts",
       })
     }
 
     if (orphanCount > 0) {
-      alerts.push({ level: "info", message: `${orphanCount} imported user(s) could not be matched to a Discord account` })
+      alerts.push({ level: "info", message: `${orphanCount} imported user(s) could not be matched to a Discord account`, link: "/dashboard/manual-roster" })
     }
 
     if (bridgeConfig?.enabled && bridgeConfig.lastSyncStatus === "error") {
@@ -353,6 +354,31 @@ export default async function auditRoutes(app: FastifyInstance) {
     }))
 
     return reply.send(toJSON({ duplicates }))
+  })
+
+  // ── DELETE /api/admin/health/identifier ─────────────────────────────────────
+  // Remove a specific Steam ID from a specific user (for conflict resolution)
+
+  app.delete("/health/identifier", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const body = req.body as Record<string, unknown>
+    const steamId = String(body?.steam_id ?? "").trim()
+    const discordId = BigInt(String(body?.discord_id ?? "0"))
+
+    if (!steamId || discordId === 0n) {
+      return reply.code(400).send({ error: "steam_id and discord_id are required." })
+    }
+
+    const deleted = await prisma.whitelistIdentifier.deleteMany({
+      where: { guildId, discordId, idValue: steamId, idType: { in: ["steam64", "steamid"] } },
+    })
+
+    if (deleted.count === 0) {
+      return reply.code(404).send({ error: "Identifier not found." })
+    }
+
+    await triggerSync(app, guildId)
+    return reply.send({ ok: true, removed: deleted.count })
   })
 
   // ── POST /api/admin/resync ───────────────────────────────────────────────────

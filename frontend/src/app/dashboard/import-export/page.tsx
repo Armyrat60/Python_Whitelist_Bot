@@ -129,14 +129,12 @@ interface ImportResult {
 }
 
 function ImportTab() {
-  const { data: whitelists } = useWhitelists();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [pasteContent, setPasteContent] = useState("");
   const [importUrl, setImportUrl] = useState("");
-  const [targetWhitelist, setTargetWhitelist] = useState("");
   const [format, setFormat] = useState("auto");
   const [duplicateMode, setDuplicateMode] = useState("merge");
   const [preview, setPreview] = useState<PreviewUser[]>([]);
@@ -144,12 +142,9 @@ function ImportTab() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-
-  useEffect(() => {
-    if (!whitelists?.length || targetWhitelist) return;
-    const def = whitelists.find((w: { slug: string }) => w.slug === "default") ?? whitelists[0];
-    if (def) setTargetWhitelist(def.slug);
-  }, [whitelists]);
+  const [undoing, setUndoing] = useState(false);
+  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
+  const [defaultCategory, setDefaultCategory] = useState("");
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -188,7 +183,6 @@ function ImportTab() {
 
   async function handlePreview() {
     if (!file && !pasteContent.trim() && !importUrl.trim()) { toast.error("Upload a file, paste content, or enter a URL"); return; }
-    if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setPreviewing(true);
     try {
@@ -197,7 +191,7 @@ function ImportTab() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, url: importUrl.trim() || undefined }),
+        body: JSON.stringify({ content, format, url: importUrl.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Preview failed");
@@ -214,16 +208,21 @@ function ImportTab() {
 
   async function handleImport() {
     if (!file && !pasteContent.trim() && !importUrl.trim()) { toast.error("Upload a file, paste content, or enter a URL"); return; }
-    if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setImporting(true);
     try {
       const content = await readContent();
+      const effectiveCatMap = Object.keys(categoryMap).length > 0 ? categoryMap : undefined;
       const res = await fetch("/api/admin/import", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, duplicate_mode: duplicateMode, url: importUrl.trim() || undefined }),
+        body: JSON.stringify({
+          content, format, duplicate_mode: duplicateMode,
+          url: importUrl.trim() || undefined,
+          category_map: effectiveCatMap,
+          default_category: defaultCategory || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
@@ -259,26 +258,39 @@ function ImportTab() {
 
   function handleReset() {
     setPreview([]); setSummary(null); setImportResult(null); setFile(null); setPasteContent(""); setImportUrl("");
+    setCategoryMap({}); setDefaultCategory("");
+  }
+
+  async function handleUndo() {
+    setUndoing(true);
+    try {
+      const res = await fetch("/api/admin/import/undo", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Undo failed");
+      toast.success(`Undo complete — removed ${data.removed} imported entries`);
+      handleReset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Undo failed");
+    } finally {
+      setUndoing(false);
+    }
   }
 
   const hasData = !!(file || pasteContent.trim() || importUrl.trim());
 
   return (
     <div className="space-y-4 pt-4">
+      {/* ── Info banner ── */}
+      <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-2.5 text-xs text-sky-200/80">
+        Imports go to the <strong>Imported</strong> manual roster. Manage entries in <a href="/dashboard/manual-roster" className="underline hover:text-sky-300">Manual Roster</a>.
+      </div>
+
       {/* ── Controls row at top ── */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label>Target Whitelist</Label>
-          <Select value={targetWhitelist} onValueChange={(v) => setTargetWhitelist(v ?? "")}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="Select whitelist" /></SelectTrigger>
-            <SelectContent>
-              {whitelists?.map((wl) => (
-                <SelectItem key={wl.slug} value={wl.slug}>{wl.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="space-y-1.5">
           <Label>Format</Label>
           <Select value={format} onValueChange={(v) => setFormat(v ?? "auto")}>
@@ -311,6 +323,9 @@ function ImportTab() {
             {importing
               ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Importing…</>
               : <><Upload className="mr-1.5 h-3.5 w-3.5" />Import</>}
+          </Button>
+          <Button variant="outline" className="text-red-400 hover:text-red-300" onClick={handleUndo} disabled={undoing}>
+            {undoing ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Undoing…</> : "Undo Last Import"}
           </Button>
         </div>
       </div>
@@ -430,6 +445,57 @@ function ImportTab() {
           })()}
         </div>
       )}
+
+      {/* ── Category Mapping (shown after preview, before import) ── */}
+      {preview.length > 0 && !importResult && (() => {
+        const detectedCats = [...new Set(preview.map((u) => u.category).filter(Boolean))] as string[];
+        const hasUncategorized = preview.some((u) => !u.category);
+        if (detectedCats.length === 0 && !hasUncategorized) return null;
+        return (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Category / Group Mapping</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {detectedCats.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Rename or reassign detected groups before importing:</p>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {detectedCats.map((cat) => (
+                      <div key={cat} className="flex items-center gap-2">
+                        <span className="shrink-0 rounded bg-sky-500/10 px-2 py-1 text-xs text-sky-400 font-mono">{cat}</span>
+                        <span className="text-xs text-muted-foreground">→</span>
+                        <Input
+                          className="h-7 text-xs flex-1"
+                          placeholder={cat}
+                          value={categoryMap[cat] ?? ""}
+                          onChange={(e) => setCategoryMap((prev) => {
+                            const next = { ...prev };
+                            if (e.target.value) next[cat] = e.target.value;
+                            else delete next[cat];
+                            return next;
+                          })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hasUncategorized && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs shrink-0">Default group for uncategorized entries:</Label>
+                  <Input
+                    className="h-7 w-48 text-xs"
+                    placeholder="(no group)"
+                    value={defaultCategory}
+                    onChange={(e) => setDefaultCategory(e.target.value)}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* ── Preview / Results table ── */}
       {preview.length > 0 && (

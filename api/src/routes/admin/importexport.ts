@@ -207,6 +207,28 @@ async function triggerSync(app: FastifyInstance, guildId: bigint): Promise<void>
   }
 }
 
+/** Find or create the dedicated "Imported" manual whitelist. */
+async function getOrCreateImportedWhitelist(prisma: FastifyInstance["prisma"], guildId: bigint) {
+  const existing = await prisma.whitelist.findUnique({
+    where: { guildId_slug: { guildId, slug: "imported" } },
+  })
+  if (existing) return existing
+  const now = new Date()
+  return prisma.whitelist.create({
+    data: {
+      guildId,
+      slug: "imported",
+      name: "Imported",
+      isManual: true,
+      enabled: true,
+      defaultSlotLimit: 1,
+      squadGroup: "reserve",
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+}
+
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export default async function importExportRoutes(app: FastifyInstance) {
@@ -244,7 +266,6 @@ export default async function importExportRoutes(app: FastifyInstance) {
     }
 
     let fmt = String(body?.format ?? "csv")
-    const wlType = String(body?.whitelist_type ?? body?.type ?? body?.whitelist_slug ?? "")
     const columnMap = body?.column_map ? (typeof body.column_map === "string" ? JSON.parse(body.column_map) : body.column_map) as Record<string, string> : null
     const planMap = body?.plan_map && typeof body.plan_map === "object"
       ? Object.fromEntries(Object.entries(body.plan_map as Record<string, unknown>).map(([k, v]) => [k, Number(v)]))
@@ -256,8 +277,8 @@ export default async function importExportRoutes(app: FastifyInstance) {
     if (!data.trim()) return reply.code(400).send({ error: "No data provided." })
     if (fmt === "discord_members") return reply.code(400).send({ error: "Use the Reconcile tab to match a Discord member list." })
 
-    const wl = await app.prisma.whitelist.findUnique({ where: { guildId_slug: { guildId, slug: wlType } } })
-    if (!wl) return reply.code(400).send({ error: "Invalid whitelist_type." })
+    // Always use the dedicated "Imported" manual whitelist
+    const wl = await getOrCreateImportedWhitelist(app.prisma, guildId)
 
     const existingUsers = await app.prisma.whitelistUser.findMany({ where: { guildId, whitelistId: wl.id } })
     const existingIds = new Set(existingUsers.map((u) => u.discordId))
@@ -325,12 +346,15 @@ export default async function importExportRoutes(app: FastifyInstance) {
     }
 
     let fmt = String(body?.format ?? "csv")
-    const wlType = String(body?.whitelist_type ?? body?.type ?? body?.whitelist_slug ?? "")
     let dupHandling = String(body?.duplicate_handling ?? body?.duplicate_mode ?? "skip")
     const columnMap = body?.column_map ? (typeof body.column_map === "string" ? JSON.parse(body.column_map) : body.column_map) as Record<string, string> : null
     const planMap = body?.plan_map && typeof body.plan_map === "object"
       ? Object.fromEntries(Object.entries(body.plan_map as Record<string, unknown>).map(([k, v]) => [k, Number(v)]))
       : null
+    const categoryMap = body?.category_map && typeof body.category_map === "object"
+      ? body.category_map as Record<string, string>
+      : null
+    const defaultCategory = String(body?.default_category ?? "").trim()
 
     if (fmt === "cfg") fmt = "squad_cfg"
     else if (fmt === "auto") fmt = detectFormat(data)
@@ -339,8 +363,8 @@ export default async function importExportRoutes(app: FastifyInstance) {
     if (!data.trim()) return reply.code(400).send({ error: "No data provided." })
     if (fmt === "discord_members") return reply.code(400).send({ error: "Use the Reconcile tab to match a Discord member list." })
 
-    const wl = await app.prisma.whitelist.findUnique({ where: { guildId_slug: { guildId, slug: wlType } } })
-    if (!wl) return reply.code(400).send({ error: "Invalid whitelist_type." })
+    // Always use the dedicated "Imported" manual whitelist
+    const wl = await getOrCreateImportedWhitelist(app.prisma, guildId)
 
     const existingUsers = await app.prisma.whitelistUser.findMany({ where: { guildId, whitelistId: wl.id } })
     const existingIds = new Set(existingUsers.map((u) => u.discordId))
@@ -362,16 +386,23 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const NAME_THRESHOLD = 0.80
     const now = new Date()
 
+    // ── Apply category mapping + default category ──
+    if (categoryMap) {
+      for (const u of users) {
+        if (u.category && categoryMap[u.category]) u.category = categoryMap[u.category]
+      }
+    }
+    if (defaultCategory) {
+      for (const u of users) {
+        if (!u.category) u.category = defaultCategory
+      }
+    }
+
     // ── Category handling: auto-create categories if any row has one ──
     const hasCategories = users.some((u) => u.category)
     const categoryIdMap = new Map<string, number>() // category name → id
 
     if (hasCategories) {
-      // Ensure whitelist is manual so categories show on the Manual Roster page
-      if (!wl.isManual) {
-        await app.prisma.whitelist.update({ where: { id: wl.id }, data: { isManual: true } })
-      }
-
       // Fetch existing categories
       const existingCats = await app.prisma.whitelistCategory.findMany({
         where: { whitelistId: wl.id },
@@ -465,7 +496,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
     await app.prisma.auditLog.create({
       data: {
         guildId, actionType: "admin_import", actorDiscordId: actorId,
-        details: `Imported ${fmt} into ${wlType}: added=${added}, updated=${updated}, skipped=${skipped}, errors=${errors}`,
+        details: `Imported ${fmt} into Imported roster: added=${added}, updated=${updated}, skipped=${skipped}, errors=${errors}`,
         whitelistId: wl.id, createdAt: now,
       },
     })
@@ -473,6 +504,72 @@ export default async function importExportRoutes(app: FastifyInstance) {
     await triggerSync(app, guildId)
 
     return reply.send({ ok: true, imported: added + updated, added, updated, skipped, errors })
+  })
+
+  // POST /import/undo — undo the most recent import for this guild
+  app.post("/import/undo", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const actorId = BigInt(req.session.userId!)
+
+    // Find the most recent import audit entry
+    const lastImport = await app.prisma.auditLog.findFirst({
+      where: { guildId, actionType: "admin_import" },
+      orderBy: { createdAt: "desc" },
+    })
+    if (!lastImport) return reply.code(404).send({ error: "No recent import found to undo." })
+
+    const importTime = lastImport.createdAt
+    const wlId = lastImport.whitelistId
+
+    // Find all users created by this import (within a 2-second window around the import timestamp)
+    const windowStart = new Date(importTime.getTime() - 1000)
+    const windowEnd = new Date(importTime.getTime() + 1000)
+
+    const importedUsers = await app.prisma.whitelistUser.findMany({
+      where: {
+        guildId,
+        ...(wlId ? { whitelistId: wlId } : {}),
+        createdVia: "import",
+        createdAt: { gte: windowStart, lte: windowEnd },
+      },
+      select: { discordId: true, whitelistId: true },
+    })
+
+    if (importedUsers.length === 0) {
+      return reply.code(404).send({ error: "No imported users found matching the last import." })
+    }
+
+    const discordIds = importedUsers.map((u) => u.discordId)
+    const whitelistIds = [...new Set(importedUsers.map((u) => u.whitelistId))]
+
+    // Delete identifiers and users
+    await app.prisma.whitelistIdentifier.deleteMany({
+      where: { guildId, discordId: { in: discordIds }, whitelistId: { in: whitelistIds } },
+    })
+    await app.prisma.whitelistUser.deleteMany({
+      where: {
+        guildId,
+        createdVia: "import",
+        createdAt: { gte: windowStart, lte: windowEnd },
+        ...(wlId ? { whitelistId: wlId } : {}),
+      },
+    })
+
+    // Log the undo
+    await app.prisma.auditLog.create({
+      data: {
+        guildId,
+        actionType: "admin_import_undo",
+        actorDiscordId: actorId,
+        details: `Undid import of ${importedUsers.length} users (original import at ${importTime.toISOString()})`,
+        whitelistId: wlId,
+        createdAt: new Date(),
+      },
+    })
+
+    await triggerSync(app, guildId)
+
+    return reply.send({ ok: true, removed: importedUsers.length })
   })
 
   // GET /export

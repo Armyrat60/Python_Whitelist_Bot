@@ -1,15 +1,20 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { LogOut, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import { LogOut, Menu, X, Search, UserRound } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { useSession } from "@/hooks/use-session";
 import { useGuild } from "@/hooks/use-guild";
+import { usePlayerSearch } from "@/hooks/use-settings";
+import type { PlayerSearchResult } from "@/hooks/use-settings";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { APP_VERSION } from "@/lib/version";
 import { NotificationBell } from "@/components/layout/system-alerts";
+import { cn } from "@/lib/utils";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -19,15 +24,98 @@ const pageTitles: Record<string, string> = {
   "/dashboard/tiers": "Tiers",
   "/dashboard/settings": "Settings",
   "/dashboard/users": "WL Roster",
-  "/dashboard/roster": "WL Roster",
+  "/dashboard/roster": "Discord Roster",
+  "/dashboard/manual-roster": "Manual Roster",
   "/dashboard/audit": "Audit Log",
   "/dashboard/notifications": "Notifications",
   "/dashboard/import-export": "Import / Export",
+  "/dashboard/conflicts": "Steam ID Conflicts",
+  "/dashboard/search": "Player Search",
   "/my-whitelist": "My Whitelist",
 };
 
 function avatarUrl(userId: string, avatar: string) {
   return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=64`;
+}
+
+function GlobalSearch() {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = usePlayerSearch(query);
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  const players = data?.players ?? [];
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative hidden md:block">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <Input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => { if (query.trim().length >= 2) setOpen(true); }}
+          placeholder="Search players..."
+          className="h-8 w-56 pl-8 text-xs bg-white/[0.04] border-white/[0.08] focus:w-72 transition-all"
+        />
+      </div>
+      {open && query.trim().length >= 2 && (
+        <div
+          className="absolute left-0 top-full z-50 mt-1.5 w-80 max-h-80 overflow-y-auto rounded-xl border border-white/[0.08] shadow-xl"
+          style={{ background: "oklch(0.18 0 0)" }}
+        >
+          {isLoading ? (
+            <div className="px-4 py-6 text-center text-xs text-muted-foreground">Searching...</div>
+          ) : players.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-muted-foreground">No players found</div>
+          ) : (
+            <div className="divide-y divide-white/[0.04]">
+              {players.slice(0, 8).map((p) => (
+                <Link
+                  key={p.discord_id}
+                  href={`/dashboard/players/${p.discord_id}`}
+                  onClick={() => { setOpen(false); setQuery(""); }}
+                  className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                >
+                  <div
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+                    style={{ background: "color-mix(in srgb, var(--accent-primary) 10%, transparent)" }}
+                  >
+                    <UserRound className="h-3.5 w-3.5" style={{ color: "var(--accent-primary)" }} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-white/90">{p.discord_name}</p>
+                    <p className="truncate text-[10px] font-mono text-muted-foreground">
+                      {p.steam_ids[0] || p.discord_id}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {p.memberships.filter((m) => m.status === "active").length} active
+                  </span>
+                </Link>
+              ))}
+              {players.length > 8 && (
+                <button
+                  onClick={() => { router.push(`/dashboard/search?q=${encodeURIComponent(query)}`); setOpen(false); setQuery(""); }}
+                  className="w-full px-3 py-2 text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  View all {players.length} results
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Topbar() {
@@ -69,6 +157,7 @@ export function Topbar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <GlobalSearch />
         <NotificationBell />
         <span className="hidden rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
           v{APP_VERSION}

@@ -13,10 +13,10 @@ import {
   ChevronsUpDown,
   Check,
   BookUser,
-  Search,
   Layers,
   Sprout,
   Trophy,
+  ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -43,7 +43,6 @@ const dashboardLinks = [
 const rosterLinks = [
   { href: "/dashboard/roster", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
-  { href: "/dashboard/search", label: "Player Search", icon: Search },
 ];
 
 const configLinks = [
@@ -58,6 +57,7 @@ const seedingLinks = [
 ];
 
 const bottomLinks = [
+  { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
   { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -212,7 +212,7 @@ export function Sidebar() {
           <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
 
-        <SectionLabel>Rosters</SectionLabel>
+        <SectionLabel>Whitelist</SectionLabel>
         {rosterLinks.map((link) => (
           <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
