@@ -291,6 +291,31 @@ class NotificationsCog(commands.Cog):
             except Exception as e:
                 log.error("Failed to assign seeding role for steam %s in guild %s: %s", steam_id, guild_id, e)
 
+        elif event_type == "steam_account_linked":
+            discord_id = payload.get("discord_id")
+            steam_id = payload.get("steam_id")
+            if not discord_id:
+                return
+            try:
+                user = await self.bot.fetch_user(int(discord_id))
+                if user:
+                    embed = discord.Embed(
+                        title="Steam Account Linked",
+                        description=(
+                            f"Your Steam account (`{steam_id}`) has been automatically "
+                            f"linked to your Discord account via your Discord connections.\n\n"
+                            f"This enables seeding rewards and whitelist features. "
+                            f"If this wasn't you, please contact a server administrator."
+                        ),
+                        color=0x10b981,
+                    )
+                    embed.set_footer(text=guild.name if guild else "Squad Whitelister")
+                    await user.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                pass  # User has DMs disabled
+            except Exception as e:
+                log.debug("Failed to DM steam link notification to %s: %s", discord_id, e)
+
     @seeding_notification_check.before_loop
     async def _before_seeding_notif(self):
         await self.bot.wait_until_ready()

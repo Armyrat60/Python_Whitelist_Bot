@@ -197,6 +197,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // ── Auto-link Steam from Discord connections ──────────────────────────────
+    // Only if auto_link_steam is enabled for at least one guild (default: true)
 
     try {
       const connRes = await fetch(`${DISCORD_API}/users/@me/connections`, {
@@ -210,6 +211,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           const discordId = BigInt(discordUser.id)
           for (const guild of mutualGuilds) {
             const guildId = BigInt(guild.id)
+            // Check if auto-linking is enabled for this guild (default: true)
+            const autoLinkSetting = await app.prisma.botSetting.findUnique({
+              where: { guildId_settingKey: { guildId, settingKey: "auto_link_steam" } },
+            })
+            if (autoLinkSetting?.settingValue === "false") continue
             // Upsert the Steam link — don't overwrite existing verified links
             await app.prisma.$executeRaw`
               INSERT INTO whitelist_identifiers (guild_id, discord_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
@@ -223,6 +229,15 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
               data: { discordId },
             })
           }
+          // Queue a DM notification to the user
+          await app.prisma.$executeRaw`
+            INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
+            VALUES (${BigInt(mutualGuilds[0].id)}, 'steam_account_linked', ${JSON.stringify({
+              discord_id: discordUser.id,
+              steam_id: steamConn.id,
+              username: discordUser.username,
+            })}::jsonb, NOW())
+          `.catch(() => {}) // non-fatal
           app.log.info(`Auto-linked Steam ${steamConn.id} for Discord user ${discordUser.id}`)
         }
       }
