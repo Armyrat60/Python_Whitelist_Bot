@@ -557,15 +557,29 @@ export default async function seedingRoutes(app: FastifyInstance) {
       take: limit,
     })
 
+    // Parse tiers for tier chip labels
+    const tiers = (config?.rewardTiers as Array<{ points: number; duration_hours: number; label: string }>) ?? null
+    const sortedTiers = tiers?.length ? [...tiers].sort((a, b) => b.points - a.points) : null
+
+    function getTierLabel(points: number): string | null {
+      if (!sortedTiers) return null
+      const tier = sortedTiers.find((t) => points >= t.points)
+      return tier?.label ?? null
+    }
+
     return reply.send({
       points_required: pointsRequired,
+      reward_tiers: tiers,
       players: players.map((p) => ({
         steam_id:    p.steamId,
         player_name: p.playerName ?? `Seeder_${p.steamId.slice(-6)}`,
         points:      p.points,
+        seeding_hours: Math.round(p.points / 60 * 10) / 10,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
+        tier_label:  getTierLabel(p.points),
         rewarded:    p.rewarded,
         rewarded_at: p.rewardedAt?.toISOString() ?? null,
+        last_award_at: p.lastAwardAt?.toISOString() ?? null,
       })),
     })
   })

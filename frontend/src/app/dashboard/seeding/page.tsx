@@ -128,6 +128,7 @@ export default function SeedingDashboard() {
   const { data: stats, isLoading: statsLoading } = useSeedingStats();
 
   const config = configData?.config ?? null;
+  const servers = configData?.servers ?? [];
   const connStatus = getConnectionStatus(config);
   const isLoading = configLoading || statsLoading;
 
@@ -184,6 +185,7 @@ export default function SeedingDashboard() {
           <p className="text-xs text-muted-foreground">Live seeding status and activity</p>
         </div>
         <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-[10px]">{servers.length}/5 servers</Badge>
           <Badge variant={config.enabled ? "default" : "secondary"} className="text-[10px]">{config.enabled ? "Enabled" : "Disabled"}</Badge>
           <Link href="/dashboard/seeding/settings" className="text-xs text-muted-foreground hover:text-white/70 flex items-center gap-1">
             <Settings2 className="h-3.5 w-3.5" /> Settings

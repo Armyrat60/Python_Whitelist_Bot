@@ -277,7 +277,9 @@ export interface SeedingPlayer {
   steam_id: string;
   player_name: string | null;
   points: number;
+  seeding_hours?: number;
   progress_pct: number;
+  tier_label?: string | null;
   rewarded: boolean;
   rewarded_at: string | null;
   last_award_at?: string | null;

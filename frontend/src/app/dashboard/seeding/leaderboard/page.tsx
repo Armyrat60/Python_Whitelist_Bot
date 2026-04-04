@@ -273,33 +273,51 @@ export default function SeedingLeaderboardPage() {
           {filteredLeaderboard.map((player, idx) => (
             <div
               key={player.steam_id}
-              className="flex items-center gap-3 rounded-lg bg-white/[0.02] border border-white/[0.05] px-3 py-2"
+              className="flex items-center gap-3 rounded-lg bg-white/[0.02] border border-white/[0.05] px-3 py-2.5"
             >
-              <span className="text-xs font-bold text-white/40 w-6 text-right">
+              <span className={`text-xs font-bold w-6 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/30"}`}>
                 {idx + 1}
               </span>
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-medium text-white/80 truncate">
                     {player.player_name ?? player.steam_id}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/50 font-mono">
+                  <span className="text-[10px] text-muted-foreground/40 font-mono">
                     {player.steam_id}
                   </span>
+                  {player.tier_label && (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                      player.tier_label.toLowerCase().includes("gold") ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" :
+                      player.tier_label.toLowerCase().includes("silver") ? "bg-gray-400/20 text-gray-300 border border-gray-400/30" :
+                      player.tier_label.toLowerCase().includes("bronze") ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" :
+                      "bg-white/[0.08] text-white/60 border border-white/[0.12]"
+                    }`}>
+                      {player.tier_label}
+                    </span>
+                  )}
                   {player.rewarded && (
                     <Badge variant="default" className="text-[9px] px-1.5 py-0" style={{ background: "#10b981", color: "white" }}>
                       Rewarded
                     </Badge>
                   )}
                 </div>
+                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground/60">
+                  <span>{player.seeding_hours ?? (Math.round(player.points / 60 * 10) / 10)}h seeded</span>
+                  {player.last_award_at && (
+                    <span>Last active: {new Date(player.last_award_at).toLocaleDateString()}</span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <div className="w-24">
+                <div className="w-20">
                   <ProgressBar pct={player.progress_pct} />
                 </div>
-                <span className="text-xs font-semibold text-white/70 w-16 text-right">
-                  {player.points}<span className="text-muted-foreground/50">/{lbRequired}</span>
-                </span>
+                <div className="text-right w-16">
+                  <span className="text-xs font-semibold text-white/70">
+                    {player.points}<span className="text-muted-foreground/40">/{lbRequired}</span>
+                  </span>
+                </div>
               </div>
             </div>
           ))}
