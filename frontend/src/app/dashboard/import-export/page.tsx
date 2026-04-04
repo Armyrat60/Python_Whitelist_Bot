@@ -106,6 +106,7 @@ interface PreviewUser {
   steam_ids?: string[];
   eos_ids?: string[];
   plan?: string;
+  category?: string;
   status?: string;
   matched_name?: string;
   match_score?: number;
@@ -134,6 +135,7 @@ function ImportTab() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [pasteContent, setPasteContent] = useState("");
+  const [importUrl, setImportUrl] = useState("");
   const [targetWhitelist, setTargetWhitelist] = useState("");
   const [format, setFormat] = useState("auto");
   const [duplicateMode, setDuplicateMode] = useState("merge");
@@ -185,7 +187,7 @@ function ImportTab() {
   }
 
   async function handlePreview() {
-    if (!file && !pasteContent.trim()) { toast.error("Upload a file or paste content first"); return; }
+    if (!file && !pasteContent.trim() && !importUrl.trim()) { toast.error("Upload a file, paste content, or enter a URL"); return; }
     if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setPreviewing(true);
@@ -195,7 +197,7 @@ function ImportTab() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist }),
+        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, url: importUrl.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Preview failed");
@@ -211,7 +213,7 @@ function ImportTab() {
   }
 
   async function handleImport() {
-    if (!file && !pasteContent.trim()) { toast.error("Upload a file or paste content first"); return; }
+    if (!file && !pasteContent.trim() && !importUrl.trim()) { toast.error("Upload a file, paste content, or enter a URL"); return; }
     if (!targetWhitelist) { toast.error("Select a target whitelist"); return; }
     if (format === "discord_members") { toast.error("Discord member lists go in the Reconcile tab"); return; }
     setImporting(true);
@@ -221,7 +223,7 @@ function ImportTab() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, duplicate_mode: duplicateMode }),
+        body: JSON.stringify({ content, format, whitelist_slug: targetWhitelist, duplicate_mode: duplicateMode, url: importUrl.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
@@ -256,10 +258,10 @@ function ImportTab() {
   }
 
   function handleReset() {
-    setPreview([]); setSummary(null); setImportResult(null); setFile(null); setPasteContent("");
+    setPreview([]); setSummary(null); setImportResult(null); setFile(null); setPasteContent(""); setImportUrl("");
   }
 
-  const hasData = !!(file || pasteContent.trim());
+  const hasData = !!(file || pasteContent.trim() || importUrl.trim());
 
   return (
     <div className="space-y-4 pt-4">
@@ -313,8 +315,8 @@ function ImportTab() {
         </div>
       </div>
 
-      {/* ── Upload + Paste ── */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* ── Upload + Paste + URL ── */}
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Upload File</CardTitle></CardHeader>
           <CardContent>
@@ -355,10 +357,33 @@ function ImportTab() {
           <CardContent>
             <Textarea
               value={pasteContent}
-              onChange={(e) => { setPasteContent(e.target.value); if (e.target.value) setFile(null); }}
+              onChange={(e) => { setPasteContent(e.target.value); if (e.target.value) { setFile(null); setImportUrl(""); } }}
               placeholder={"Paste any format:\n\nAdmin=76561198212353664:reserve //Name\n76561198212353664\ndiscord_name,steam_id\nname,discord_id  ← use Reconcile tab"}
               className="min-h-[148px] font-mono text-xs"
             />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Or Import from URL</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <Input
+                value={importUrl}
+                onChange={(e) => { setImportUrl(e.target.value); if (e.target.value) { setFile(null); setPasteContent(""); } }}
+                placeholder="https://staff.example.com/wl"
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste a link to a whitelist file. Supports Squad CFG, CSV, or plain ID lists. The server will fetch and parse it.
+              </p>
+              {importUrl.trim() && (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                  <Link2 className="h-3 w-3" />
+                  URL ready — click Preview or Import
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -399,6 +424,10 @@ function ImportTab() {
           {summary.existing > 0 && <span className="rounded-md bg-amber-500/10 px-3 py-1 text-xs text-amber-400">{summary.existing} existing</span>}
           {summary.invalid > 0 && <span className="rounded-md bg-red-500/10 px-3 py-1 text-xs text-red-400">{summary.invalid} invalid</span>}
           <span className="rounded-md bg-white/5 px-3 py-1 text-xs">{summary.total_ids} IDs</span>
+          {(() => {
+            const cats = new Set(preview.map((u) => u.category).filter(Boolean));
+            return cats.size > 0 ? <span className="rounded-md bg-sky-500/10 px-3 py-1 text-xs text-sky-400">{cats.size} categories</span> : null;
+          })()}
         </div>
       )}
 
@@ -418,6 +447,7 @@ function ImportTab() {
                     <TableHead>Name (from file)</TableHead>
                     <TableHead>Linked Discord</TableHead>
                     <TableHead>Steam ID(s)</TableHead>
+                    {preview.some((u) => u.category) && <TableHead>Category</TableHead>}
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -440,6 +470,9 @@ function ImportTab() {
                           )}
                         </TableCell>
                         <TableCell className="font-mono text-xs">{user.steam_ids?.length ? user.steam_ids.join(", ") : "—"}</TableCell>
+                        {preview.some((u) => u.category) && (
+                          <TableCell className="text-xs">{user.category || "—"}</TableCell>
+                        )}
                         <TableCell className="text-xs">
                           <span className={cn(
                             "rounded px-1.5 py-0.5 text-[10px] font-medium",

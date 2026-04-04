@@ -28,6 +28,7 @@ function autoDetectColumnMap(headers: string[]): Record<string, string> {
     else if (["plan", "tier", "subscription", "rank"].includes(lh)) map[h] = "plan"
     else if (["slots", "slotlimit", "maxslots", "limit"].includes(lh)) map[h] = "slot_limit"
     else if (["notes", "note", "comment"].includes(lh)) map[h] = "notes"
+    else if (["category", "group", "roster"].includes(lh)) map[h] = "category"
   }
   return map
 }
@@ -72,6 +73,7 @@ interface ParsedRow {
   plan?: string
   slot_limit?: number
   notes?: string
+  category?: string
 }
 
 interface UserGroup {
@@ -82,6 +84,7 @@ interface UserGroup {
   plan: string
   slot_limit: number
   notes: string
+  category: string
   status: "new" | "existing"
   matched_name?: string
   match_score?: number
@@ -128,11 +131,12 @@ function parseSquadCfg(data: string, existingSteam: Set<string>): { rows: Parsed
   const rows: ParsedRow[] = []
   let invalid = 0
   for (const line of data.split(/\r?\n/)) {
-    const m = line.match(/^Admin=(\d{17}):[^/\s]+(?:\s*\/\/\s*(.+))?/)
+    const m = line.match(/^Admin=(\d{17}):([^/\s]+)(?:\s*\/\/\s*(.+))?/)
     if (!m) continue
     const steam64 = m[1]
     if (!STEAM64_RE.test(steam64)) { invalid++; continue }
-    rows.push({ steam64, discord_name: m[2]?.trim() || "(unknown)" })
+    const category = m[2]?.trim() || ""
+    rows.push({ steam64, category, discord_name: m[3]?.trim() || "(unknown)" })
   }
   return { rows, invalid }
 }
@@ -180,6 +184,7 @@ function groupRowsByUser(
         plan: row.plan || "",
         slot_limit: slotLimit,
         notes: row.notes || "",
+        category: row.category || "",
         status: (discordId && existingIds.has(did)) ? "existing" : "new",
       })
     }
@@ -224,7 +229,20 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const guildId = BigInt(req.session.activeGuildId!)
     const body = req.body as Record<string, unknown>
 
-    const data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    let data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    const url = String(body?.url ?? "").trim()
+
+    // Fetch from URL if provided and no inline data
+    if (!data.trim() && url) {
+      try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+        if (!resp.ok) return reply.code(400).send({ error: `URL fetch failed: ${resp.status} ${resp.statusText}` })
+        data = await resp.text()
+      } catch (err) {
+        return reply.code(400).send({ error: `URL fetch failed: ${err instanceof Error ? err.message : "Unknown error"}` })
+      }
+    }
+
     let fmt = String(body?.format ?? "csv")
     const wlType = String(body?.whitelist_type ?? body?.type ?? body?.whitelist_slug ?? "")
     const columnMap = body?.column_map ? (typeof body.column_map === "string" ? JSON.parse(body.column_map) : body.column_map) as Record<string, string> : null
@@ -292,7 +310,20 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const actorId = BigInt(req.session.userId!)
     const body = req.body as Record<string, unknown>
 
-    const data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    let data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    const url = String(body?.url ?? "").trim()
+
+    // Fetch from URL if provided and no inline data
+    if (!data.trim() && url) {
+      try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+        if (!resp.ok) return reply.code(400).send({ error: `URL fetch failed: ${resp.status} ${resp.statusText}` })
+        data = await resp.text()
+      } catch (err) {
+        return reply.code(400).send({ error: `URL fetch failed: ${err instanceof Error ? err.message : "Unknown error"}` })
+      }
+    }
+
     let fmt = String(body?.format ?? "csv")
     const wlType = String(body?.whitelist_type ?? body?.type ?? body?.whitelist_slug ?? "")
     let dupHandling = String(body?.duplicate_handling ?? body?.duplicate_mode ?? "skip")
@@ -331,6 +362,34 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const NAME_THRESHOLD = 0.80
     const now = new Date()
 
+    // ── Category handling: auto-create categories if any row has one ──
+    const hasCategories = users.some((u) => u.category)
+    const categoryIdMap = new Map<string, number>() // category name → id
+
+    if (hasCategories) {
+      // Ensure whitelist is manual so categories show on the Manual Roster page
+      if (!wl.isManual) {
+        await app.prisma.whitelist.update({ where: { id: wl.id }, data: { isManual: true } })
+      }
+
+      // Fetch existing categories
+      const existingCats = await app.prisma.whitelistCategory.findMany({
+        where: { whitelistId: wl.id },
+      })
+      for (const cat of existingCats) categoryIdMap.set(cat.name.toLowerCase(), cat.id)
+
+      // Create any new categories
+      const uniqueCats = [...new Set(users.map((u) => u.category).filter(Boolean))]
+      let sortOrder = existingCats.length
+      for (const catName of uniqueCats) {
+        if (categoryIdMap.has(catName.toLowerCase())) continue
+        const created = await app.prisma.whitelistCategory.create({
+          data: { guildId, whitelistId: wl.id, name: catName, sortOrder: sortOrder++ },
+        })
+        categoryIdMap.set(catName.toLowerCase(), created.id)
+      }
+    }
+
     for (const user of users) {
       try {
         let discordId = user.discord_id ? BigInt(user.discord_id) : 0n
@@ -352,6 +411,8 @@ export default async function importExportRoutes(app: FastifyInstance) {
 
         const isExisting = existingIds.has(discordId)
 
+        const categoryId = user.category ? (categoryIdMap.get(user.category.toLowerCase()) ?? null) : null
+
         if (isExisting) {
           if (dupHandling === "skip") { skipped++; continue }
 
@@ -364,7 +425,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
             if (ids.length > 0) await app.prisma.whitelistIdentifier.createMany({ data: ids, skipDuplicates: true })
             await app.prisma.whitelistUser.update({
               where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
-              data: { discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, updatedAt: now },
+              data: { discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), updatedAt: now },
             })
             updated++
           } else if (dupHandling === "merge") {
@@ -374,12 +435,19 @@ export default async function importExportRoutes(app: FastifyInstance) {
               ...user.eos_ids.map((eid) => ({ guildId, discordId, whitelistId: wl.id, idType: "eosid", idValue: eid, isVerified: false, verificationSource: "import", createdAt: now, updatedAt: now })),
             ]
             if (newIds.length > 0) await app.prisma.whitelistIdentifier.createMany({ data: newIds, skipDuplicates: true })
+            // Update category if provided
+            if (categoryId != null) {
+              await app.prisma.whitelistUser.update({
+                where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
+                data: { categoryId, updatedAt: now },
+              })
+            }
             updated++
           }
         } else {
           // New user
           await app.prisma.whitelistUser.create({
-            data: { guildId, discordId, whitelistId: wl.id, discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, createdVia: "import", createdAt: now, updatedAt: now },
+            data: { guildId, discordId, whitelistId: wl.id, discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), createdVia: "import", createdAt: now, updatedAt: now },
           })
           const ids = [
             ...user.steam_ids.map((sid) => ({ guildId, discordId, whitelistId: wl.id, idType: "steam64", idValue: sid, isVerified: false, verificationSource: "import", createdAt: now, updatedAt: now })),
