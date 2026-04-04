@@ -202,6 +202,8 @@ class NotificationsCog(commands.Cog):
             except (ValueError, TypeError):
                 pass
 
+        server_name = payload.get("server_name", "")
+
         if event_type == "seeding_reward_granted" and channel:
             player = payload.get("player_name") or payload.get("steam_id", "Unknown")
             tier = payload.get("tier_label", "Standard")
@@ -214,6 +216,8 @@ class NotificationsCog(commands.Cog):
             )
             embed.add_field(name="Tier", value=tier, inline=True)
             embed.add_field(name="Duration", value=f"{days} days", inline=True)
+            if server_name:
+                embed.set_footer(text=f"Server: {server_name}")
             try:
                 await channel.send(embed=embed)
             except (discord.Forbidden, discord.HTTPException):
@@ -232,6 +236,8 @@ class NotificationsCog(commands.Cog):
             )
             if custom_image:
                 embed.set_image(url=custom_image)
+            if server_name:
+                embed.set_footer(text=f"Server: {server_name}")
             try:
                 await channel.send(embed=embed)
             except (discord.Forbidden, discord.HTTPException):

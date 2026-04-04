@@ -777,6 +777,44 @@ export default async function seedingRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, players_reset: result.count })
   })
 
+  // ── GET /seeding/leaderboard/export ────────────────────────────────────────
+
+  app.get("/seeding/leaderboard/export", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    const config = await app.prisma.seedingConfig.findUnique({ where: { guildId } })
+    const pointsRequired = config?.pointsRequired ?? 120
+    const tiers = (config?.rewardTiers as Array<{ points: number; duration_hours: number; label: string }>) ?? null
+    const sortedTiers = tiers?.length ? [...tiers].sort((a, b) => b.points - a.points) : null
+
+    const players = await app.prisma.seedingPoints.findMany({
+      where: { guildId, OR: [{ points: { gt: 0 } }, { rewarded: true }] },
+      orderBy: [{ points: "desc" }],
+    })
+
+    const csvLines = ["Rank,Player Name,Steam ID,Points,Seeding Hours,Progress %,Tier,Rewarded,Rewarded At,Last Active"]
+    players.forEach((p, idx) => {
+      const tier = sortedTiers?.find((t) => p.points >= t.points)?.label ?? ""
+      csvLines.push([
+        idx + 1,
+        `"${(p.playerName ?? "").replace(/"/g, '""')}"`,
+        p.steamId,
+        p.points,
+        Math.round(p.points / 60 * 10) / 10,
+        Math.min(100, Math.round((p.points / pointsRequired) * 100)),
+        tier,
+        p.rewarded ? "Yes" : "No",
+        p.rewardedAt?.toISOString() ?? "",
+        p.lastAwardAt?.toISOString() ?? "",
+      ].join(","))
+    })
+
+    return reply
+      .header("Content-Type", "text/csv")
+      .header("Content-Disposition", `attachment; filename="seeding_leaderboard_${new Date().toISOString().slice(0, 10)}.csv"`)
+      .send(csvLines.join("\n"))
+  })
+
   // ── POST /seeding/grant ──────────────────────────────────────────────────
 
   app.post<{
