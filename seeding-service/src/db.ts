@@ -657,10 +657,23 @@ export async function createWhitelistReward(
       discordId = spResult.rows[0]?.discord_id ?? null
     }
 
-    // If no Discord link and it's required, hold the reward
+    // If no Discord link and it's required, mark as pending (don't retry every poll)
     if (!discordId && requireDiscordLink) {
-      await client.query("ROLLBACK")
-      return false
+      // Mark rewarded to prevent retrying, but don't create whitelist entry
+      // The player shows as "Discord Unlinked" on the leaderboard
+      await client.query(
+        `UPDATE seeding_points SET rewarded = TRUE, rewarded_at = NOW()
+         WHERE guild_id = $1 AND steam_id = $2`,
+        [guildId, steamId],
+      )
+      await client.query(
+        `INSERT INTO audit_log (guild_id, action_type, details, created_at)
+         VALUES ($1, 'seeding_reward_pending_link', $2, NOW())`,
+        [guildId, JSON.stringify({ steam_id: steamId, player_name: playerName, reason: "Discord link required but not linked" })],
+      )
+      await client.query("COMMIT")
+      console.log(`[seeding/db] Reward pending Discord link for ${playerName ?? steamId} in guild ${guildId}`)
+      return false // Signal that reward was not fully granted
     }
 
     // If no Discord link, use a synthetic negative ID based on Steam ID hash

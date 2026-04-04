@@ -376,7 +376,7 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
           const ok = await db.createWhitelistReward(
             guildId, q.steam_id, q.player_name,
             whitelistId, cfg.reward_group_name, duration,
-            cfg.require_discord_link,
+            cfg.require_discord_link ?? false,
           )
           if (ok) {
             await db.markRewarded(guildId, q.steam_id)

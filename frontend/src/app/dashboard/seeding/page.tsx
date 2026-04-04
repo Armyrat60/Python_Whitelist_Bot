@@ -275,52 +275,14 @@ export default function SeedingDashboard() {
         </div>
       </div>
 
-      {/* Current Config Summary */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-2">
-        <h2 className="text-sm font-semibold text-white/80">Current Configuration</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Required Time</span>
-            <span className="text-white/70">{Math.floor(config.points_required / 60)}h {config.points_required % 60}m</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Thresholds</span>
-            <span className="text-white/70">{config.seeding_start_player_count} - {config.seeding_player_threshold} players</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Reward Duration</span>
-            <span className="text-white/70">{Math.floor(config.reward_duration_hours / 24)}d {config.reward_duration_hours % 24}h</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Tracking Mode</span>
-            <span className="text-white/70">{config.tracking_mode === "daily_decay" ? "Daily Decay" : "Fixed Reset"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Time Window</span>
-            <span className="text-white/70">{config.seeding_window_enabled ? `${config.seeding_window_start} - ${config.seeding_window_end}` : "24/7"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Tiered Rewards</span>
-            <span className="text-white/70">{config.reward_tiers ? `${config.reward_tiers.length} tiers` : "Single tier"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Discord Link</span>
-            <span className="text-white/70">{config.require_discord_link ? "Required" : "Not required"}</span>
-          </div>
-        </div>
-        <div className="pt-1">
-          <Link href="/dashboard/seeding/settings" className="text-xs flex items-center gap-1 hover:underline" style={{ color: "var(--accent-primary)" }}>
-            <Settings2 className="h-3 w-3" /> Edit Configuration
-          </Link>
-        </div>
-      </div>
-
-      {/* Whitelist info */}
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.01] px-4 py-2 flex items-center justify-between">
-        <div className="text-[10px] text-muted-foreground">
-          Seeding rewards added to main whitelist — Group: <code className="bg-white/[0.06] px-1 rounded">Reserve:reserve</code>
-        </div>
-        <Badge variant="secondary" className="text-[9px]">Reserve only</Badge>
+      {/* Quick links */}
+      <div className="flex gap-3">
+        <Link href="/dashboard/seeding/settings" className="text-xs flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 hover:bg-white/[0.04] transition-colors text-muted-foreground hover:text-white/70">
+          <Settings2 className="h-3.5 w-3.5" /> Seed Settings
+        </Link>
+        <Link href="/dashboard/seeding/leaderboard" className="text-xs flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 hover:bg-white/[0.04] transition-colors text-muted-foreground hover:text-white/70">
+          <Trophy className="h-3.5 w-3.5" /> Full Leaderboard
+        </Link>
       </div>
     </div>
   );
