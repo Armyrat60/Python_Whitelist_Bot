@@ -18,7 +18,7 @@ import { validateConfig, config } from "./config.js"
 import { ensureTables, closePG } from "./db.js"
 import { disconnectAll } from "./squadjs.js"
 import { startHealthServer, stopHealthServer } from "./health.js"
-import { pollAllGuilds, runPointResets, runExpiryCleanup, runDailyDecay } from "./tracker.js"
+import { pollAllServers, runPointResets, runExpiryCleanup, runDailyDecay } from "./tracker.js"
 
 async function shutdown(code = 0): Promise<never> {
   console.log("[seeding] Shutting down gracefully...")
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
 
   // Run initial poll
   try {
-    await pollAllGuilds()
+    await pollAllServers()
     console.log("[seeding] Initial poll complete")
   } catch (err) {
     console.error("[seeding] Initial poll failed:", err)
@@ -75,7 +75,7 @@ async function main(): Promise<void> {
   // Main poll loop — every minute
   cron.schedule("*/1 * * * *", async () => {
     try {
-      await pollAllGuilds()
+      await pollAllServers()
     } catch (err) {
       console.error("[seeding] Scheduled poll failed:", err)
     }

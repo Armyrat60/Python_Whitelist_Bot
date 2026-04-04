@@ -376,11 +376,35 @@ model SeedingConfig {
   populationTrackingEnabled Boolean   @default(false) @map("population_tracking_enabled")
   webhookUrl                String?   @map("webhook_url") @db.VarChar(500)
   webhookEnabled            Boolean   @default(false) @map("webhook_enabled")
+  pointsPerServer           Boolean   @default(false) @map("points_per_server")
   leaderboardPublic         Boolean   @default(false) @map("leaderboard_public")
   createdAt                 DateTime  @default(now()) @map("created_at")
   updatedAt                 DateTime  @updatedAt @map("updated_at")
 
+  servers                   SeedingServer[]
+
   @@map("seeding_configs")
+}
+
+model SeedingServer {
+  id              Int       @id @default(autoincrement())
+  guildId         BigInt    @map("guild_id")
+  serverName      String    @map("server_name") @db.VarChar(255)
+  squadjsHost     String    @map("squadjs_host") @db.VarChar(255)
+  squadjsPort     Int       @default(3000) @map("squadjs_port")
+  squadjsToken    String    @map("squadjs_token") @db.VarChar(500)
+  enabled         Boolean   @default(true)
+  lastPollAt      DateTime? @map("last_poll_at")
+  lastPollStatus  String?   @map("last_poll_status") @db.VarChar(20)
+  lastPollMessage String?   @map("last_poll_message")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  config          SeedingConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, serverName])
+  @@index([guildId])
+  @@map("seeding_servers")
 }
 
 model SeedingNotification {
@@ -409,6 +433,7 @@ model PopulationSnapshot {
 model SeedingPoints {
   id            Int       @id @default(autoincrement())
   guildId       BigInt    @map("guild_id")
+  serverId      Int?      @map("server_id")
   steamId       String    @map("steam_id") @db.VarChar(32)
   playerName    String?   @map("player_name") @db.VarChar(255)
   points        Int       @default(0)
@@ -419,7 +444,7 @@ model SeedingPoints {
   currentStreak Int       @default(0) @map("current_streak")
   lastSeedDate  String?   @map("last_seed_date") @db.VarChar(10)
 
-  @@unique([guildId, steamId])
+  @@unique([guildId, serverId, steamId])
   @@index([guildId, points(sort: Desc)])
   @@map("seeding_points")
 }

@@ -926,7 +926,7 @@ export function useJobStatus(jobId: number | null) {
 export function useSeedingConfig() {
   const { data: session } = useSession();
   const guildId = session?.active_guild_id;
-  return useQuery<{ config: import("@/lib/types").SeedingConfig | null }>({
+  return useQuery<{ config: import("@/lib/types").SeedingConfig | null; servers: import("@/lib/types").SeedingServer[] }>({
     queryKey: ["seeding-config", guildId],
     queryFn: () => api.get("/api/admin/seeding-config"),
     enabled: !!guildId,
@@ -1010,6 +1010,32 @@ export function useSeedingStats() {
     queryFn: () => api.get("/api/admin/seeding/stats"),
     enabled: !!guildId,
     refetchInterval: 30_000,
+  });
+}
+
+export function useAddSeedingServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { server_name: string; squadjs_host: string; squadjs_port?: number; squadjs_token: string }) =>
+      api.post<{ ok: boolean; server: import("@/lib/types").SeedingServer }>("/api/admin/seeding-config/servers", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-config"] }),
+  });
+}
+
+export function useUpdateSeedingServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; server_name?: string; squadjs_host?: string; squadjs_port?: number; squadjs_token?: string; enabled?: boolean }) =>
+      api.put<{ ok: boolean; server: import("@/lib/types").SeedingServer }>(`/api/admin/seeding-config/servers/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-config"] }),
+  });
+}
+
+export function useDeleteSeedingServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/admin/seeding-config/servers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["seeding-config"] }),
   });
 }
 

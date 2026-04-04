@@ -201,7 +201,7 @@ export default function SeedingDashboard() {
       )}
 
       {/* Stats grid */}
-      <div className={`grid gap-3 ${config.require_discord_link && (stats?.pending_discord_link ?? 0) > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
+      <div className={`grid gap-3 grid-cols-2 sm:${config.require_discord_link && (stats?.pending_discord_link ?? 0) > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
         <StatCard icon={Users} label="Active Seeders" value={stats?.total_seeders ?? 0} sub="Players with points this cycle" />
         <StatCard icon={Gift} label="Rewards Given" value={stats?.total_rewarded ?? 0} sub="Players who earned whitelist" />
         <StatCard icon={TrendingUp} label="Total Seeding" value={`${stats?.total_seeding_hours ?? 0}h`} sub="Combined hours all players" />
@@ -214,7 +214,7 @@ export default function SeedingDashboard() {
       {config.population_tracking_enabled && <PopulationChart threshold={config.seeding_player_threshold} />}
 
       {/* Two-column layout: Top seeders + Recent activity */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Top Seeders */}
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -278,7 +278,7 @@ export default function SeedingDashboard() {
       {/* Current Config Summary */}
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-2">
         <h2 className="text-sm font-semibold text-white/80">Current Configuration</h2>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Required Time</span>
             <span className="text-white/70">{Math.floor(config.points_required / 60)}h {config.points_required % 60}m</span>

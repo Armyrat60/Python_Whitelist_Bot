@@ -267,6 +267,7 @@ export interface SeedingConfig {
   population_tracking_enabled: boolean;
   webhook_url: string | null;
   webhook_enabled: boolean;
+  points_per_server: boolean;
   leaderboard_public: boolean;
   created_at?: string;
   updated_at?: string;
@@ -280,6 +281,18 @@ export interface SeedingPlayer {
   rewarded: boolean;
   rewarded_at: string | null;
   last_award_at?: string | null;
+}
+
+export interface SeedingServer {
+  id: number;
+  server_name: string;
+  squadjs_host: string;
+  squadjs_port: number;
+  squadjs_token: string;
+  enabled: boolean;
+  last_poll_at: string | null;
+  last_poll_status: "ok" | "error" | null;
+  last_poll_message: string | null;
 }
 
 export interface SeedingPublicPlayer {

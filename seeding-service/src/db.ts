@@ -1,7 +1,7 @@
 /**
  * Seeding service PostgreSQL client.
  *
- * Manages seeding_configs, seeding_points, seeding_sessions tables
+ * Manages seeding_configs, seeding_points, seeding_sessions, seeding_servers tables
  * and creates whitelist rewards by inserting real whitelist_user +
  * whitelist_identifier rows that the existing output service picks up.
  */
@@ -135,9 +135,12 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS population_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500) NULL`)
   await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS webhook_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
+  await pool.query(`ALTER TABLE seeding_configs ADD COLUMN IF NOT EXISTS points_per_server BOOLEAN NOT NULL DEFAULT FALSE`)
   // Streak fields on seeding_points
   await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS current_streak INT NOT NULL DEFAULT 0`)
   await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS last_seed_date VARCHAR(10) NULL`)
+  // Multi-server: server_id on seeding_points (0 = pooled, >0 = per-server)
+  await pool.query(`ALTER TABLE seeding_points ADD COLUMN IF NOT EXISTS server_id INT NOT NULL DEFAULT 0`)
   // Population snapshots table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS population_snapshots (
@@ -167,6 +170,7 @@ export async function ensureTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS seeding_points (
       id             SERIAL PRIMARY KEY,
       guild_id       BIGINT      NOT NULL,
+      server_id      INT         NOT NULL DEFAULT 0,
       steam_id       VARCHAR(32) NOT NULL,
       player_name    VARCHAR(255),
       points         INT         NOT NULL DEFAULT 0,
@@ -180,6 +184,14 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS seeding_points_guild_points_idx
     ON seeding_points (guild_id, points DESC)
+  `)
+
+  // Multi-server: create unique index on (guild_id, server_id, steam_id) for per-server point tracking
+  // Drop the old unique constraint on (guild_id, steam_id) is not safe — it may be used by existing data.
+  // Instead we create a new unique index and handle upsert logic in code.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS seeding_points_guild_server_steam_idx
+    ON seeding_points (guild_id, server_id, steam_id)
   `)
 
   await pool.query(`
@@ -201,6 +213,34 @@ export async function ensureTables(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS seeding_sessions_guild_steam_idx
     ON seeding_sessions (guild_id, steam_id)
+  `)
+
+  // ─── Multi-server: seeding_servers table ────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS seeding_servers (
+      id                SERIAL PRIMARY KEY,
+      guild_id          BIGINT       NOT NULL,
+      server_name       VARCHAR(255) NOT NULL,
+      squadjs_host      VARCHAR(255) NOT NULL,
+      squadjs_port      INT          NOT NULL DEFAULT 3000,
+      squadjs_token     VARCHAR(500) NOT NULL,
+      enabled           BOOLEAN      NOT NULL DEFAULT TRUE,
+      last_poll_at      TIMESTAMP    NULL,
+      last_poll_status  VARCHAR(20)  NULL,
+      last_poll_message TEXT         NULL,
+      created_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
+      UNIQUE(guild_id, server_name)
+    )
+  `)
+
+  // Migrate existing squadjs connection info from seeding_configs to seeding_servers
+  await pool.query(`
+    INSERT INTO seeding_servers (guild_id, server_name, squadjs_host, squadjs_port, squadjs_token)
+    SELECT guild_id, 'Main Server', squadjs_host, squadjs_port, squadjs_token
+    FROM seeding_configs
+    WHERE squadjs_host IS NOT NULL AND squadjs_host != ''
+      AND NOT EXISTS (SELECT 1 FROM seeding_servers WHERE seeding_servers.guild_id = seeding_configs.guild_id)
   `)
 }
 
@@ -256,12 +296,26 @@ export interface SeedingConfigRow {
   webhook_url: string | null
   webhook_enabled: boolean
   leaderboard_public: boolean
+  points_per_server: boolean
 }
 
 export interface RewardTier {
   points: number
   duration_hours: number
   label: string
+}
+
+export interface SeedingServerRow {
+  id: number
+  guild_id: bigint
+  server_name: string
+  squadjs_host: string
+  squadjs_port: number
+  squadjs_token: string
+  enabled: boolean
+  last_poll_at: Date | null
+  last_poll_status: string | null
+  last_poll_message: string | null
 }
 
 /** Load all enabled seeding configs. */
@@ -272,7 +326,26 @@ export async function loadEnabledConfigs(): Promise<SeedingConfigRow[]> {
   return result.rows
 }
 
-/** Update poll status after each tick. */
+/** Load all enabled servers whose guild config is also enabled. */
+export async function loadEnabledServers(): Promise<SeedingServerRow[]> {
+  const result = await pool.query<SeedingServerRow>(
+    `SELECT ss.* FROM seeding_servers ss
+     JOIN seeding_configs sc ON ss.guild_id = sc.guild_id
+     WHERE sc.enabled = TRUE AND ss.enabled = TRUE`,
+  )
+  return result.rows
+}
+
+/** Load config for a specific guild. */
+export async function loadConfigForGuild(guildId: bigint): Promise<SeedingConfigRow | null> {
+  const result = await pool.query<SeedingConfigRow>(
+    `SELECT * FROM seeding_configs WHERE guild_id = $1 AND enabled = TRUE`,
+    [guildId],
+  )
+  return result.rows[0] ?? null
+}
+
+/** Update poll status after each tick (on seeding_configs — legacy, still used for guild-level status). */
 export async function updatePollStatus(
   guildId: bigint,
   status: "ok" | "error",
@@ -289,6 +362,23 @@ export async function updatePollStatus(
   )
 }
 
+/** Update poll status on a specific seeding_server row. */
+export async function updateServerPollStatus(
+  serverId: number,
+  status: "ok" | "error",
+  message: string,
+): Promise<void> {
+  await pool.query(
+    `UPDATE seeding_servers
+     SET last_poll_at = NOW(),
+         last_poll_status = $2,
+         last_poll_message = $3,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [serverId, status, message],
+  )
+}
+
 // ─── Points operations ───────────────────────────────────────────────────────
 
 export interface PlayerInput {
@@ -299,10 +389,13 @@ export interface PlayerInput {
 /**
  * Award 1 point to each player in the list.
  * Uses INSERT ... ON CONFLICT to upsert efficiently.
+ *
+ * serverId: 0 = pooled (default), >0 = per-server tracking.
  */
 export async function awardPoints(
   guildId: bigint,
   players: PlayerInput[],
+  serverId: number = 0,
 ): Promise<number> {
   if (players.length === 0) return 0
 
@@ -312,13 +405,13 @@ export async function awardPoints(
   try {
     for (const p of players) {
       const result = await client.query(
-        `INSERT INTO seeding_points (guild_id, steam_id, player_name, points, last_award_at)
-         VALUES ($1, $2, $3, 1, NOW())
-         ON CONFLICT (guild_id, steam_id) DO UPDATE SET
+        `INSERT INTO seeding_points (guild_id, server_id, steam_id, player_name, points, last_award_at)
+         VALUES ($1, $2, $3, $4, 1, NOW())
+         ON CONFLICT (guild_id, server_id, steam_id) DO UPDATE SET
            points = seeding_points.points + 1,
            player_name = COALESCE(EXCLUDED.player_name, seeding_points.player_name),
            last_award_at = NOW()`,
-        [guildId, p.steamId, p.name || null],
+        [guildId, serverId, p.steamId, p.name || null],
       )
       if ((result.rowCount ?? 0) > 0) awarded++
     }
@@ -364,7 +457,9 @@ export async function markRewarded(
 
 /** Reset all points for a guild (fixed_reset mode).
  *  Preserves rewarded status and rewarded_at — only resets points to 0.
- *  Players who already earned their reward keep the badge on the leaderboard. */
+ *  Players who already earned their reward keep the badge on the leaderboard.
+ *
+ *  If points_per_server is true, reset is still guild-wide (all server_id rows). */
 export async function resetPoints(guildId: bigint): Promise<number> {
   const result = await pool.query(
     `UPDATE seeding_points
@@ -375,16 +470,18 @@ export async function resetPoints(guildId: bigint): Promise<number> {
   return result.rowCount ?? 0
 }
 
-/** Get current points for a batch of players (for RCON milestone checks). */
+/** Get current points for a batch of players (for RCON milestone checks).
+ *  serverId: if provided and > 0, filter by server. Otherwise show pooled (0). */
 export async function getPlayerPointsBatch(
   guildId: bigint,
   steamIds: string[],
+  serverId: number = 0,
 ): Promise<Map<string, number>> {
   if (steamIds.length === 0) return new Map()
   const result = await pool.query<{ steam_id: string; points: number }>(
     `SELECT steam_id, points FROM seeding_points
-     WHERE guild_id = $1 AND steam_id = ANY($2)`,
-    [guildId, steamIds],
+     WHERE guild_id = $1 AND steam_id = ANY($2) AND server_id = $3`,
+    [guildId, steamIds, serverId],
   )
   const map = new Map<string, number>()
   for (const row of result.rows) map.set(row.steam_id, row.points)
@@ -421,10 +518,12 @@ export async function runDailyDecay(): Promise<void> {
 }
 
 /** Get leaderboard for a guild.
- *  Shows players with points > 0 OR who have been rewarded (even after reset). */
+ *  Shows players with points > 0 OR who have been rewarded (even after reset).
+ *  serverId: if provided and > 0, filter by that server. Otherwise show all (pooled). */
 export async function getLeaderboard(
   guildId: bigint,
   limit = 50,
+  serverId?: number,
 ): Promise<Array<{
   steam_id: string
   player_name: string | null
@@ -432,14 +531,28 @@ export async function getLeaderboard(
   rewarded: boolean
   rewarded_at: Date | null
 }>> {
-  const result = await pool.query(
-    `SELECT steam_id, player_name, points, rewarded, rewarded_at
-     FROM seeding_points
-     WHERE guild_id = $1 AND (points > 0 OR rewarded = TRUE)
-     ORDER BY rewarded DESC, points DESC
-     LIMIT $2`,
-    [guildId, limit],
-  )
+  let query: string
+  let params: unknown[]
+
+  if (serverId !== undefined && serverId > 0) {
+    query = `SELECT steam_id, player_name, points, rewarded, rewarded_at
+       FROM seeding_points
+       WHERE guild_id = $1 AND server_id = $3 AND (points > 0 OR rewarded = TRUE)
+       ORDER BY rewarded DESC, points DESC
+       LIMIT $2`
+    params = [guildId, limit, serverId]
+  } else {
+    // Pooled or aggregate: show all rows (server_id = 0 for pooled mode,
+    // or all rows if no server filter)
+    query = `SELECT steam_id, player_name, points, rewarded, rewarded_at
+       FROM seeding_points
+       WHERE guild_id = $1 AND (points > 0 OR rewarded = TRUE)
+       ORDER BY rewarded DESC, points DESC
+       LIMIT $2`
+    params = [guildId, limit]
+  }
+
+  const result = await pool.query(query, params)
   return result.rows
 }
 

@@ -25,14 +25,20 @@ export default async function seedingRoutes(app: FastifyInstance) {
 
     const config = await app.prisma.seedingConfig.findUnique({ where: { guildId } })
 
-    if (!config) return reply.send({ config: null })
+    if (!config) return reply.send({ config: null, servers: [] })
+
+    // Fetch servers for this guild
+    const servers = await app.prisma.seedingServer.findMany({
+      where: { guildId },
+      orderBy: { createdAt: "asc" },
+    })
 
     return reply.send({
       config: {
         id:                          config.id,
         squadjs_host:                config.squadjsHost,
         squadjs_port:                config.squadjsPort,
-        squadjs_token:               MASKED,  // never expose the real token
+        squadjs_token:               MASKED,
         seeding_start_player_count:  config.seedingStartPlayerCount,
         seeding_player_threshold:    config.seedingPlayerThreshold,
         points_required:             config.pointsRequired,
@@ -80,10 +86,22 @@ export default async function seedingRoutes(app: FastifyInstance) {
         population_tracking_enabled: config.populationTrackingEnabled,
         webhook_url:                 config.webhookUrl,
         webhook_enabled:             config.webhookEnabled,
+        points_per_server:           config.pointsPerServer,
         leaderboard_public:          config.leaderboardPublic,
         created_at:                  config.createdAt.toISOString(),
         updated_at:                  config.updatedAt.toISOString(),
       },
+      servers: servers.map((s) => ({
+        id: s.id,
+        server_name: s.serverName,
+        squadjs_host: s.squadjsHost,
+        squadjs_port: s.squadjsPort,
+        squadjs_token: MASKED,
+        enabled: s.enabled,
+        last_poll_at: s.lastPollAt?.toISOString() ?? null,
+        last_poll_status: s.lastPollStatus,
+        last_poll_message: s.lastPollMessage,
+      })),
     })
   })
 
@@ -137,6 +155,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       population_tracking_enabled?: boolean
       webhook_url?: string | null
       webhook_enabled?: boolean
+      points_per_server?: boolean
       enabled?: boolean
       leaderboard_public?: boolean
     }
@@ -276,6 +295,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         populationTrackingEnabled: body.population_tracking_enabled ?? false,
         webhookUrl:             body.webhook_url              ?? null,
         webhookEnabled:         body.webhook_enabled          ?? false,
+        pointsPerServer:        body.points_per_server        ?? false,
         enabled:                body.enabled                 ?? false,
         leaderboardPublic:      body.leaderboard_public      ?? false,
       },
@@ -441,6 +461,83 @@ export default async function seedingRoutes(app: FastifyInstance) {
         message: `Cannot reach SquadJS at ${host}:${port}: ${msg.includes("abort") ? "Connection timed out" : msg}`,
       })
     }
+  })
+
+  // ── Server CRUD ───────────────────────────────────────────────────────────
+
+  app.post<{
+    Body: { server_name: string; squadjs_host: string; squadjs_port?: number; squadjs_token: string }
+  }>("/seeding-config/servers", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const body = req.body ?? {}
+
+    if (!body.server_name?.trim() || !body.squadjs_host?.trim() || !body.squadjs_token) {
+      return reply.code(400).send({ error: "server_name, squadjs_host, and squadjs_token are required" })
+    }
+
+    // Check 5 server limit
+    const count = await app.prisma.seedingServer.count({ where: { guildId } })
+    if (count >= 5) {
+      return reply.code(400).send({ error: "Maximum 5 servers per guild" })
+    }
+
+    const server = await app.prisma.seedingServer.create({
+      data: {
+        guildId,
+        serverName: body.server_name.trim(),
+        squadjsHost: body.squadjs_host.trim(),
+        squadjsPort: body.squadjs_port ?? 3000,
+        squadjsToken: body.squadjs_token,
+      },
+    })
+
+    return reply.send({
+      ok: true,
+      server: { id: server.id, server_name: server.serverName, squadjs_host: server.squadjsHost, squadjs_port: server.squadjsPort, squadjs_token: MASKED, enabled: server.enabled },
+    })
+  })
+
+  app.put<{
+    Params: { id: string }
+    Body: { server_name?: string; squadjs_host?: string; squadjs_port?: number; squadjs_token?: string; enabled?: boolean }
+  }>("/seeding-config/servers/:id", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const serverId = parseInt(req.params.id, 10)
+    const body = req.body ?? {}
+
+    const existing = await app.prisma.seedingServer.findFirst({ where: { id: serverId, guildId } })
+    if (!existing) return reply.code(404).send({ error: "Server not found" })
+
+    const token = body.squadjs_token && body.squadjs_token !== MASKED ? body.squadjs_token : existing.squadjsToken
+
+    const server = await app.prisma.seedingServer.update({
+      where: { id: serverId },
+      data: {
+        serverName: body.server_name?.trim() ?? existing.serverName,
+        squadjsHost: body.squadjs_host?.trim() ?? existing.squadjsHost,
+        squadjsPort: body.squadjs_port ?? existing.squadjsPort,
+        squadjsToken: token,
+        enabled: body.enabled ?? existing.enabled,
+      },
+    })
+
+    return reply.send({
+      ok: true,
+      server: { id: server.id, server_name: server.serverName, squadjs_host: server.squadjsHost, squadjs_port: server.squadjsPort, squadjs_token: MASKED, enabled: server.enabled },
+    })
+  })
+
+  app.delete<{
+    Params: { id: string }
+  }>("/seeding-config/servers/:id", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const serverId = parseInt(req.params.id, 10)
+
+    const existing = await app.prisma.seedingServer.findFirst({ where: { id: serverId, guildId } })
+    if (!existing) return reply.code(404).send({ error: "Server not found" })
+
+    await app.prisma.seedingServer.delete({ where: { id: serverId } })
+    return reply.send({ ok: true })
   })
 
   // ── GET /seeding/leaderboard ─────────────────────────────────────────────

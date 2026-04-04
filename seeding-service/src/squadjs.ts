@@ -9,7 +9,7 @@
  * - All Steam IDs validated against /^[0-9]{17}$/
  * - Player names truncated and stripped of control characters
  * - Exponential backoff on reconnect (1s → 30s)
- * - Connection state tracking per guild
+ * - Connection state tracking per guild:server composite key
  */
 
 import { io, Socket } from "socket.io-client"
@@ -69,19 +69,29 @@ function emitPromise<T>(
 }
 
 /**
- * Connect to a SquadJS instance for a specific guild.
+ * Build a composite connection key from guildId and serverId.
+ */
+function connKey(guildId: string, serverId: number): string {
+  return `${guildId}:${serverId}`
+}
+
+/**
+ * Connect to a SquadJS instance for a specific guild + server.
  */
 export function connect(
   guildId: string,
+  serverId: number,
   host: string,
   port: number,
   token: string,
 ): void {
+  const key = connKey(guildId, serverId)
+
   // Disconnect existing connection if any
-  disconnect(guildId)
+  disconnect(guildId, serverId)
 
   const url = `http://${host}:${port}`
-  console.log(`[seeding/squadjs] Connecting to ${host}:${port} for guild ${guildId}`)
+  console.log(`[seeding/squadjs] Connecting to ${host}:${port} for guild ${guildId} server ${serverId}`)
 
   const socket = io(url, {
     auth: { token },
@@ -102,7 +112,7 @@ export function connect(
   }
 
   socket.on("connect", () => {
-    console.log(`[seeding/squadjs] Connected to ${host}:${port} for guild ${guildId}`)
+    console.log(`[seeding/squadjs] Connected to ${host}:${port} for guild ${guildId} server ${serverId}`)
     state.connected = true
     state.lastError = null
     state.reconnectAttempts = 0
@@ -119,19 +129,20 @@ export function connect(
     state.connected = false
     // Only log every 5th attempt to avoid spam
     if (state.reconnectAttempts % 5 === 1) {
-      console.error(`[seeding/squadjs] Connection error for guild ${guildId} (attempt ${state.reconnectAttempts}): ${err.message}`)
+      console.error(`[seeding/squadjs] Connection error for guild ${guildId} server ${serverId} (attempt ${state.reconnectAttempts}): ${err.message}`)
     }
   })
 
-  connections.set(guildId, state)
+  connections.set(key, state)
 }
 
 /**
  * Get the list of online players from SquadJS.
  * Returns an empty array if not connected or on error.
  */
-export async function getOnlinePlayers(guildId: string): Promise<OnlinePlayer[]> {
-  const state = connections.get(guildId)
+export async function getOnlinePlayers(guildId: string, serverId: number): Promise<OnlinePlayer[]> {
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   if (!state || !state.connected) return []
 
   try {
@@ -145,7 +156,7 @@ export async function getOnlinePlayers(guildId: string): Promise<OnlinePlayer[]>
 
     // Response is typically an array of player objects
     if (!Array.isArray(response)) {
-      console.warn(`[seeding/squadjs] Unexpected player list response type for guild ${guildId}`)
+      console.warn(`[seeding/squadjs] Unexpected player list response type for guild ${guildId} server ${serverId}`)
       return []
     }
 
@@ -169,7 +180,7 @@ export async function getOnlinePlayers(guildId: string): Promise<OnlinePlayer[]>
     return players
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[seeding/squadjs] Failed to get player list for guild ${guildId}: ${msg}`)
+    console.error(`[seeding/squadjs] Failed to get player list for guild ${guildId} server ${serverId}: ${msg}`)
     return []
   }
 }
@@ -180,10 +191,12 @@ export async function getOnlinePlayers(guildId: string): Promise<OnlinePlayer[]>
  */
 export async function warnPlayer(
   guildId: string,
+  serverId: number,
   steamId: string,
   message: string,
 ): Promise<boolean> {
-  const state = connections.get(guildId)
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   if (!state || !state.connected) return false
 
   try {
@@ -202,32 +215,35 @@ export async function warnPlayer(
 }
 
 /**
- * Get the current player count for a guild.
+ * Get the current player count for a guild + server.
  * Returns -1 if not connected.
  */
-export function getPlayerCount(guildId: string): number {
-  const state = connections.get(guildId)
+export function getPlayerCount(guildId: string, serverId: number): number {
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   if (!state) return -1
   return state.lastPlayerCount
 }
 
 /**
- * Check if connected to a guild's SquadJS instance.
+ * Check if connected to a guild+server's SquadJS instance.
  */
-export function isConnected(guildId: string): boolean {
-  const state = connections.get(guildId)
+export function isConnected(guildId: string, serverId: number): boolean {
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   return state?.connected ?? false
 }
 
 /**
  * Get connection status for health reporting.
  */
-export function getConnectionStatus(guildId: string): {
+export function getConnectionStatus(guildId: string, serverId: number): {
   connected: boolean
   lastError: string | null
   reconnectAttempts: number
 } {
-  const state = connections.get(guildId)
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   if (!state) return { connected: false, lastError: "Not initialized", reconnectAttempts: 0 }
   return {
     connected: state.connected,
@@ -237,25 +253,29 @@ export function getConnectionStatus(guildId: string): {
 }
 
 /**
- * Disconnect from a specific guild's SquadJS instance.
+ * Disconnect from a specific guild+server's SquadJS instance.
  */
-export function disconnect(guildId: string): void {
-  const state = connections.get(guildId)
+export function disconnect(guildId: string, serverId: number): void {
+  const key = connKey(guildId, serverId)
+  const state = connections.get(key)
   if (!state) return
 
   state.socket.removeAllListeners()
   state.socket.disconnect()
-  connections.delete(guildId)
-  console.log(`[seeding/squadjs] Disconnected guild ${guildId}`)
+  connections.delete(key)
+  console.log(`[seeding/squadjs] Disconnected guild ${guildId} server ${serverId}`)
 }
 
 /**
  * Disconnect from all SquadJS instances.
  */
 export function disconnectAll(): void {
-  for (const [guildId] of connections) {
-    disconnect(guildId)
+  for (const [key, state] of connections) {
+    state.socket.removeAllListeners()
+    state.socket.disconnect()
+    console.log(`[seeding/squadjs] Disconnected ${key}`)
   }
+  connections.clear()
   console.log("[seeding/squadjs] All connections closed")
 }
 

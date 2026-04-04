@@ -4,6 +4,10 @@
  * Polls SquadJS instances for player counts, determines seeding mode,
  * awards points to online players, and grants whitelist rewards when
  * players reach the required threshold.
+ *
+ * Multi-server: each guild can have multiple seeding_servers. Each server
+ * is polled independently. Points are tracked per-server or pooled based
+ * on the guild's points_per_server setting.
  */
 
 import * as db from "./db.js"
@@ -15,13 +19,16 @@ import { pool } from "./db.js"
 /** Milestones at which RCON warnings are sent (descending for highest-first match). */
 const MILESTONES = [100, 75, 50, 25, 10]
 
-/** Tracks last warned percentage per player to avoid duplicate warnings. Memory-only. */
+/** Tracks last warned percentage per player to avoid duplicate warnings. Memory-only.
+ *  Key: `${guildId}:${serverId}:${steamId}` */
 const lastWarnedPct = new Map<string, number>()
 
-/** Tracks whether guild was in seeding mode on last poll (for server live / needs seeders events). */
+/** Tracks whether a server was in seeding mode on last poll (for server live / needs seeders events).
+ *  Key: `${guildId}:${serverId}` */
 const wasSeeding = new Map<string, boolean>()
 
-/** Tracks last auto-seed alert time per guild (for cooldown). */
+/** Tracks last auto-seed alert time per guild:server (for cooldown).
+ *  Key: `${guildId}:${serverId}` or `broadcast:${guildId}:${serverId}` */
 const lastAutoSeedAlert = new Map<string, number>()
 
 /** Format an RCON warning message with template variables. */
@@ -36,59 +43,79 @@ function formatWarning(template: string, progress: number, points: number, requi
 /**
  * Main poll loop — called every minute by cron.
  *
- * For each enabled guild:
- * 1. Ensure Socket.IO connection is established
- * 2. Get current player list from SquadJS
- * 3. Determine if server is in seeding mode
- * 4. Award points to online players
- * 5. Grant rewards to qualifying players
- * 6. Update poll status
+ * For each enabled server (across all guilds):
+ * 1. Load the guild config (cached per guild)
+ * 2. Ensure Socket.IO connection is established
+ * 3. Get current player list from SquadJS
+ * 4. Determine if server is in seeding mode
+ * 5. Award points to online players
+ * 6. Grant rewards to qualifying players
+ * 7. Update poll status on both server and guild
  */
-export async function pollAllGuilds(): Promise<void> {
-  const configs = await db.loadEnabledConfigs()
+export async function pollAllServers(): Promise<void> {
+  const servers = await db.loadEnabledServers()
 
-  if (configs.length === 0) {
+  if (servers.length === 0) {
     updateHealthStats(0, squadjs.connectionCount())
     return
   }
 
-  // Process each guild
+  // Cache guild configs to avoid re-loading for each server in the same guild
+  const configCache = new Map<string, db.SeedingConfigRow | null>()
+
+  // Process each server
   const results = await Promise.allSettled(
-    configs.map((cfg) => pollGuild(cfg)),
+    servers.map(async (server) => {
+      const guildKey = String(server.guild_id)
+      let cfg = configCache.get(guildKey)
+      if (cfg === undefined) {
+        cfg = await db.loadConfigForGuild(server.guild_id)
+        configCache.set(guildKey, cfg)
+      }
+      if (!cfg) return
+      await pollServer(server, cfg)
+    }),
   )
 
   // Log any unexpected failures
   for (let i = 0; i < results.length; i++) {
     if (results[i].status === "rejected") {
       const err = (results[i] as PromiseRejectedResult).reason
-      console.error(`[seeding/tracker] Guild ${configs[i].guild_id} poll failed:`, err)
+      console.error(`[seeding/tracker] Server ${servers[i].server_name} (guild ${servers[i].guild_id}) poll failed:`, err)
     }
   }
 
-  updateHealthStats(configs.length, squadjs.connectionCount())
+  // Count unique guilds being tracked
+  const uniqueGuilds = new Set(servers.map((s) => String(s.guild_id))).size
+  updateHealthStats(uniqueGuilds, squadjs.connectionCount())
 }
 
-async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
+async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow): Promise<void> {
   const guildId = cfg.guild_id
   const guildKey = String(guildId)
+  const serverId = server.id
+  const serverKey = `${guildKey}:${serverId}`
+
+  // Determine server_id for point tracking: 0 = pooled, server.id = per-server
+  const pointServerId = cfg.points_per_server ? serverId : 0
 
   // Ensure connection is established
-  if (!squadjs.isConnected(guildKey)) {
-    if (cfg.squadjs_host && cfg.squadjs_token) {
-      squadjs.connect(guildKey, cfg.squadjs_host, cfg.squadjs_port, cfg.squadjs_token)
+  if (!squadjs.isConnected(guildKey, serverId)) {
+    if (server.squadjs_host && server.squadjs_token) {
+      squadjs.connect(guildKey, serverId, server.squadjs_host, server.squadjs_port, server.squadjs_token)
       // Give it a moment to connect on first attempt
       await new Promise((r) => setTimeout(r, 2000))
     } else {
-      await db.updatePollStatus(guildId, "error", "No SquadJS connection configured")
+      await db.updateServerPollStatus(serverId, "error", "No SquadJS connection configured")
       return
     }
   }
 
   // Check if actually connected
-  if (!squadjs.isConnected(guildKey)) {
-    const status = squadjs.getConnectionStatus(guildKey)
-    await db.updatePollStatus(
-      guildId,
+  if (!squadjs.isConnected(guildKey, serverId)) {
+    const status = squadjs.getConnectionStatus(guildKey, serverId)
+    await db.updateServerPollStatus(
+      serverId,
       "error",
       `Not connected to SquadJS: ${status.lastError ?? "connecting..."} (attempts: ${status.reconnectAttempts})`,
     )
@@ -124,8 +151,8 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     }
 
     if (!inWindow) {
-      await db.updatePollStatus(
-        guildId,
+      await db.updateServerPollStatus(
+        serverId,
         "ok",
         `Outside seeding window (${cfg.seeding_window_start} - ${cfg.seeding_window_end}). Currently ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
       )
@@ -134,7 +161,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
   }
 
   // Get online players
-  const players = await squadjs.getOnlinePlayers(guildKey)
+  const players = await squadjs.getOnlinePlayers(guildKey, serverId)
   const playerCount = players.length
 
   // Determine seeding mode
@@ -153,16 +180,18 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
       : `Player count (${playerCount}) above threshold (${cfg.seeding_player_threshold})`
 
     // Check for server live event (was seeding, now above threshold)
-    if (wasSeeding.get(guildKey) && playerCount > cfg.seeding_player_threshold) {
+    if (wasSeeding.get(serverKey) && playerCount > cfg.seeding_player_threshold) {
       if (cfg.discord_notify_channel_id) {
         await db.queueNotification(guildId, "seeding_server_live", {
           player_count: playerCount, threshold: cfg.seeding_player_threshold,
           channel_id: cfg.discord_notify_channel_id,
+          server_name: server.server_name,
         })
       }
       if (cfg.webhook_enabled && cfg.webhook_url) {
         db.sendWebhook(cfg.webhook_url, "seeding_server_live", {
           guild_id: String(guildId), player_count: playerCount, threshold: cfg.seeding_player_threshold,
+          server_name: server.server_name,
         }).catch(() => {})
       }
     }
@@ -171,7 +200,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     if (cfg.auto_seed_alert_enabled && cfg.auto_seed_alert_role_id && cfg.discord_notify_channel_id &&
         playerCount < cfg.seeding_start_player_count) {
       const now = Date.now()
-      const lastAlert = lastAutoSeedAlert.get(guildKey) ?? 0
+      const lastAlert = lastAutoSeedAlert.get(serverKey) ?? 0
       const cooldownMs = (cfg.auto_seed_alert_cooldown_min ?? 30) * 60 * 1000
       if (now - lastAlert > cooldownMs) {
         await db.queueNotification(guildId, "seeding_needs_seeders", {
@@ -179,21 +208,22 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
           threshold: cfg.seeding_player_threshold,
           role_id: cfg.auto_seed_alert_role_id,
           channel_id: cfg.discord_notify_channel_id,
+          server_name: server.server_name,
         })
-        lastAutoSeedAlert.set(guildKey, now)
+        lastAutoSeedAlert.set(serverKey, now)
       }
     }
 
-    wasSeeding.set(guildKey, false)
-    await db.updatePollStatus(guildId, "ok", `Not seeding: ${reason}`)
+    wasSeeding.set(serverKey, false)
+    await db.updateServerPollStatus(serverId, "ok", `Not seeding: ${reason}`)
     return
   }
 
-  wasSeeding.set(guildKey, true)
+  wasSeeding.set(serverKey, true)
 
   // ── In-game seeding broadcast ─────────────────────────────────────────
   if (cfg.rcon_broadcast_enabled && cfg.rcon_broadcast_message) {
-    const broadcastKey = `broadcast:${guildKey}`
+    const broadcastKey = `broadcast:${serverKey}`
     const lastBroadcast = lastAutoSeedAlert.get(broadcastKey) ?? 0
     const intervalMs = (cfg.rcon_broadcast_interval_min ?? 10) * 60 * 1000
     if (Date.now() - lastBroadcast > intervalMs) {
@@ -202,7 +232,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
         .replace(/\{player_count\}/g, String(playerCount))
         .replace(/\{threshold\}/g, String(cfg.seeding_player_threshold))
       for (const p of players) {
-        squadjs.warnPlayer(guildKey, p.steamId, broadcastMsg).catch(() => {})
+        squadjs.warnPlayer(guildKey, serverId, p.steamId, broadcastMsg).catch(() => {})
       }
       lastAutoSeedAlert.set(broadcastKey, Date.now())
     }
@@ -233,10 +263,10 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     const fullPoints = Math.floor(pointMultiplier)
     awarded = 0
     for (let i = 0; i < fullPoints; i++) {
-      awarded += await db.awardPoints(guildId, playerInputs)
+      awarded += await db.awardPoints(guildId, playerInputs, pointServerId)
     }
   } else {
-    awarded = await db.awardPoints(guildId, playerInputs)
+    awarded = await db.awardPoints(guildId, playerInputs, pointServerId)
   }
 
   // ── Streak tracking ───────────────────────────────────────────────────
@@ -255,7 +285,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
         // Award at least 1 bonus point for streak (ceil ensures 1.5x gives 1 extra)
         const bonusPoints = Math.max(1, Math.ceil(cfg.streak_multiplier - 1))
         for (let i = 0; i < bonusPoints; i++) {
-          await db.awardPoints(guildId, [p])
+          await db.awardPoints(guildId, [p], pointServerId)
         }
       }
     }
@@ -265,7 +295,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
   if (cfg.rcon_warnings_enabled) {
     try {
       const steamIds = playerInputs.map((p) => p.steamId)
-      const pointsMap = await db.getPlayerPointsBatch(guildId, steamIds)
+      const pointsMap = await db.getPlayerPointsBatch(guildId, steamIds, pointServerId)
       const tiers = cfg.reward_tiers as db.RewardTier[] | null
       const effectiveMax = tiers?.length
         ? Math.max(...tiers.map((t) => t.points))
@@ -275,13 +305,13 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
       for (const p of playerInputs) {
         const pts = pointsMap.get(p.steamId) ?? 0
         const pct = effectiveMax > 0 ? Math.round((pts / effectiveMax) * 100) : 0
-        const key = `${guildId}:${p.steamId}`
+        const key = `${guildId}:${serverId}:${p.steamId}`
         const lastPct = lastWarnedPct.get(key) ?? 0
 
         for (const milestone of MILESTONES) {
           if (pct >= milestone && lastPct < milestone) {
             const msg = formatWarning(cfg.rcon_warning_message, pct, pts, effectiveMax, p.name)
-            warnings.push(squadjs.warnPlayer(guildKey, p.steamId, msg))
+            warnings.push(squadjs.warnPlayer(guildKey, serverId, p.steamId, msg))
             lastWarnedPct.set(key, pct)
             break // only send highest newly crossed milestone
           }
@@ -289,7 +319,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
       }
       if (warnings.length > 0) await Promise.allSettled(warnings)
     } catch (err) {
-      console.error(`[seeding/tracker] RCON warning error for guild ${guildId}:`, err)
+      console.error(`[seeding/tracker] RCON warning error for guild ${guildId} server ${serverId}:`, err)
     }
   }
 
@@ -349,7 +379,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
           if (ok) {
             await db.markRewarded(guildId, q.steam_id)
             rewarded++
-            console.log(`[seeding/tracker] Reward granted: ${q.player_name ?? q.steam_id} → ${tierLabel || "standard"} (${duration}h) in guild ${guildId}`)
+            console.log(`[seeding/tracker] Reward granted: ${q.player_name ?? q.steam_id} → ${tierLabel || "standard"} (${duration}h) in guild ${guildId} server ${server.server_name}`)
 
             // Queue Discord notification for reward
             if (cfg.discord_notify_channel_id) {
@@ -359,6 +389,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
                 tier_label: tierLabel || "Standard",
                 duration_hours: duration,
                 channel_id: cfg.discord_notify_channel_id,
+                server_name: server.server_name,
               }).catch(() => {}) // non-blocking
             }
 
@@ -368,6 +399,7 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
                 guild_id: String(guildId), steam_id: q.steam_id,
                 player_name: q.player_name, tier_label: tierLabel || "Standard",
                 duration_hours: duration,
+                server_name: server.server_name,
               }).catch(() => {})
             }
 
@@ -389,8 +421,8 @@ async function pollGuild(cfg: db.SeedingConfigRow): Promise<void> {
     }
   }
 
-  const msg = `Seeding active: ${playerCount} players, ${awarded} points awarded${rewarded > 0 ? `, ${rewarded} rewards granted` : ""}`
-  await db.updatePollStatus(guildId, "ok", msg)
+  const msg = `Seeding active: ${playerCount} players on ${server.server_name}, ${awarded} points awarded${rewarded > 0 ? `, ${rewarded} rewards granted` : ""}`
+  await db.updateServerPollStatus(serverId, "ok", msg)
 }
 
 
