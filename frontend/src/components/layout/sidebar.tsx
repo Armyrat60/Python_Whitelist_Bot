@@ -55,7 +55,7 @@ const configLinks = [
 const seedingLinks = [
   { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
-  { href: "/dashboard/seeding/settings", label: "Settings", icon: Settings2 },
+  { href: "/dashboard/seeding/settings", label: "Seed Settings", icon: Settings2 },
 ];
 
 const bottomLinks = [
@@ -164,8 +164,13 @@ export function Sidebar() {
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
     if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
-    if (href !== "/dashboard" && pathname.startsWith(href)) return true;
     if (href === "/dashboard/panels" && pathname === "/dashboard/setup") return true;
+    // Exact match for seeding sub-pages to avoid parent highlighting
+    if (href === "/dashboard/seeding" && pathname === "/dashboard/seeding") return true;
+    if (href === "/dashboard/seeding/leaderboard" && pathname === "/dashboard/seeding/leaderboard") return true;
+    if (href === "/dashboard/seeding/settings" && pathname === "/dashboard/seeding/settings") return true;
+    // Default: startsWith for other pages (but not /dashboard/seeding which is handled above)
+    if (href !== "/dashboard" && !href.startsWith("/dashboard/seeding") && pathname.startsWith(href)) return true;
     return false;
   };
 

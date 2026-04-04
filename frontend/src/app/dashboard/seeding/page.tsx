@@ -133,7 +133,7 @@ export default function SeedingDashboard() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 max-w-3xl">
+      <div className="space-y-4 max-w-5xl">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-3 gap-3"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-24 rounded-xl" /></div>
         <Skeleton className="h-64 w-full rounded-xl" />
@@ -144,7 +144,7 @@ export default function SeedingDashboard() {
   // Not configured state
   if (!config) {
     return (
-      <div className="max-w-3xl space-y-6">
+      <div className="max-w-5xl space-y-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0" style={{ background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)" }}>
             <Sprout className="h-5 w-5" style={{ color: "var(--accent-primary)" }} />
@@ -169,7 +169,7 @@ export default function SeedingDashboard() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-5xl space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0" style={{ background: "color-mix(in srgb, var(--accent-primary) 12%, transparent)" }}>
@@ -215,22 +215,22 @@ export default function SeedingDashboard() {
 
       {/* Two-column layout: Top seeders + Recent activity */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Top Seeders */}
+        {/* Top 10 Seeders */}
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-              <h2 className="text-sm font-semibold text-white/80">Top Seeders</h2>
+              <h2 className="text-sm font-semibold text-white/80">Top 10 Seeders</h2>
             </div>
             <Link href="/dashboard/seeding/leaderboard" className="text-[10px] text-muted-foreground hover:text-white/70 flex items-center gap-1">
               View all <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          {(!stats?.top_5 || stats.top_5.length === 0) ? (
+          {(!stats?.top_seeders || stats.top_seeders.length === 0) ? (
             <p className="text-xs text-muted-foreground py-4 text-center">No seeding data yet</p>
           ) : (
             <div className="space-y-2">
-              {stats.top_5.map((player, idx) => (
+              {stats.top_seeders.map((player, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <span className={`text-xs font-bold w-5 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/30"}`}>
                     {idx + 1}

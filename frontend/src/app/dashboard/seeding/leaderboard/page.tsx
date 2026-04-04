@@ -199,33 +199,6 @@ export default function SeedingLeaderboardPage() {
         </div>
       </div>
 
-      {/* Public toggle */}
-      <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-white/80">
-            Make leaderboard public
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            Non-admin users can view at /seeding/leaderboard
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {leaderboardPublic && (
-            <Link
-              href="/seeding/leaderboard"
-              className="text-xs flex items-center gap-1 hover:underline"
-              style={{ color: "var(--accent-primary)" }}
-            >
-              View <ExternalLink className="h-3 w-3" />
-            </Link>
-          )}
-          <Switch
-            checked={leaderboardPublic}
-            onCheckedChange={handleTogglePublic}
-          />
-        </div>
-      </div>
-
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -314,26 +287,18 @@ export default function SeedingLeaderboardPage() {
                     {player.steam_id}
                   </span>
                   {player.rewarded && (
-                    <Badge
-                      variant="default"
-                      className="text-[9px] px-1.5 py-0"
-                      style={{
-                        background: "var(--accent-primary)",
-                        color: "black",
-                      }}
-                    >
+                    <Badge variant="default" className="text-[9px] px-1.5 py-0" style={{ background: "#10b981", color: "white" }}>
                       Rewarded
                     </Badge>
                   )}
                 </div>
-                <ProgressBar pct={player.progress_pct} />
               </div>
-              <div className="text-right shrink-0">
-                <span className="text-xs font-semibold text-white/70">
-                  {player.points}/{lbRequired}
-                </span>
-                <span className="block text-[10px] text-muted-foreground">
-                  {player.progress_pct}%
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="w-24">
+                  <ProgressBar pct={player.progress_pct} />
+                </div>
+                <span className="text-xs font-semibold text-white/70 w-16 text-right">
+                  {player.points}<span className="text-muted-foreground/50">/{lbRequired}</span>
                 </span>
               </div>
             </div>

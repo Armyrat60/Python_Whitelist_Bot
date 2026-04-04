@@ -645,10 +645,10 @@ export default async function seedingRoutes(app: FastifyInstance) {
     const totalSeedingHours = Math.round(totalPoints / 60 * 10) / 10
 
     // Top 5 seeders
-    const top5 = await app.prisma.seedingPoints.findMany({
+    const top10 = await app.prisma.seedingPoints.findMany({
       where: { guildId, points: { gt: 0 } },
       orderBy: { points: "desc" },
-      take: 5,
+      take: 10,
     })
 
     // Recent rewards (last 10 from audit log)
@@ -690,7 +690,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
       total_rewarded: totalRewarded,
       total_seeding_hours: totalSeedingHours,
       pending_discord_link: pendingDiscordLink,
-      top_5: top5.map((p) => ({
+      top_seeders: top10.map((p) => ({
         player_name: p.playerName ?? `Seeder_${p.steamId.slice(-6)}`,
         points: p.points,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),

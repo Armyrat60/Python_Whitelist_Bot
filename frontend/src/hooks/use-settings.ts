@@ -1003,7 +1003,7 @@ export function useSeedingStats() {
     total_rewarded: number;
     total_seeding_hours: number;
     pending_discord_link: number;
-    top_5: Array<{ player_name: string | null; points: number; progress_pct: number; rewarded: boolean }>;
+    top_seeders: Array<{ player_name: string | null; points: number; progress_pct: number; rewarded: boolean }>;
     recent_rewards: Array<{ player_name: string; tier_label: string; created_at: string }>;
   }>({
     queryKey: ["seeding-stats", guildId],
