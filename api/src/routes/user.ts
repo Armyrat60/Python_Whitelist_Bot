@@ -285,64 +285,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     })
   })
 
-  // POST /my-linked-accounts/link — link a Steam/EOS ID to this Discord user
-  app.post<{
-    Body: { id_type: string; id_value: string }
-  }>("/my-linked-accounts/link", { preHandler: requireAuth }, async (req, reply) => {
-    const guildId = BigInt(req.session.activeGuildId!)
-    const discordId = BigInt(req.session.userId!)
-    const { id_type, id_value } = req.body ?? {}
-
-    if (!id_type || !id_value) {
-      return reply.code(400).send({ error: "id_type and id_value are required" })
-    }
-
-    // Validate format
-    if (id_type === "steam64" && !STEAM64_RE.test(id_value)) {
-      return reply.code(400).send({ error: "Invalid Steam64 ID format (must be 17 digits)" })
-    }
-    if (id_type === "eosid" && !EOSID_RE.test(id_value)) {
-      return reply.code(400).send({ error: "Invalid EOS ID format (must be 32 hex characters)" })
-    }
-    if (!["steam64", "eosid"].includes(id_type)) {
-      return reply.code(400).send({ error: "id_type must be 'steam64' or 'eosid'" })
-    }
-
-    // Check if this ID is already linked to another user
-    const existing = await app.prisma.whitelistIdentifier.findFirst({
-      where: { guildId, idType: id_type, idValue: id_value, discordId: { not: discordId } },
-    })
-    if (existing) {
-      return reply.code(409).send({ error: "This ID is already linked to another user" })
-    }
-
-    // Verify the ID exists in squad_players (they've been seen in-game)
-    const seenInGame = await app.prisma.squadPlayer.findFirst({
-      where: { guildId, steamId: id_value },
-    })
-
-    // Create or update the link
-    await app.prisma.$executeRaw`
-      INSERT INTO whitelist_identifiers (guild_id, discord_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
-      VALUES (${guildId}, ${discordId}, ${id_type}, ${id_value}, ${!!seenInGame}, ${seenInGame ? "self_link_verified" : "self_link_unverified"}, NOW(), NOW())
-      ON CONFLICT (guild_id, discord_id, whitelist_id, id_type, id_value)
-      DO UPDATE SET is_verified = EXCLUDED.is_verified, verification_source = EXCLUDED.verification_source, updated_at = NOW()
-    `
-
-    // Also update squad_players to link discord_id if the Steam ID exists there
-    if (seenInGame && id_type === "steam64") {
-      await app.prisma.squadPlayer.updateMany({
-        where: { guildId, steamId: id_value },
-        data: { discordId },
-      })
-    }
-
-    return reply.send({
-      ok: true,
-      verified: !!seenInGame,
-      message: seenInGame
-        ? `${id_type === "steam64" ? "Steam" : "EOS"} ID linked and verified (seen in-game)`
-        : `${id_type === "steam64" ? "Steam" : "EOS"} ID linked (will be verified when seen in-game)`,
-    })
-  })
+  // Manual linking removed — use Discord Connected Accounts (Steam OAuth via Discord)
+  // or in-game verification code for EOS IDs (future feature)
 }

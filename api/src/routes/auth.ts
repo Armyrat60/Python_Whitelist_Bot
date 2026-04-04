@@ -33,7 +33,7 @@ function verifyState(cookie: string, urlState: string): boolean {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DISCORD_API   = "https://discord.com/api/v10"
-const OAUTH_SCOPES  = "identify guilds guilds.members.read"
+const OAUTH_SCOPES  = "identify guilds guilds.members.read connections"
 const ADMINISTRATOR = 0x8n
 const MANAGE_GUILD  = 0x20n
 
@@ -194,6 +194,40 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         isAdmin:         permissionLevel === "owner" || permissionLevel === "admin",
         permissionLevel,
       })
+    }
+
+    // ── Auto-link Steam from Discord connections ──────────────────────────────
+
+    try {
+      const connRes = await fetch(`${DISCORD_API}/users/@me/connections`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (connRes.ok) {
+        const connections = await connRes.json() as Array<{ type: string; id: string; verified: boolean; visibility: number }>
+        const steamConn = connections.find((c) => c.type === "steam" && c.verified)
+        if (steamConn) {
+          // Auto-link Steam ID to all mutual guilds
+          const discordId = BigInt(discordUser.id)
+          for (const guild of mutualGuilds) {
+            const guildId = BigInt(guild.id)
+            // Upsert the Steam link — don't overwrite existing verified links
+            await app.prisma.$executeRaw`
+              INSERT INTO whitelist_identifiers (guild_id, discord_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
+              VALUES (${guildId}, ${discordId}, 'steam64', ${steamConn.id}, TRUE, 'discord_connection', NOW(), NOW())
+              ON CONFLICT (guild_id, discord_id, whitelist_id, id_type, id_value)
+              DO UPDATE SET is_verified = TRUE, verification_source = 'discord_connection', updated_at = NOW()
+            `
+            // Also link in squad_players if they exist
+            await app.prisma.squadPlayer.updateMany({
+              where: { guildId, steamId: steamConn.id, discordId: null },
+              data: { discordId },
+            })
+          }
+          app.log.info(`Auto-linked Steam ${steamConn.id} for Discord user ${discordUser.id}`)
+        }
+      }
+    } catch (err) {
+      app.log.debug({ err }, "Failed to fetch Discord connections (non-fatal)")
     }
 
     // ── Write session ─────────────────────────────────────────────────────────
