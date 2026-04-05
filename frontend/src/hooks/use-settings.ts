@@ -56,6 +56,7 @@ export function useSettings() {
     queryKey: ["settings", guildId],
     queryFn: () => api.get<SettingsResponse>("/api/admin/settings"),
     enabled: !!guildId,
+    refetchInterval: 60_000,
   });
 }
 
@@ -86,6 +87,7 @@ export function usePanels() {
       const res = await api.get<{ panels: Panel[] }>("/api/admin/panels");
       return res.panels;
     },
+    refetchInterval: 60_000,
   });
 }
 
@@ -96,6 +98,8 @@ export function useRoles() {
       const res = await api.get<{ roles: DiscordRole[] }>("/api/admin/roles");
       return res.roles;
     },
+    staleTime: 300_000,
+    refetchInterval: 300_000,
   });
 }
 
@@ -106,6 +110,8 @@ export function useChannels() {
       const res = await api.get<{ channels: DiscordChannel[] }>("/api/admin/channels");
       return res.channels;
     },
+    staleTime: 300_000,
+    refetchInterval: 300_000,
   });
 }
 
@@ -116,6 +122,7 @@ export function useGroups() {
       const res = await api.get<{ groups: SquadGroup[] }>("/api/admin/groups");
       return res.groups;
     },
+    refetchInterval: 60_000,
   });
 }
 
@@ -177,6 +184,17 @@ export function useHealth() {
     queryKey: ["health"],
     queryFn: () => api.get<HealthStatus>("/api/admin/health"),
     refetchInterval: 30_000,
+  });
+}
+
+export function useDuplicateIdCount() {
+  return useQuery<{ count: number }>({
+    queryKey: ["duplicate-id-count"],
+    queryFn: async () => {
+      const res = await api.get<{ duplicates: { steam_id: string }[] }>("/api/admin/health/duplicate-ids");
+      return { count: res.duplicates?.length ?? 0 };
+    },
+    refetchInterval: 60_000,
   });
 }
 

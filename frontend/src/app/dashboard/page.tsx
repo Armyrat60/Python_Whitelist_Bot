@@ -14,7 +14,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings, useRoleStats } from "@/hooks/use-settings";
+import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings, useRoleStats, useDuplicateIdCount } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/stats/stat-card";
 import { SetupGuide } from "@/components/setup-guide";
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const { data: panels } = usePanels();
   const { data: settingsData } = useSettings();
   const { data: roleStats } = useRoleStats();
+  const { data: dupData } = useDuplicateIdCount();
 
   const whitelistCount = whitelists?.filter((w) => w.enabled).length ?? 0;
   const panelCount = panels?.length ?? 0;
@@ -223,8 +224,22 @@ export default function DashboardPage() {
                     <span>
                       <span className="font-semibold">{stats!.orphan_count}</span> unlinked{" "}
                       {stats!.orphan_count === 1 ? "entry" : "entries"} — imported but no Discord account matched.{" "}
-                      <Link href="/dashboard/roster" className="underline underline-offset-2 hover:text-amber-300">
+                      <Link href="/dashboard/users" className="underline underline-offset-2 hover:text-amber-300">
                         View in Roster
+                      </Link>
+                    </span>
+                  </div>
+                )}
+
+                {/* Steam ID conflicts */}
+                {(dupData?.count ?? 0) > 0 && (
+                  <div className="flex items-center gap-2 rounded-lg border border-red-800/50 bg-red-950/20 px-3 py-2 text-sm text-red-400">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="font-semibold">{dupData!.count}</span> Steam ID{" "}
+                      {dupData!.count === 1 ? "conflict" : "conflicts"} — duplicate IDs registered to multiple users.{" "}
+                      <Link href="/dashboard/conflicts" className="underline underline-offset-2 hover:text-red-300">
+                        Resolve
                       </Link>
                     </span>
                   </div>

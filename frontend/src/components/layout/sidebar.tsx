@@ -9,12 +9,13 @@ import {
   Users,
   List,
   Settings2,
+  Settings,
   ChevronsUpDown,
   Check,
   BookUser,
   Sprout,
   Trophy,
-  AlertTriangle,
+
   ChevronRight,
   LogOut,
 } from "lucide-react";
@@ -46,7 +47,6 @@ const whitelistLinks = [
   { href: "/dashboard/users", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
   { href: "/dashboard/config", label: "Configuration", icon: Settings2 },
-  { href: "/dashboard/conflicts", label: "Steam ID Conflicts", icon: AlertTriangle },
 ];
 
 const seedingLinks = [
@@ -245,7 +245,7 @@ function AccountBar() {
           className="rounded-md p-1.5 text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
           title="Settings"
         >
-          <Settings2 className="h-3.5 w-3.5" />
+          <Settings className="h-3.5 w-3.5" />
         </Link>
         <a
           href="/logout"
