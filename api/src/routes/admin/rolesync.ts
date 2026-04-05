@@ -383,14 +383,20 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
 
     const memberRoles = new Map(allMembers.map((m) => [m.id, m.roles]))
 
-    const activeUsers = await app.prisma.whitelistUser.findMany({
-      where: { guildId, status: "active" },
+    // Include both active AND disabled_role_lost users so we can re-enable them
+    const users = await app.prisma.whitelistUser.findMany({
+      where: { guildId, status: { in: ["active", "disabled_role_lost"] } },
     })
 
     let updated = 0
     let disabled = 0
+    let reactivated = 0
 
-    for (const user of activeUsers) {
+    for (const user of users) {
+      // If member wasn't returned by Discord API, skip them entirely
+      // to avoid falsely disabling users due to API hiccups
+      if (!memberRoles.has(user.discordId)) continue
+
       const roles = memberRoles.get(user.discordId) ?? []
 
       const stackable:    Array<{ name: string; slots: number }> = []
@@ -403,19 +409,21 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
         else nonStackable.push({ name: entry.name, slots: entry.slots })
       }
 
-      // No matching panel role → 0 slots, disable the user
+      // No matching panel role AND member is confirmed in guild → disable
       if (!stackable.length && !nonStackable.length) {
-        await app.prisma.whitelistUser.update({
-          where: {
-            guildId_discordId_whitelistId: {
-              guildId,
-              discordId:   user.discordId,
-              whitelistId: user.whitelistId,
+        if (user.status === "active") {
+          await app.prisma.whitelistUser.update({
+            where: {
+              guildId_discordId_whitelistId: {
+                guildId,
+                discordId:   user.discordId,
+                whitelistId: user.whitelistId,
+              },
             },
-          },
-          data: { effectiveSlotLimit: 0, status: "disabled_role_lost", lastPlanName: null, updatedAt: new Date() },
-        })
-        disabled++
+            data: { effectiveSlotLimit: 0, status: "disabled_role_lost", lastPlanName: null, updatedAt: new Date() },
+          })
+          disabled++
+        }
         continue
       }
 
@@ -432,6 +440,10 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
         tierLabel = tierLabel ? `${tierLabel}+${best.name}:${best.slots}` : `${best.name}:${best.slots}`
       }
 
+      // Re-enable disabled users who now have valid roles
+      const newStatus = user.status === "disabled_role_lost" ? "active" : user.status
+      if (user.status === "disabled_role_lost") reactivated++
+
       await app.prisma.whitelistUser.update({
         where: {
           guildId_discordId_whitelistId: {
@@ -440,13 +452,13 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
             whitelistId: user.whitelistId,
           },
         },
-        data: { lastPlanName: tierLabel, effectiveSlotLimit: totalSlots, updatedAt: new Date() },
+        data: { lastPlanName: tierLabel, effectiveSlotLimit: totalSlots, status: newStatus, updatedAt: new Date() },
       })
       updated++
     }
 
     await triggerSync(app, guildId)
 
-    return reply.send({ ok: true, updated, disabled, total_active: activeUsers.length })
+    return reply.send({ ok: true, updated, disabled, reactivated, total: users.length })
   })
 }

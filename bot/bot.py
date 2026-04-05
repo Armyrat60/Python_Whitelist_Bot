@@ -904,24 +904,44 @@ class WhitelistBot(commands.Bot):
                 if role:
                     role_member_ids.update(m.id for m in role.members)
 
-            default_slot = wl.get("default_slot_limit") or 1
-            added = removed = 0
+            added = removed = tier_updated = 0
 
-            # Add anyone with the role who isn't in the whitelist yet
+            # Add anyone with the role who isn't in the whitelist yet,
+            # and update tiers for existing members
             for member_id in role_member_ids:
+                member = guild.get_member(member_id)
+                if not member:
+                    continue
                 if member_id not in existing:
-                    member = guild.get_member(member_id)
-                    if not member:
-                        continue
+                    # New user — calculate proper slots from their roles
                     name = member.nick or member.display_name or str(member)
                     _d_tag, _ = parse_clan_tag(name)
+                    slots, plan = await self.calculate_user_slots(guild_id, member, wl_id, wl=wl)
+                    if slots <= 0:
+                        slots = wl.get("default_slot_limit") or 1
+                        plan = ""
                     await self.db.upsert_user_record(
-                        guild_id, member_id, wl_id, name, "active", default_slot, "", None,
+                        guild_id, member_id, wl_id, name, "active", slots, plan, None,
                         created_via="role_sync", discord_username=member.name, discord_nick=member.nick, clan_tag=_d_tag,
                     )
                     await self.db.audit(guild_id, "daily_role_sync_add", None, member_id,
                                         f"type={wl['slug']}", wl_id)
                     added += 1
+                else:
+                    # Existing user — recalculate tiers to keep them current
+                    user_record = await self.db.get_user_record(guild_id, member_id, wl_id)
+                    if not user_record:
+                        continue
+                    slots, plan = await self.calculate_user_slots(guild_id, member, wl_id, user_record=user_record, wl=wl)
+                    if slots > 0:
+                        name = member.nick or member.display_name or str(member)
+                        _d_tag, _ = parse_clan_tag(name)
+                        status = "active" if existing[member_id] == "disabled_role_lost" else existing[member_id]
+                        await self.db.upsert_user_record(
+                            guild_id, member_id, wl_id, name, status, slots, plan, user_record[2],
+                            discord_username=member.name, discord_nick=member.nick, clan_tag=_d_tag,
+                        )
+                        tier_updated += 1
 
             # Disable active members who no longer hold any mapped role
             for member_id, status in existing.items():
@@ -931,8 +951,8 @@ class WhitelistBot(commands.Bot):
                                         f"type={wl['slug']}", wl_id)
                     removed += 1
 
-            if added or removed:
-                log.info("Guild %s daily role sync %s: +%d -%d", guild_id, wl["slug"], added, removed)
+            if added or removed or tier_updated:
+                log.info("Guild %s daily role sync %s: +%d -%d ~%d tiers", guild_id, wl["slug"], added, removed, tier_updated)
                 self.schedule_github_sync(guild_id)
 
     @daily_housekeeping.before_loop
