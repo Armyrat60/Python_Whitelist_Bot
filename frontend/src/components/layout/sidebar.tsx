@@ -15,6 +15,8 @@ import {
   Sprout,
   Trophy,
   AlertTriangle,
+  ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -34,17 +36,17 @@ import {
 import { useGuild } from "@/hooks/use-guild";
 import { useSession } from "@/hooks/use-session";
 
+// ─── Link definitions ────────────────────────────────────────────────────────
+
 const dashboardLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 
-const rosterLinks = [
+const whitelistLinks = [
   { href: "/dashboard/users", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
-];
-
-const configLinks = [
   { href: "/dashboard/config", label: "Configuration", icon: Settings2 },
+  { href: "/dashboard/conflicts", label: "Steam ID Conflicts", icon: AlertTriangle },
 ];
 
 const seedingLinks = [
@@ -52,21 +54,41 @@ const seedingLinks = [
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
-const bottomLinks = [
-  { href: "/dashboard/conflicts", label: "Steam ID Conflicts", icon: AlertTriangle },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
-];
-
 const userLinks = [
   { href: "/my-whitelist", label: "My Whitelist", icon: List },
   { href: "/seeding/leaderboard", label: "Seeding Leaderboard", icon: Trophy },
 ];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const COLLAPSED_KEY = "sidebar_collapsed_v1";
+
+function loadCollapsed(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsed(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(state));
+  } catch {}
+}
 
 function guildIconUrl(guildId: string, icon: string | null) {
   if (!icon) return null;
   if (icon.startsWith("http")) return icon;
   return `https://cdn.discordapp.com/icons/${guildId}/${icon}.webp?size=64`;
 }
+
+function avatarUrl(userId: string, avatar: string) {
+  return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=64`;
+}
+
+// ─── Guild Switcher ──────────────────────────────────────────────────────────
 
 function SidebarGuildCard() {
   const { activeGuild, guilds, switchGuild } = useGuild();
@@ -77,7 +99,6 @@ function SidebarGuildCard() {
   useEffect(() => {
     if (prevGuildId.current !== undefined && prevGuildId.current !== activeGuild?.id) {
       setFlashing(false);
-      // Re-trigger animation by toggling off then on next frame
       requestAnimationFrame(() => setFlashing(true));
     }
     prevGuildId.current = activeGuild?.id;
@@ -151,18 +172,119 @@ function SidebarGuildCard() {
   );
 }
 
+// ─── Collapsible Section ─────────────────────────────────────────────────────
+
+function CollapsibleSection({
+  label,
+  sectionKey,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  label: string;
+  sectionKey: string;
+  collapsed: Record<string, boolean>;
+  onToggle: (key: string) => void;
+  children: React.ReactNode;
+}) {
+  const isCollapsed = collapsed[sectionKey] ?? false;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggle(sectionKey)}
+        className="flex w-full items-center gap-1 pt-4 pb-1 px-3 group"
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform duration-150",
+            !isCollapsed && "rotate-90"
+          )}
+          style={{ color: "color-mix(in srgb, var(--accent-primary) 50%, var(--muted-foreground, #9CA3AF))" }}
+        />
+        <p
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: "color-mix(in srgb, var(--accent-primary) 50%, var(--muted-foreground, #9CA3AF))" }}
+        >
+          {label}
+        </p>
+      </button>
+      {!isCollapsed && (
+        <div className="space-y-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Account Bar ─────────────────────────────────────────────────────────────
+
+function AccountBar() {
+  const { data: session } = useSession();
+  const { activeGuild } = useGuild();
+
+  if (!session?.logged_in) return null;
+
+  return (
+    <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
+      <div className="flex items-center gap-2.5">
+        <Avatar size="sm">
+          <AvatarImage src={avatarUrl(session.discord_id, session.avatar)} alt={session.username} />
+          <AvatarFallback className="text-xs">{session.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-white/90 leading-tight">{session.username}</p>
+          {activeGuild && (
+            <p className="truncate text-[10px] text-muted-foreground leading-tight">{activeGuild.name}</p>
+          )}
+        </div>
+        <Link
+          href="/dashboard/settings"
+          className="rounded-md p-1.5 text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
+          title="Settings"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+        </Link>
+        <a
+          href="/logout"
+          className="rounded-md p-1.5 text-white/40 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          title="Sign Out"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Sidebar ────────────────────────────────────────────────────────────
+
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isRosterManager = session?.permission_level === "roster_manager" && !session?.is_mod;
 
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCollapsed(loadCollapsed());
+  }, []);
+
+  function toggleSection(key: string) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveCollapsed(next);
+      return next;
+    });
+  }
+
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
-    // Exact match for seeding sub-pages to avoid parent highlighting
     if (href === "/dashboard/seeding" && pathname === "/dashboard/seeding") return true;
     if (href === "/dashboard/seeding/leaderboard" && pathname === "/dashboard/seeding/leaderboard") return true;
     if (href === "/dashboard/seeding/settings" && pathname === "/dashboard/seeding/settings") return true;
-    // Default: startsWith for other pages (but not /dashboard/seeding which is handled above)
     if (href !== "/dashboard" && !href.startsWith("/dashboard/seeding") && pathname.startsWith(href)) return true;
     return false;
   };
@@ -206,36 +328,31 @@ export function Sidebar() {
           <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
 
-        <SectionLabel>Whitelist</SectionLabel>
-        {rosterLinks.map((link) => (
-          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
-        ))}
+        <CollapsibleSection label="Whitelist" sectionKey="whitelist" collapsed={collapsed} onToggle={toggleSection}>
+          {whitelistLinks.map((link) => {
+            if (isRosterManager && (link.href === "/dashboard/config" || link.href === "/dashboard/conflicts")) return null;
+            return <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />;
+          })}
+        </CollapsibleSection>
 
         {!isRosterManager && (
-          <>
-            <SectionLabel>Configuration</SectionLabel>
-            {configLinks.map((link) => (
-              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
-            ))}
-
-            <SectionLabel>Seeding</SectionLabel>
+          <CollapsibleSection label="Seeding" sectionKey="seeding" collapsed={collapsed} onToggle={toggleSection}>
             {seedingLinks.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
             ))}
-          </>
+          </CollapsibleSection>
         )}
       </nav>
 
-      {/* Fixed bottom section — Settings, Data, My Whitelist */}
-      <div className="shrink-0 border-t border-white/[0.06] px-3 pt-2 pb-2 space-y-0.5">
-        {!isRosterManager && bottomLinks.map((link) => (
-          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
-        ))}
-        <div className="my-1.5 h-px bg-white/[0.06]" />
+      {/* User links */}
+      <div className="shrink-0 border-t border-white/[0.06] px-3 pt-2 pb-1 space-y-0.5">
         {userLinks.map((link) => (
           <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
         ))}
       </div>
+
+      {/* Account bar */}
+      <AccountBar />
 
       {/* Bottom accent bar */}
       <div
@@ -246,18 +363,7 @@ export function Sidebar() {
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="pt-4 pb-1">
-      <p
-        className="px-3 text-[10px] font-semibold uppercase tracking-widest"
-        style={{ color: "color-mix(in srgb, var(--accent-primary) 50%, var(--muted-foreground, #9CA3AF))" }}
-      >
-        {children}
-      </p>
-    </div>
-  );
-}
+// ─── Shared Components ───────────────────────────────────────────────────────
 
 function NavLink({
   href,
@@ -272,30 +378,24 @@ function NavLink({
   active: boolean;
   onClick?: () => void;
 }) {
-  if (active) {
-    return (
-      <Link
-        href={href}
-        onClick={onClick}
-        className="nav-active flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150"
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        {label}
-      </Link>
-    );
-  }
-
   return (
     <Link
       href={href}
       onClick={onClick}
-      className="nav-inactive flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/60 transition-all duration-150"
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+        active
+          ? "nav-active"
+          : "nav-inactive text-white/60"
+      )}
     >
-      <Icon className="h-4 w-4 shrink-0 opacity-60" />
+      <Icon className={cn("h-4 w-4 shrink-0", !active && "opacity-60")} />
       {label}
     </Link>
   );
 }
+
+// ─── Mobile Sidebar ──────────────────────────────────────────────────────────
 
 export function MobileSidebar({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
@@ -309,17 +409,18 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
   };
 
   const allLinks = isRosterManager
-    ? [...rosterLinks, ...userLinks]
-    : [...dashboardLinks, ...rosterLinks, ...configLinks, ...bottomLinks, ...userLinks];
+    ? [
+        ...whitelistLinks.filter((l) => l.href !== "/dashboard/config" && l.href !== "/dashboard/conflicts"),
+        ...userLinks,
+      ]
+    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...userLinks];
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
         onClick={onClose}
       />
-      {/* Slide-in panel */}
       <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/[0.06] md:hidden"
         style={{ background: "oklch(0.185 0 0 / 0.98)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
@@ -333,7 +434,6 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
             </span>
           </div>
         </div>
-        {/* Guild card in mobile sidebar too */}
         <SidebarGuildCard />
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
           <div className="pt-2 pb-1">
@@ -350,6 +450,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
             />
           ))}
         </nav>
+        <AccountBar />
         <div
           className="h-0.5 w-full"
           style={{ background: "linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)", opacity: 0.4 }}

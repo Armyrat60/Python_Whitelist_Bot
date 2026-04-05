@@ -3,14 +3,14 @@
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, Menu, X, Search, UserRound } from "lucide-react";
+import { Menu, X, Search, UserRound } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { useSession } from "@/hooks/use-session";
 import { useGuild } from "@/hooks/use-guild";
 import { usePlayerSearch } from "@/hooks/use-settings";
 import type { PlayerSearchResult } from "@/hooks/use-settings";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { APP_VERSION } from "@/lib/version";
@@ -28,9 +28,6 @@ const pageTitles: Record<string, string> = {
   "/my-whitelist": "My Whitelist",
 };
 
-function avatarUrl(userId: string, avatar: string) {
-  return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=64`;
-}
 
 function GlobalSearch() {
   const [query, setQuery] = useState("");
@@ -156,29 +153,6 @@ export function Topbar() {
         <span className="hidden rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
           v{APP_VERSION}
         </span>
-        {session && (
-          <div className="flex items-center gap-2">
-            <Avatar size="sm">
-              <AvatarImage
-                src={avatarUrl(session.discord_id, session.avatar)}
-                alt={session.username}
-              />
-              <AvatarFallback>
-                {session.username.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="hidden text-sm font-medium sm:inline-block">
-              {session.username}
-            </span>
-          </div>
-        )}
-
-        <a href="/logout">
-          <Button variant="ghost" size="icon-sm">
-            <LogOut className="h-4 w-4" />
-            <span className="sr-only">Logout</span>
-          </Button>
-        </a>
       </div>
     </header>
     {mobileOpen && <MobileSidebar onClose={() => setMobileOpen(false)} />}
