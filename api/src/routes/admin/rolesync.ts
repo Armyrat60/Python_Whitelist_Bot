@@ -12,11 +12,7 @@
 import type { FastifyInstance } from "fastify"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
-
-// ─── BigInt JSON helpers ──────────────────────────────────────────────────────
-
-function bigIntReplacer(_: string, v: unknown) { return typeof v === "bigint" ? v.toString() : v }
-function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntReplacer)) }
+import { toJSON } from "../../lib/json.js"
 
 // ─── triggerSync ──────────────────────────────────────────────────────────────
 

@@ -14,6 +14,7 @@
  * DELETE /api/admin/whitelists/:whitelistId/categories/:categoryId/managers/:discordId
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
+import { toJSON } from "../../lib/json.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,13 +23,6 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   if (!guild?.isAdmin)            return reply.code(403).send({ error: "Admin access required" })
-}
-
-function bigIntReplacer(_: string, v: unknown): unknown {
-  return typeof v === "bigint" ? v.toString() : v
-}
-function safeJson(data: unknown): unknown {
-  return JSON.parse(JSON.stringify(data, bigIntReplacer))
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
@@ -73,7 +67,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         user_count:     c._count.users,
       }))
 
-      return reply.send(safeJson({ categories: result }))
+      return reply.send(toJSON({ categories: result }))
     }
   )
 
@@ -115,7 +109,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         },
       })
 
-      return reply.code(201).send(safeJson({
+      return reply.code(201).send(toJSON({
         ok:          true,
         id:          category.id,
         name:        category.name,
@@ -221,7 +215,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         added_at:     m.addedAt,
       }))
 
-      return reply.send(safeJson({ managers: result }))
+      return reply.send(toJSON({ managers: result }))
     }
   )
 
@@ -261,7 +255,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         create: { categoryId, discordId, discordName: body.discord_name },
       })
 
-      return reply.code(201).send(safeJson({
+      return reply.code(201).send(toJSON({
         ok:           true,
         id:           manager.id,
         discord_id:   manager.discordId.toString(),
@@ -390,7 +384,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         }
       })
 
-      return reply.send(safeJson({ entries, total, page, per_page: perPage }))
+      return reply.send(toJSON({ entries, total, page, per_page: perPage }))
     }
   )
 
@@ -505,7 +499,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         throw err
       }
 
-      return reply.code(201).send(safeJson({
+      return reply.code(201).send(toJSON({
         ok:           true,
         discord_id:   discordId.toString(),
         discord_name: discordName,
@@ -655,7 +649,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         }
       }
 
-      return reply.send(safeJson({ ok: true, ...results }))
+      return reply.send(toJSON({ ok: true, ...results }))
     }
   )
 }

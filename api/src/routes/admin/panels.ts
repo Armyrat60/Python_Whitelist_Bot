@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
+import { toJSON } from "../../lib/json.js"
 
 // ─── Queue helpers ────────────────────────────────────────────────────────────
 
@@ -32,16 +33,6 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!guild?.isAdmin) return reply.code(403).send({ error: "Admin access required" })
 }
 
-// ─── BigInt-safe JSON serialiser ─────────────────────────────────────────────
-
-function bigintReplacer(_: string, v: unknown): unknown {
-  return typeof v === "bigint" ? v.toString() : v
-}
-
-function safeJson(data: unknown): unknown {
-  return JSON.parse(JSON.stringify(data, bigintReplacer))
-}
-
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export default async function panelRoutes(app: FastifyInstance) {
@@ -71,7 +62,7 @@ export default async function panelRoutes(app: FastifyInstance) {
       last_push_at:       p.lastPushAt      ?? null,
     }))
 
-    return reply.send(safeJson({ panels: result }))
+    return reply.send(toJSON({ panels: result }))
   })
 
   // POST /api/admin/panels
@@ -108,7 +99,7 @@ export default async function panelRoutes(app: FastifyInstance) {
       }
     })
 
-    return reply.code(201).send(safeJson({ ok: true, id: panel.id, name: panel.name }))
+    return reply.code(201).send(toJSON({ ok: true, id: panel.id, name: panel.name }))
   })
 
   // PUT /api/admin/panels/:panelId
@@ -149,7 +140,7 @@ export default async function panelRoutes(app: FastifyInstance) {
 
     await queueRefresh(app, guildId, panelId, "dashboard_update")
 
-    return reply.send(safeJson({ ok: true, panel_id: panelId }))
+    return reply.send(toJSON({ ok: true, panel_id: panelId }))
   })
 
   // DELETE /api/admin/panels/:panelId

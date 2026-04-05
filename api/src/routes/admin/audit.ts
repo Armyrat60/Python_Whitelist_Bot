@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
 import { getFileToken } from "../../services/token.js"
+import { toJSON } from "../../lib/json.js"
 
 // ─── Admin preHandler ─────────────────────────────────────────────────────────
 
@@ -16,11 +17,6 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   if (!guild?.isAdmin) return reply.code(403).send({ error: "Admin access required" })
 }
-
-// ─── BigInt JSON helpers ──────────────────────────────────────────────────────
-
-function bigIntReplacer(_: string, v: unknown) { return typeof v === "bigint" ? v.toString() : v }
-function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntReplacer)) }
 
 // ─── triggerSync ──────────────────────────────────────────────────────────────
 

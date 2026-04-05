@@ -6,6 +6,7 @@
  * GET /players/:discordId — full player profile
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
+import { toJSON } from "../../lib/json.js"
 
 const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
@@ -13,9 +14,6 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   if (!guild?.isAdmin) return reply.code(403).send({ error: "Admin access required" })
 }
-
-function bigIntReplacer(_: string, v: unknown) { return typeof v === "bigint" ? v.toString() : v }
-function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntReplacer)) }
 
 export default async function playerRoutes(app: FastifyInstance) {
   const { prisma } = app

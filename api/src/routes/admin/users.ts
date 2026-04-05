@@ -9,6 +9,7 @@ import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
 import { getFileToken } from "../../services/token.js"
 import { warmSteamCache } from "../../lib/steamNames.js"
+import { toJSON } from "../../lib/json.js"
 
 // ─── Auth preHandlers ─────────────────────────────────────────────────────────
 
@@ -33,11 +34,6 @@ function isRosterManager(req: FastifyRequest) {
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   return guild?.permissionLevel === "roster_manager" && !guild?.isAdmin
 }
-
-// ─── BigInt JSON helpers ──────────────────────────────────────────────────────
-
-function bigIntReplacer(_: string, v: unknown) { return typeof v === "bigint" ? v.toString() : v }
-function toJSON(data: unknown) { return JSON.parse(JSON.stringify(data, bigIntReplacer)) }
 
 // ─── triggerSync ──────────────────────────────────────────────────────────────
 

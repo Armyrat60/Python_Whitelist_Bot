@@ -14,6 +14,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import { syncOutputs } from "../../services/output.js"
 import { cache } from "../../services/cache.js"
+import { toJSON } from "../../lib/json.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,13 +23,6 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
   const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
   if (!guild?.isAdmin)          return reply.code(403).send({ error: "Admin access required" })
-}
-
-function bigintReplacer(_: string, v: unknown): unknown {
-  return typeof v === "bigint" ? v.toString() : v
-}
-function safeJson(data: unknown): unknown {
-  return JSON.parse(JSON.stringify(data, bigintReplacer))
 }
 
 async function queuePanelRefresh(
@@ -148,7 +142,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
         sort_order:   r.sortOrder,
       }))
 
-      return reply.send(safeJson({ roles: result }))
+      return reply.send(toJSON({ roles: result }))
     }
   )
 
@@ -214,7 +208,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
         pullMembersForRole(app, guildId, roleId, panel.whitelistId).catch(() => {})
       }
 
-      return reply.code(201).send(safeJson({ ok: true, id: role.id }))
+      return reply.code(201).send(toJSON({ ok: true, id: role.id }))
     }
   )
 

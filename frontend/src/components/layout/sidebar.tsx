@@ -43,7 +43,7 @@ const dashboardLinks = [
 ];
 
 const rosterLinks = [
-  { href: "/dashboard/roster", label: "Discord Roster", icon: Users },
+  { href: "/dashboard/users", label: "Discord Roster", icon: Users },
   { href: "/dashboard/manual-roster", label: "Manual Roster", icon: BookUser },
 ];
 
@@ -165,7 +165,6 @@ export function Sidebar() {
 
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
-    if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
     // Exact match for seeding sub-pages to avoid parent highlighting
     if (href === "/dashboard/seeding" && pathname === "/dashboard/seeding") return true;
     if (href === "/dashboard/seeding/leaderboard" && pathname === "/dashboard/seeding/leaderboard") return true;
@@ -312,7 +311,6 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
 
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
-    if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
     if (href !== "/dashboard" && pathname.startsWith(href)) return true;
     return false;
   };
