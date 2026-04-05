@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogOut, Menu, X, Search, UserRound } from "lucide-react";
@@ -139,7 +140,7 @@ export function Topbar() {
         </Button>
         {/* Brand shown on mobile (sidebar is hidden) */}
         <div className="flex items-center gap-2 md:hidden">
-          <img src="/logo.png" alt="" className="h-6 w-6 rounded" />
+          <Image src="/logo.png" alt="Squad Whitelister" width={24} height={24} className="rounded" />
           <span className="text-sm font-bold tracking-wide" style={{ color: "var(--accent-primary)" }}>
             Squad Whitelister
           </span>

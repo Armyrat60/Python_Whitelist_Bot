@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { LogOut, LayoutDashboard } from "lucide-react";
@@ -41,7 +42,7 @@ export default function SeedingLayout({
   if (!session.guilds || session.guilds.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
-        <img src="/logo.png" alt="Squad Whitelister" className="mb-6 h-16 w-16 rounded-xl" />
+        <Image src="/logo.png" alt="Squad Whitelister" width={64} height={64} className="mb-6 rounded-xl" />
         <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
         <p className="mb-4 max-w-md text-muted-foreground">
           None of your Discord servers have Squad Whitelister installed.

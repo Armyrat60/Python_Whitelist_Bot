@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
@@ -180,7 +181,7 @@ export function Sidebar() {
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
         <div className="relative">
-          <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
+          <Image src="/logo.png" alt="Squad Whitelister" width={32} height={32} className="rounded-lg" />
           <span
             className="absolute inset-0 rounded-lg"
             style={{ boxShadow: "0 0 10px color-mix(in srgb, var(--accent-primary) 40%, transparent)" }}
@@ -329,7 +330,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
       <aside className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/[0.06] md:hidden"
         style={{ background: "oklch(0.185 0 0 / 0.98)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
-          <img src="/logo.png" alt="Squad Whitelister" className="h-8 w-8 rounded-lg" />
+          <Image src="/logo.png" alt="Squad Whitelister" width={32} height={32} className="rounded-lg" />
           <div>
             <span className="block text-sm font-semibold text-white/90">Squad Whitelister</span>
             <span className="block text-[10px] font-medium uppercase tracking-widest"

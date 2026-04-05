@@ -5,6 +5,19 @@ const API_URL = process.env.BACKEND_URL || "http://localhost:8080";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "recharts",
+      "@tanstack/react-query",
+      "@tanstack/react-table",
+    ],
+  },
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "cdn.discordapp.com" },
+    ],
+  },
   async rewrites() {
     return [
       // Proxy all API calls to the Python backend
