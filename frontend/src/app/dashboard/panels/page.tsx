@@ -225,12 +225,14 @@ function PanelRoleRow({
             <Switch checked={stackable} onCheckedChange={setStackable} id={`stack-${role.role_id}`} />
             <Label htmlFor={`stack-${role.role_id}`} className="text-xs text-muted-foreground">Stack</Label>
           </div>
-          <div className="ml-auto flex gap-1">
-            <Button size="icon-xs" variant="ghost" onClick={handleSave} disabled={updateRole.isPending}>
+          <div className="ml-auto flex gap-1.5">
+            <Button size="xs" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleSave} disabled={updateRole.isPending}>
               <Check className="h-3 w-3" />
+              Save
             </Button>
-            <Button size="icon-xs" variant="ghost" onClick={handleCancel}>
+            <Button size="xs" variant="outline" onClick={handleCancel}>
               <X className="h-3 w-3" />
+              Cancel
             </Button>
           </div>
         </div>
@@ -253,8 +255,8 @@ function PanelRoleRow({
       )}
       <Button
         size="icon-xs"
-        variant="ghost"
-        className="shrink-0 text-muted-foreground hover:text-foreground"
+        variant="outline"
+        className="shrink-0 text-muted-foreground hover:text-foreground hover:border-foreground/30"
         onClick={() => setEditing(true)}
         title="Edit role"
       >
@@ -262,8 +264,8 @@ function PanelRoleRow({
       </Button>
       <Button
         size="icon-xs"
-        variant="ghost"
-        className="shrink-0 text-muted-foreground hover:text-destructive"
+        variant="outline"
+        className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/30"
         onClick={onRemove}
         title="Remove role"
       >

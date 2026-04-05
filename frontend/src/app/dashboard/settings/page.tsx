@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
-  Shield, User, Globe, Crown, Lock, ChevronRight, Clock,
-  Plus, Users, Tag, Send, Link2, BarChart3, FileText, Sprout,
+  Shield, User, Globe, Clock,
+  Send, Link2, BarChart3, FileText, Sprout,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
 import { DataContent } from "@/app/dashboard/data/page";
@@ -18,18 +18,10 @@ import {
   useNotifications,
   useSaveNotifications,
   useTriggerReport,
-  usePermissions,
-  useGrantPermission,
-  useUpdatePermission,
-  useRevokePermission,
-  useRolePermissions,
-  useGrantRolePermission,
-  useUpdateRolePermission,
-  useRevokeRolePermission,
 } from "@/hooks/use-settings";
 import { useSession } from "@/hooks/use-session";
 import type { Settings } from "@/lib/types";
-import type { PermissionLevel } from "@/lib/types";
+
 import { useAccent, ACCENT_PRESETS, type PresetName } from "@/components/accent-context";
 
 import { Button } from "@/components/ui/button";
@@ -41,7 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Card, CardHeader, CardTitle, CardDescription, CardContent,
+  Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter,
 } from "@/components/ui/card";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -107,29 +99,6 @@ const PRESET_TAGS: Record<string, string> = {
   "Phantom":      "Esports · Flair",
 };
 
-/* ─── Permission level constants ─── */
-const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  owner:          "Owner",
-  admin:          "Admin",
-  roster_manager: "Roster Manager",
-  viewer:         "Viewer",
-};
-
-const LEVEL_DESCRIPTIONS: Record<PermissionLevel, string> = {
-  owner:          "Full access — auto-detected from Discord guild ownership",
-  admin:          "Full access — auto-detected from MANAGE_GUILD permission or mod role",
-  roster_manager: "Can manage Manual Roster categories they are assigned to",
-  viewer:         "Read-only access to the dashboard",
-};
-
-const LEVEL_BADGE: Record<PermissionLevel, string> = {
-  owner:          "bg-purple-500/20 text-purple-300 border-purple-500/30",
-  admin:          "bg-blue-500/20 text-blue-300 border-blue-500/30",
-  roster_manager: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  viewer:         "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-};
-
-const GRANTABLE_LEVELS: PermissionLevel[] = ["roster_manager", "viewer"];
 
 /* ─── Notification event groups ─── */
 const NOTIF_GROUPS: { label: string; events: string[] }[] = [
@@ -226,15 +195,6 @@ export default function SettingsPage() {
   const saveNotifRouting = useSaveNotifications();
   const triggerReport = useTriggerReport();
 
-  /* ── Permission hooks ── */
-  const { data: permissions, isLoading: permissionsLoading } = usePermissions();
-  const { data: rolePermissions, isLoading: rolePermissionsLoading } = useRolePermissions();
-  const grant        = useGrantPermission();
-  const update       = useUpdatePermission();
-  const revoke       = useRevokePermission();
-  const grantRole    = useGrantRolePermission();
-  const updateRole   = useUpdateRolePermission();
-  const revokeRole   = useRevokeRolePermission();
 
   const botSettings = data?.bot_settings as Record<string, string> | undefined;
 
@@ -263,14 +223,6 @@ export default function SettingsPage() {
   const [notifRouting, setNotifRouting] = useState<Record<string, string>>({});
   const [notifRoutingDirty, setNotifRoutingDirty] = useState(false);
 
-  /* ── Permission form state ── */
-  const [showAddUser, setShowAddUser]       = useState(false);
-  const [newDiscordId, setNewDiscordId]     = useState("");
-  const [newDiscordName, setNewDiscordName] = useState("");
-  const [newUserLevel, setNewUserLevel]     = useState<PermissionLevel>("viewer");
-  const [showAddRole, setShowAddRole]       = useState(false);
-  const [newRoleId, setNewRoleId]           = useState("");
-  const [newRoleLevel, setNewRoleLevel]     = useState<PermissionLevel>("viewer");
 
   /* ── Sync state from server ── */
   useEffect(() => {
@@ -364,41 +316,6 @@ export default function SettingsPage() {
     });
   }
 
-  /* ── Permission handler helpers ── */
-  function handleGrantUser() {
-    if (!newDiscordId.trim()) return;
-    grant.mutate(
-      { discord_id: newDiscordId.trim(), discord_name: newDiscordName.trim() || undefined, permission_level: newUserLevel },
-      {
-        onSuccess: () => {
-          setNewDiscordId("");
-          setNewDiscordName("");
-          setNewUserLevel("viewer");
-          setShowAddUser(false);
-        },
-      }
-    );
-  }
-
-  function handleGrantRole() {
-    if (!newRoleId) return;
-    const role = roles?.find((r) => r.id === newRoleId);
-    grantRole.mutate(
-      { role_id: newRoleId, role_name: role?.name, permission_level: newRoleLevel },
-      {
-        onSuccess: () => {
-          setNewRoleId("");
-          setNewRoleLevel("viewer");
-          setShowAddRole(false);
-        },
-      }
-    );
-  }
-
-  const grantedRoleIds = new Set((rolePermissions ?? []).map((r) => r.role_id));
-  const availableRoles = (roles ?? []).filter((r) => !grantedRoleIds.has(r.id));
-  const isAdmin = session?.is_mod ?? false;
-
   /* ── Combobox options for channels & roles ── */
   const channelOptions = useMemo(
     () =>
@@ -409,21 +326,6 @@ export default function SettingsPage() {
           .map((ch) => ({ value: ch.id, label: `#${ch.name}` }))
       ),
     [channels]
-  );
-
-  const availableRoleOptions = useMemo(
-    () =>
-      availableRoles.map((r) => ({
-        value: r.id,
-        label: r.name,
-        icon: (
-          <span
-            className="inline-block h-3 w-3 rounded-full mr-1 shrink-0"
-            style={{ backgroundColor: r.color || "#99AAB5" }}
-          />
-        ),
-      })),
-    [availableRoles]
   );
 
   /* ── Org theme helpers (passed through accent context) ── */
@@ -772,64 +674,6 @@ export default function SettingsPage() {
       {/* ── Permissions ── */}
       {activeTab === "permissions" && (
         <div className="space-y-6">
-          {/* Hierarchy explanation */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Permission Hierarchy</CardTitle>
-              <CardDescription>
-                How dashboard access is determined for each Discord member.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-0">
-              {[
-                {
-                  icon: Crown,
-                  label: "Server Owner",
-                  color: "#F59E0B",
-                  desc: "Always has full access. Cannot be restricted.",
-                  auto: true,
-                },
-                {
-                  icon: Shield,
-                  label: "Discord Administrator / Manage Server",
-                  color: "#6366F1",
-                  desc: "Members with Administrator or Manage Server permission get full access automatically.",
-                  auto: true,
-                },
-                {
-                  icon: Lock,
-                  label: "Custom Admin Roles",
-                  color: "var(--accent-primary)",
-                  desc: "Roles you assign below. Full dashboard access for whitelisting and management.",
-                  auto: false,
-                },
-              ].map((tier, i) => (
-                <div key={i} className="flex gap-3 py-3 border-b border-white/[0.05] last:border-0">
-                  <div
-                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: `${tier.color}18`, border: `1px solid ${tier.color}30` }}
-                  >
-                    <tier.icon className="h-3.5 w-3.5" style={{ color: tier.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{tier.label}</span>
-                      {tier.auto && (
-                        <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">
-                          Auto-detected
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{tier.desc}</p>
-                  </div>
-                  {i < 2 && (
-                    <ChevronRight className="h-4 w-4 shrink-0 self-center text-white/20" />
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
           {/* Your current permission level */}
           {session && (
             <Card>
@@ -864,7 +708,8 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>Custom Admin Roles</CardTitle>
               <CardDescription>
-                Members with any of these roles will get full dashboard access.
+                Server owners, administrators, and members with Manage Server are auto-detected.
+                Add additional roles below to grant full dashboard access.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -924,314 +769,18 @@ export default function SettingsPage() {
                 </PopoverContent>
               </Popover>
             </CardContent>
-          </Card>
-          <SaveBar onSave={savePermissions} isPending={saveSettings.isPending} />
-
-          {/* Dashboard Access */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-                Dashboard Access
-              </CardTitle>
-              <CardDescription>
-                Grant specific Discord users or roles access to this dashboard.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-
-              {/* By User */}
-              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
-                      <Users className="h-4 w-4 text-muted-foreground" />
-                      By User
-                    </h3>
-                    <p className="text-xs text-muted-foreground/60 mt-0.5">
-                      Grant access to specific Discord users by their ID.
-                    </p>
-                  </div>
-                  {isAdmin && (
-                    <Button
-                      size="sm"
-                      onClick={() => { setShowAddUser((v) => !v); setShowAddRole(false); }}
-                      style={{ background: "var(--accent-primary)" }}
-                      className="text-black font-semibold text-xs h-7 px-3"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add User
-                    </Button>
-                  )}
-                </div>
-
-                {showAddUser && (
-                  <div className="px-4 py-3 border-b border-white/[0.08] bg-white/[0.02] space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Discord ID *</Label>
-                        <Input
-                          type="text"
-                          placeholder="123456789012345678"
-                          value={newDiscordId}
-                          onChange={(e) => setNewDiscordId(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Display Name (optional)</Label>
-                        <Input
-                          type="text"
-                          placeholder="Username"
-                          value={newDiscordName}
-                          onChange={(e) => setNewDiscordName(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Permission Level</Label>
-                        <Select value={newUserLevel} onValueChange={(v) => setNewUserLevel(v as PermissionLevel)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GRANTABLE_LEVELS.map((l) => (
-                              <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground/60">{LEVEL_DESCRIPTIONS[newUserLevel]}</p>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={handleGrantUser}
-                        disabled={!newDiscordId.trim() || grant.isPending}
-                        style={{ background: "var(--accent-primary)" }}
-                        className="text-black font-semibold"
-                      >
-                        {grant.isPending ? "Granting…" : "Grant Access"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowAddUser(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {permissionsLoading ? (
-                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">Loading…</div>
-                ) : !permissions || permissions.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-                    No explicit user grants yet.
-                  </div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-white/[0.08] text-left">
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">User</th>
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Level</th>
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Granted</th>
-                        {isAdmin && <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.05]">
-                      {permissions.map((p) => (
-                        <tr key={p.discord_id} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-white/80">{p.discord_name ?? "Unknown"}</div>
-                            <div className="text-xs text-muted-foreground/60 font-mono">{p.discord_id}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {isAdmin ? (
-                              <Select
-                                value={p.permission_level}
-                                onValueChange={(v) =>
-                                  update.mutate({ discordId: p.discord_id, permission_level: v as PermissionLevel })
-                                }
-                              >
-                                <SelectTrigger className="w-36 h-7 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {GRANTABLE_LEVELS.map((l) => (
-                                    <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${LEVEL_BADGE[p.permission_level]}`}>
-                                {LEVEL_LABELS[p.permission_level]}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">
-                            {new Date(p.granted_at).toLocaleDateString()}
-                          </td>
-                          {isAdmin && (
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                onClick={() => revoke.mutate(p.discord_id)}
-                                className="p-1.5 text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
-                                title="Revoke access"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* By Role */}
-              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      By Role
-                    </h3>
-                    <p className="text-xs text-muted-foreground/60 mt-0.5">
-                      Grant access to everyone who has a specific Discord role.
-                    </p>
-                  </div>
-                  {isAdmin && (
-                    <Button
-                      size="sm"
-                      onClick={() => { setShowAddRole((v) => !v); setShowAddUser(false); }}
-                      style={{ background: "var(--accent-primary)" }}
-                      className="text-black font-semibold text-xs h-7 px-3"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add Role
-                    </Button>
-                  )}
-                </div>
-
-                {showAddRole && (
-                  <div className="px-4 py-3 border-b border-white/[0.08] bg-white/[0.02] space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Discord Role *</Label>
-                        <Combobox
-                          options={availableRoleOptions}
-                          value={newRoleId}
-                          onValueChange={(v) => setNewRoleId(v)}
-                          placeholder="Select a role…"
-                          searchPlaceholder="Search roles…"
-                          emptyText="No roles available."
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Permission Level</Label>
-                        <Select value={newRoleLevel} onValueChange={(v) => setNewRoleLevel(v as PermissionLevel)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GRANTABLE_LEVELS.map((l) => (
-                              <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground/60">{LEVEL_DESCRIPTIONS[newRoleLevel]}</p>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={handleGrantRole}
-                        disabled={!newRoleId || grantRole.isPending}
-                        style={{ background: "var(--accent-primary)" }}
-                        className="text-black font-semibold"
-                      >
-                        {grantRole.isPending ? "Granting…" : "Grant Access"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowAddRole(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {rolePermissionsLoading ? (
-                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">Loading…</div>
-                ) : !rolePermissions || rolePermissions.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-                    No role grants yet. Add a role above to grant access to everyone with that role.
-                  </div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-white/[0.08] text-left">
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Role</th>
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Level</th>
-                        <th className="px-4 py-2 text-xs font-medium text-muted-foreground">Granted</th>
-                        {isAdmin && <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.05]">
-                      {rolePermissions.map((p) => (
-                        <tr key={p.role_id} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-white/80">{p.role_name ?? "Unknown Role"}</div>
-                            <div className="text-xs text-muted-foreground/60 font-mono">{p.role_id}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {isAdmin ? (
-                              <Select
-                                value={p.permission_level}
-                                onValueChange={(v) =>
-                                  updateRole.mutate({ roleId: p.role_id, permission_level: v as PermissionLevel })
-                                }
-                              >
-                                <SelectTrigger className="w-36 h-7 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {GRANTABLE_LEVELS.map((l) => (
-                                    <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${LEVEL_BADGE[p.permission_level]}`}>
-                                {LEVEL_LABELS[p.permission_level]}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">
-                            {new Date(p.granted_at).toLocaleDateString()}
-                          </td>
-                          {isAdmin && (
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                onClick={() => revokeRole.mutate(p.role_id)}
-                                className="p-1.5 text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
-                                title="Revoke role access"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-            </CardContent>
+            <CardFooter className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={savePermissions}
+                disabled={saveSettings.isPending}
+                className="font-semibold text-black"
+                style={{ background: "var(--accent-primary)" }}
+              >
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saveSettings.isPending ? "Saving…" : "Save Changes"}
+              </Button>
+            </CardFooter>
           </Card>
         </div>
       )}

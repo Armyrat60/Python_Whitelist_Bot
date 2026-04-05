@@ -342,16 +342,18 @@ function GroupCard({
             )}
             {editing ? (
               <>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleSave} disabled={update.isPending}>
-                  <Check className="h-3.5 w-3.5" />
+                <Button size="xs" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleSave} disabled={update.isPending}>
+                  <Check className="h-3 w-3" />
+                  Save
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCancel}>
-                  <X className="h-3.5 w-3.5" />
+                <Button size="xs" variant="outline" onClick={handleCancel}>
+                  <X className="h-3 w-3" />
+                  Cancel
                 </Button>
               </>
             ) : (
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing(true)}>
-                <Pencil className="h-3.5 w-3.5" />
+              <Button size="icon-xs" variant="outline" className="text-muted-foreground hover:text-foreground hover:border-foreground/30" onClick={() => setEditing(true)}>
+                <Pencil className="h-3 w-3" />
               </Button>
             )}
           </div>

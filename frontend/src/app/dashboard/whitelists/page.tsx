@@ -288,11 +288,13 @@ function WhitelistCard({
                   if (e.key === "Escape") { setNameValue(whitelist.name); setEditingName(false); }
                 }}
               />
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={handleRename} disabled={savingName}>
+              <Button size="xs" className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleRename} disabled={savingName}>
                 <Check className="h-3 w-3" />
+                Save
               </Button>
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={() => { setNameValue(whitelist.name); setEditingName(false); }}>
+              <Button size="xs" variant="outline" className="shrink-0" onClick={() => { setNameValue(whitelist.name); setEditingName(false); }}>
                 <X className="h-3 w-3" />
+                Cancel
               </Button>
             </div>
           ) : (
