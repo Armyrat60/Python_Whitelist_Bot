@@ -8,16 +8,12 @@ import {
   LayoutDashboard,
   Users,
   List,
-  PanelTop,
-  Shield,
   Settings2,
   ChevronsUpDown,
   Check,
   BookUser,
-  Layers,
   Sprout,
   Trophy,
-  ArrowUpDown,
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,9 +44,7 @@ const rosterLinks = [
 ];
 
 const configLinks = [
-  { href: "/dashboard/panels", label: "Signup Panels", icon: PanelTop },
-  { href: "/dashboard/whitelists", label: "Whitelists", icon: Shield },
-  { href: "/dashboard/squad-groups", label: "Permission Groups", icon: Layers },
+  { href: "/dashboard/config", label: "Configuration", icon: Settings2 },
 ];
 
 const seedingLinks = [
@@ -59,7 +53,6 @@ const seedingLinks = [
 ];
 
 const bottomLinks = [
-  { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
   { href: "/dashboard/conflicts", label: "Steam ID Conflicts", icon: AlertTriangle },
   { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
 ];

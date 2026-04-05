@@ -108,7 +108,7 @@ export default function DashboardPage() {
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Resync
         </Button>
-        <Link href="/dashboard/panels">
+        <Link href="/dashboard/config?tab=panels">
           <Button variant="outline" size="sm">
             <Settings2 className="mr-1.5 h-3.5 w-3.5" />
             Manage Panels

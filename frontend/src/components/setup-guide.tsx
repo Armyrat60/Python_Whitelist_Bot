@@ -32,19 +32,19 @@ export function SetupGuide({
       done: hasWhitelistEnabled,
       label: "Enable a whitelist",
       description: "Go to Whitelists and toggle one on",
-      href: "/dashboard/whitelists",
+      href: "/dashboard/config",
     },
     {
       done: hasWhitelistRoles,
       label: "Add access roles to your whitelist",
       description: "Link Discord roles to slot counts under Whitelists",
-      href: "/dashboard/whitelists",
+      href: "/dashboard/config",
     },
     {
       done: hasPanelChannel,
       label: "Set a panel channel and push to Discord",
       description: "Go to Panels, assign a channel and click Push",
-      href: "/dashboard/panels",
+      href: "/dashboard/config?tab=panels",
     },
   ];
 

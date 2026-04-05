@@ -19,12 +19,10 @@ import { cn } from "@/lib/utils";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/dashboard/panels": "Panels",
-  "/dashboard/whitelists": "Whitelists",
-"/dashboard/settings": "Settings",
+  "/dashboard/config": "Configuration",
+  "/dashboard/settings": "Settings",
   "/dashboard/users": "Discord Roster",
   "/dashboard/manual-roster": "Manual Roster",
-  "/dashboard/import-export": "Import / Export",
   "/dashboard/conflicts": "Steam ID Conflicts",
   "/dashboard/search": "Player Search",
   "/my-whitelist": "My Whitelist",

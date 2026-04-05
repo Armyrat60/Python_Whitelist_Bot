@@ -86,7 +86,7 @@ export default function ManualRosterPage() {
           <p className="mt-1 text-xs text-muted-foreground mb-4">
             Create a whitelist first to manage roster entries.
           </p>
-          <Link href="/dashboard/whitelists" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+          <Link href="/dashboard/config" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             Go to Whitelists
           </Link>
         </div>
