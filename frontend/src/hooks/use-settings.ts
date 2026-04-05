@@ -187,29 +187,6 @@ interface PaginatedUsers {
   per_page: number;
 }
 
-export function useUsers(
-  page: number,
-  perPage: number,
-  search?: string,
-  filters?: Record<string, string>
-) {
-  const params = new URLSearchParams({
-    page: String(page),
-    per_page: String(perPage),
-  });
-  if (search) params.set("search", search);
-  if (filters) {
-    for (const [key, value] of Object.entries(filters)) {
-      if (value) params.set(key, value);
-    }
-  }
-
-  return useQuery<PaginatedUsers>({
-    queryKey: ["users", page, perPage, search, filters],
-    queryFn: () =>
-      api.get<PaginatedUsers>(`/api/admin/users?${params.toString()}`),
-  });
-}
 
 export function useInfiniteUsers(
   perPage: number,

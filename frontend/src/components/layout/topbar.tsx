@@ -25,7 +25,6 @@ const pageTitles: Record<string, string> = {
   "/dashboard/users": "WL Roster",
   "/dashboard/roster": "Discord Roster",
   "/dashboard/manual-roster": "Manual Roster",
-  "/dashboard/audit": "Audit Log",
   "/dashboard/notifications": "Notifications",
   "/dashboard/import-export": "Import / Export",
   "/dashboard/conflicts": "Steam ID Conflicts",

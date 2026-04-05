@@ -5,11 +5,9 @@ import { toast } from "sonner";
 import {
   Save, Building2, Trash2, Settings2, Bell, Palette,
   Shield, User, Globe, Clock,
-  Send, Link2, BarChart3, FileText, Sprout,
+  Send, Link2, Sprout,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
-import { DataContent } from "@/app/dashboard/data/page";
-import { AuditContent } from "@/app/dashboard/audit/page";
 import {
   useSettings,
   useRoles,
@@ -50,7 +48,7 @@ import { cn } from "@/lib/utils";
 import { Combobox } from "@/components/ui/combobox";
 
 /* ─── Types ─── */
-type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "seeding" | "data" | "audit";
+type Tab = "general" | "notifications" | "appearance" | "permissions" | "account" | "connections" | "seeding";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "general",       label: "General",       icon: Settings2 },
@@ -59,8 +57,6 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "permissions",   label: "Permissions",    icon: Shield },
   { id: "connections",   label: "Connections",    icon: Link2 },
   { id: "seeding",       label: "Seeding",        icon: Sprout },
-  { id: "data",          label: "Data",          icon: BarChart3 },
-  { id: "audit",         label: "Audit Log",     icon: FileText },
   { id: "account",       label: "Account",        icon: User },
 ];
 
@@ -361,7 +357,6 @@ export default function SettingsPage() {
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;
-            const isDataGroup = t.id === "data";
             return (
               <button
                 key={t.id}
@@ -371,8 +366,7 @@ export default function SettingsPage() {
                   "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-left",
                   active
                     ? "bg-white/[0.08] text-white"
-                    : "text-white/50 hover:bg-white/[0.04] hover:text-white/80",
-                  isDataGroup && "mt-1"
+                    : "text-white/50 hover:bg-white/[0.04] hover:text-white/80"
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -812,14 +806,6 @@ export default function SettingsPage() {
             Seeding settings are managed on a dedicated page for the full configuration experience.
           </p>
         </div>
-      )}
-
-      {activeTab === "data" && (
-        <DataContent />
-      )}
-
-      {activeTab === "audit" && (
-        <AuditContent />
       )}
 
       {activeTab === "account" && (
