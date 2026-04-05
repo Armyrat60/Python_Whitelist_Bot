@@ -479,7 +479,7 @@ export function DataContent() {
   return (
     <div>
       {/* Tab nav */}
-      <div className="flex gap-1 border-b border-white/[0.06] mb-6">
+      <div className="flex gap-1 border-b border-white/[0.10] mb-6">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = activeTab === t.id;
@@ -626,7 +626,7 @@ function ImportExportContent(props: any) {
   return (
     <div className="space-y-4">
       {/* Inner tab nav */}
-      <div className="flex gap-1 border-b border-white/[0.06]">
+      <div className="flex gap-1 border-b border-white/[0.10]">
         {INNER_TABS.map((t) => (
           <button
             key={t.id}
@@ -788,7 +788,7 @@ function ImportExportContent(props: any) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-lg border border-white/[0.06]">
+                <div className="rounded-lg border border-white/[0.10]">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -853,7 +853,7 @@ function ImportExportContent(props: any) {
                 {whitelists?.map((wl: { slug: string; name: string; enabled: boolean }) => (
                   <label
                     key={wl.slug}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2 transition-colors hover:bg-white/5"
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.10] px-3 py-2 transition-colors hover:bg-white/5"
                   >
                     <Checkbox
                       checked={selectedSlugs.includes(wl.slug)}
@@ -987,7 +987,7 @@ function ImportExportContent(props: any) {
                 {reconcileResults.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">No orphan records found — all entries are already linked to Discord members.</p>
                 ) : (
-                  <div className="rounded-lg border border-white/[0.06]">
+                  <div className="rounded-lg border border-white/[0.10]">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -1151,7 +1151,7 @@ function ImportExportContent(props: any) {
                 </div>
 
                 {roleSyncResult.added.length > 0 && (
-                  <div className="rounded-lg border border-white/[0.06]">
+                  <div className="rounded-lg border border-white/[0.10]">
                     <Table>
                       <TableHeader>
                         <TableRow>

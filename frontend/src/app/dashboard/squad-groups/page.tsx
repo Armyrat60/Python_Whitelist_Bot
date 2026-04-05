@@ -447,7 +447,7 @@ export default function SquadGroupsPage() {
 
       {(!groups || groups.length === 0) ? (
         <div className="rounded-xl border border-dashed border-white/10 py-16 text-center">
-          <Layers className="h-8 w-8 text-muted-foreground/30 mb-3 mx-auto" />
+          <Layers className="h-8 w-8 text-muted-foreground/50 mb-3 mx-auto" />
           <p className="text-sm text-muted-foreground">No groups yet. Create one to get started.</p>
         </div>
       ) : (

@@ -343,7 +343,7 @@ function CategoryListView({
             { label: "Capacity", value: totalCapacity > 0 ? `${totalEntries}/${totalCapacity}` : "—", color: totalCapacity > 0 && totalEntries >= totalCapacity ? "text-red-400" : "text-white/80" },
             { label: "Near Full", value: nearlFull, color: nearlFull > 0 ? "text-amber-400" : "text-white/80" },
           ].map(({ label, value, color }) => (
-            <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+            <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-3 py-2">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
               <span className={`text-lg font-semibold tabular-nums ${color}`}>{value}</span>
             </div>
@@ -456,7 +456,7 @@ function CategoryListView({
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger render={
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" title="Delete" />
+                          <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30" title="Delete" />
                         }>
                           <Trash2 className="h-3.5 w-3.5" />
                         </AlertDialogTrigger>
@@ -687,7 +687,7 @@ function EntryView({
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/[0.06] overflow-hidden divide-y divide-white/[0.04]">
+        <div className="rounded-xl border border-white/[0.10] overflow-hidden divide-y divide-white/[0.04]">
           {filteredEntries.map((entry) => (
             <EntryRow
               key={entry.discord_id}
@@ -903,7 +903,7 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
               <span className="font-medium truncate">{entry.discord_name}</span>
               <Link
                 href={`/dashboard/players/${entry.discord_id}`}
-                className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+                className="shrink-0 text-muted-foreground/60 hover:text-white/80 transition-colors"
                 title="View profile"
               >
                 <ExternalLink className="h-3 w-3" />
@@ -926,7 +926,7 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
       </div>
       <AlertDialog>
         <AlertDialogTrigger render={
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0" />
+          <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
         }>
           <Trash2 className="h-3.5 w-3.5" />
         </AlertDialogTrigger>
@@ -1001,7 +1001,7 @@ function ManagersSection({ whitelistId, categoryId }: { whitelistId: number; cat
               </div>
               <AlertDialog>
                 <AlertDialogTrigger render={
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0" />
+                  <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
                 }>
                   <Trash2 className="h-3 w-3" />
                 </AlertDialogTrigger>

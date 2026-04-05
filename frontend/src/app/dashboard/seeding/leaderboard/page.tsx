@@ -273,9 +273,9 @@ export default function SeedingLeaderboardPage() {
           {filteredLeaderboard.map((player, idx) => (
             <div
               key={player.steam_id}
-              className="flex items-center gap-3 rounded-lg bg-white/[0.02] border border-white/[0.05] px-3 py-2.5"
+              className="flex items-center gap-3 rounded-lg bg-white/[0.02] border border-white/[0.10] px-3 py-2.5"
             >
-              <span className={`text-xs font-bold w-6 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/30"}`}>
+              <span className={`text-xs font-bold w-6 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/50"}`}>
                 {idx + 1}
               </span>
               <div className="flex-1 min-w-0">
@@ -283,7 +283,7 @@ export default function SeedingLeaderboardPage() {
                   <span className="text-xs font-medium text-white/80 truncate">
                     {player.player_name ?? player.steam_id}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/40 font-mono">
+                  <span className="text-[10px] text-muted-foreground/60 font-mono">
                     {player.steam_id}
                   </span>
                   {player.tier_label && (
@@ -315,7 +315,7 @@ export default function SeedingLeaderboardPage() {
                 </div>
                 <div className="text-right w-16">
                   <span className="text-xs font-semibold text-white/70">
-                    {player.points}<span className="text-muted-foreground/40">/{lbRequired}</span>
+                    {player.points}<span className="text-muted-foreground/60">/{lbRequired}</span>
                   </span>
                 </div>
               </div>

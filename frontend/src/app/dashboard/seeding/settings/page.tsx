@@ -510,14 +510,14 @@ export default function SeedingSettingsPage() {
         <p className="text-xs text-muted-foreground">{connDetail.description}</p>
 
         {connDetail.troubleshoot && (
-          <div className="rounded-lg bg-black/20 border border-white/[0.06] px-4 py-3 space-y-2">
+          <div className="rounded-lg bg-black/20 border border-white/[0.10] px-4 py-3 space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-amber-400">
               <HelpCircle className="h-3.5 w-3.5" /> Troubleshooting
             </div>
             <ul className="space-y-1">
               {connDetail.troubleshoot.map((tip, i) => (
                 <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-2">
-                  <span className="text-white/30 shrink-0">{i + 1}.</span>
+                  <span className="text-white/50 shrink-0">{i + 1}.</span>
                   {tip}
                 </li>
               ))}
@@ -631,10 +631,10 @@ export default function SeedingSettingsPage() {
 
       <Card title="Point Management">
         <div className="flex gap-2">
-          <button onClick={() => setTrackingMode("fixed_reset")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "fixed_reset" ? "border-white/20" : "border-white/[0.06] opacity-60"}`} style={trackingMode === "fixed_reset" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
+          <button onClick={() => setTrackingMode("fixed_reset")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "fixed_reset" ? "border-white/20" : "border-white/[0.10] opacity-60"}`} style={trackingMode === "fixed_reset" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
             <p className="text-xs font-medium text-white/80">Fixed Reset</p><p className="text-[10px] text-muted-foreground">Reset on schedule</p>
           </button>
-          <button onClick={() => setTrackingMode("daily_decay")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "daily_decay" ? "border-white/20" : "border-white/[0.06] opacity-60"}`} style={trackingMode === "daily_decay" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
+          <button onClick={() => setTrackingMode("daily_decay")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "daily_decay" ? "border-white/20" : "border-white/[0.10] opacity-60"}`} style={trackingMode === "daily_decay" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
             <p className="text-xs font-medium text-white/80">Daily Decay</p><p className="text-[10px] text-muted-foreground">Points decrease when inactive</p>
           </button>
         </div>
@@ -647,7 +647,7 @@ export default function SeedingSettingsPage() {
             {resetFrequency === "weekly" && <div className="flex gap-1.5 flex-wrap">{DAYS_OF_WEEK.map((day, idx) => <button key={day} onClick={() => setResetDayOfWeek(String(idx))} className={`px-3 py-1.5 rounded-md text-xs font-medium ${String(idx) === resetDayOfWeek ? "text-black" : "bg-white/[0.04] border border-white/[0.08] text-white/60"}`} style={String(idx) === resetDayOfWeek ? { background: "var(--accent-primary)" } : undefined}>{day.slice(0, 3)}</button>)}</div>}
             {resetFrequency === "monthly" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Day</Label><Input type="number" min={1} max={28} value={resetDayOfMonth} onChange={(e) => setResetDayOfMonth(e.target.value)} className="h-8 text-xs w-20" /></div>}
             {resetFrequency === "custom" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Cron</Label><Input value={customCron} onChange={(e) => setCustomCron(e.target.value)} className="h-8 text-xs font-mono" /></div>}
-            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2"><p className="text-xs text-white/70">{cronToReadable(currentCron)}</p></div>
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.10] px-3 py-2"><p className="text-xs text-white/70">{cronToReadable(currentCron)}</p></div>
           </div>
         ); })()}
         {trackingMode === "daily_decay" && (
@@ -806,7 +806,7 @@ export default function SeedingSettingsPage() {
                 placeholder="Seeding Progress: {progress}% ({points}/{required}). Keep seeding!"
               />
             </div>
-            <div className="rounded-lg bg-black/20 border border-white/[0.06] px-4 py-3 space-y-1.5">
+            <div className="rounded-lg bg-black/20 border border-white/[0.10] px-4 py-3 space-y-1.5">
               <p className="text-[10px] font-medium text-white/50 uppercase tracking-wide">
                 Available variables
               </p>
@@ -831,7 +831,7 @@ export default function SeedingSettingsPage() {
       {/* D. Discord Notifications */}
       <Card title="Discord Notifications">
         <div className="flex items-center gap-2 mb-1">
-          <Bell className="h-4 w-4 text-white/40" />
+          <Bell className="h-4 w-4 text-white/60" />
           <span className="text-xs text-white/60">
             Seeding events will be posted to this channel
           </span>
@@ -921,7 +921,7 @@ export default function SeedingSettingsPage() {
               </Label>
             </div>
 
-            <div className="rounded-lg bg-black/20 border border-white/[0.06] px-4 py-3">
+            <div className="rounded-lg bg-black/20 border border-white/[0.10] px-4 py-3">
               <p className="text-[10px] text-muted-foreground/60">
                 When a player reaches the seeding point threshold, they are automatically assigned
                 this Discord role. If "remove on expiry" is enabled, the role will be removed once

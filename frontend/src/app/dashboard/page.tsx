@@ -280,7 +280,7 @@ export default function DashboardPage() {
               {audit.entries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2 text-sm"
+                  className="flex items-center gap-3 rounded-lg border border-white/[0.10] px-3 py-2 text-sm"
                 >
                   <Badge variant="secondary" className="shrink-0">
                     {entry.action_type}

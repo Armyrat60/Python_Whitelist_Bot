@@ -477,7 +477,7 @@ export default function SettingsPage() {
               </div>
 
               {welcomeDmEnabled === "true" && (
-                <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                <div className="space-y-2 rounded-lg border border-white/[0.10] bg-white/[0.02] p-3">
                   <Label>Welcome Message</Label>
                   <Textarea
                     value={welcomeDmText}
@@ -720,15 +720,19 @@ export default function SettingsPage() {
                 {modRoleIds.map((id) => {
                   const role = roles?.find((r) => r.id === id);
                   return (
-                    <Badge key={id} variant="secondary" className="gap-1">
+                    <Badge
+                      key={id}
+                      variant="outline"
+                      className="gap-1.5 bg-white/[0.06] border-white/[0.15] text-foreground"
+                    >
                       <span
-                        className="inline-block h-2 w-2 rounded-full"
+                        className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-white/20"
                         style={{ backgroundColor: role?.color || "#99AAB5" }}
                       />
                       {role?.name ?? id}
                       <button
                         onClick={() => setModRoleIds((prev) => prev.filter((x) => x !== id))}
-                        className="ml-0.5 rounded-full opacity-70 hover:opacity-100"
+                        className="ml-0.5 rounded-full opacity-60 hover:opacity-100 hover:text-red-400 transition-colors"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -878,7 +882,7 @@ export default function SettingsPage() {
 
               {/* Live clock preview */}
               <div
-                className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+                className="flex items-center gap-3 rounded-lg border border-white/[0.10] bg-white/[0.02] px-4 py-3"
               >
                 <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
@@ -918,7 +922,7 @@ function PersonalThemeCard({ accent }: { accent: ReturnType<typeof useAccent> })
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Preview bar */}
-        <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-3" style={{ background: "oklch(0.185 0 0)" }}>
+        <div className="flex items-center gap-3 rounded-xl border border-white/[0.10] px-4 py-3" style={{ background: "oklch(0.185 0 0)" }}>
           <div className="h-4 w-24 shrink-0 rounded-full" style={{ background: `linear-gradient(90deg, ${primary} 0%, ${secondary} 100%)` }} />
           <div className="h-4 w-px bg-white/10" />
           <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold" style={{ color: primary, borderColor: `${primary}40`, background: `${primary}18` }}>
@@ -1004,13 +1008,13 @@ function OrgThemeCard({
           Overrides personal themes for all members of this server.
           {hasOrgTheme
             ? <span className="ml-1 font-medium" style={{ color: "var(--accent-primary)" }}>Org theme is active.</span>
-            : <span className="ml-1 text-white/40">Not set — members see their personal colors.</span>
+            : <span className="ml-1 text-white/60">Not set — members see their personal colors.</span>
           }
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Preview */}
-        <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-3" style={{ background: "oklch(0.185 0 0)" }}>
+        <div className="flex items-center gap-3 rounded-xl border border-white/[0.10] px-4 py-3" style={{ background: "oklch(0.185 0 0)" }}>
           <div className="h-4 w-24 shrink-0 rounded-full" style={{ background: `linear-gradient(90deg, ${localPrimary} 0%, ${localSecondary} 100%)` }} />
           <div className="h-4 w-px bg-white/10" />
           <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold" style={{ color: localPrimary, borderColor: `${localPrimary}40`, background: `${localPrimary}18` }}>

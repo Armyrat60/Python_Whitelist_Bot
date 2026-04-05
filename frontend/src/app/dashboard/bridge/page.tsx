@@ -80,7 +80,7 @@ function SetupGuide({ dbName }: { dbName: string }) {
       </button>
 
       {open && (
-        <div className="border-t border-white/[0.06] px-5 py-4 space-y-4 text-xs">
+        <div className="border-t border-white/[0.10] px-5 py-4 space-y-4 text-xs">
           <p className="text-muted-foreground">
             Create a <strong className="text-white/70">read-only</strong> MySQL user for the bridge. It only needs{" "}
             <code className="rounded bg-white/[0.06] px-1">SELECT</code> on the{" "}
@@ -90,11 +90,11 @@ function SetupGuide({ dbName }: { dbName: string }) {
           <div className="space-y-1.5">
             <p className="font-semibold text-white/60 uppercase tracking-wider text-[10px]">Suggested credentials</p>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 space-y-0.5">
+              <div className="rounded-lg bg-white/[0.04] border border-white/[0.10] px-3 py-2 space-y-0.5">
                 <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Username</p>
                 <code className="text-white/80">whitelister</code>
               </div>
-              <div className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 space-y-0.5">
+              <div className="rounded-lg bg-white/[0.04] border border-white/[0.10] px-3 py-2 space-y-0.5">
                 <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Password</p>
                 <code className="text-white/80">ChangeMe123!</code>
                 <p className="text-[10px] text-amber-400/80 mt-0.5">Change this before use</p>
@@ -104,7 +104,7 @@ function SetupGuide({ dbName }: { dbName: string }) {
 
           <div className="space-y-1.5">
             <p className="font-semibold text-white/60 uppercase tracking-wider text-[10px]">Run on your MySQL server</p>
-            <pre className="rounded-lg bg-black/40 border border-white/[0.06] px-4 py-3 text-[11px] text-green-400/90 overflow-x-auto leading-relaxed whitespace-pre">{`-- Create a read-only user (accessible from any host)
+            <pre className="rounded-lg bg-black/40 border border-white/[0.10] px-4 py-3 text-[11px] text-green-400/90 overflow-x-auto leading-relaxed whitespace-pre">{`-- Create a read-only user (accessible from any host)
 CREATE USER 'whitelister'@'%' IDENTIFIED BY 'ChangeMe123!';
 
 -- Grant SELECT only on the DBLog_Players table
@@ -120,7 +120,7 @@ FLUSH PRIVILEGES;`}</pre>
               {[
                 { perm: "SELECT", table: "DBLog_Players", note: "Read player join records" },
               ].map(({ perm, table, note }) => (
-                <div key={table} className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.05] px-3 py-2">
+                <div key={table} className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.10] px-3 py-2">
                   <code className="text-emerald-400 w-16 shrink-0">{perm}</code>
                   <code className="text-white/70 flex-1">{table}</code>
                   <span className="text-muted-foreground/70">{note}</span>

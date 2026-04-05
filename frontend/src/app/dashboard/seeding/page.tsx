@@ -156,7 +156,7 @@ export default function SeedingDashboard() {
           </div>
         </div>
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-8 py-12 text-center space-y-4">
-          <Sprout className="h-12 w-12 mx-auto text-muted-foreground/30" />
+          <Sprout className="h-12 w-12 mx-auto text-muted-foreground/50" />
           <h2 className="text-lg font-semibold text-white/80">Get Started with Seeding Rewards</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
             Connect to your SquadJS instance and configure rewards to incentivize players who help seed your server.
@@ -234,7 +234,7 @@ export default function SeedingDashboard() {
             <div className="space-y-2">
               {stats.top_seeders.map((player, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <span className={`text-xs font-bold w-5 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/30"}`}>
+                  <span className={`text-xs font-bold w-5 text-right shrink-0 ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-white/50"}`}>
                     {idx + 1}
                   </span>
                   <div className="flex-1 min-w-0 space-y-0.5">

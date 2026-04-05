@@ -114,7 +114,7 @@ function SidebarGuildCard() {
               Active Server
             </p>
           </div>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-white/30" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-white/50" />
         </div>
       </PopoverTrigger>
       <PopoverContent side="right" align="start" sideOffset={8} className="w-56 p-0">
@@ -163,7 +163,6 @@ export function Sidebar() {
   const isActive = (href: string) => {
     if (href === "/dashboard" && pathname === "/dashboard") return true;
     if (href === "/dashboard/roster" && pathname === "/dashboard/users") return true;
-    if (href === "/dashboard/panels" && pathname === "/dashboard/setup") return true;
     // Exact match for seeding sub-pages to avoid parent highlighting
     if (href === "/dashboard/seeding" && pathname === "/dashboard/seeding") return true;
     if (href === "/dashboard/seeding/leaderboard" && pathname === "/dashboard/seeding/leaderboard") return true;
@@ -295,7 +294,7 @@ function NavLink({
     <Link
       href={href}
       onClick={onClick}
-      className="nav-inactive flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/40 transition-all duration-150"
+      className="nav-inactive flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/60 transition-all duration-150"
     >
       <Icon className="h-4 w-4 shrink-0 opacity-60" />
       {label}

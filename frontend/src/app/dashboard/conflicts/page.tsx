@@ -101,7 +101,7 @@ export default function ConflictsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border border-white/[0.06]">
+            <div className="rounded-lg border border-white/[0.10]">
               <Table>
                 <TableHeader>
                   <TableRow>

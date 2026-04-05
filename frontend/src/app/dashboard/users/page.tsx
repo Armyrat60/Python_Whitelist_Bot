@@ -192,7 +192,7 @@ function TierChip({ tier }: { tier: string | null | undefined }) {
         </span>
       );
     }
-    return <span className="text-[11px] text-muted-foreground/40">—</span>;
+    return <span className="text-[11px] text-muted-foreground/60">—</span>;
   }
 
   const first = tiers[0];
@@ -239,7 +239,7 @@ function TierChip({ tier }: { tier: string | null | undefined }) {
 
 /** Whitelist badge — simple muted pill showing which whitelist */
 function WhitelistBadge({ name }: { name: string | null | undefined }) {
-  if (!name) return <span className="text-[11px] text-muted-foreground/40">—</span>;
+  if (!name) return <span className="text-[11px] text-muted-foreground/60">—</span>;
   return (
     <span
       className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium max-w-[8rem] truncate"
@@ -267,7 +267,7 @@ function RegSourceChip({ source }: { source?: string | null }) {
     orphan:        { label: "Unmatched", bg: "rgba(251,146,60,0.12)", border: "rgba(251,146,60,0.30)", color: "#FB923C" },
   };
   const c = source ? cfgs[source] : null;
-  if (!c) return <span className="text-[10px] text-muted-foreground/40">—</span>;
+  if (!c) return <span className="text-[10px] text-muted-foreground/60">—</span>;
   return (
     <span
       className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
@@ -933,7 +933,7 @@ export default function UsersPage() {
         return (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {stats.map(({ label, value, sub, color }) => (
-              <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+              <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-3">
                 <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
                 <span className="text-2xl font-semibold tabular-nums" style={{ color }}>{value}</span>
                 <span className="text-[11px] text-muted-foreground/50">{sub}</span>
@@ -951,7 +951,7 @@ export default function UsersPage() {
             "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             activeTab === "members" && !filters.role_name
               ? "bg-white/[0.08] text-white"
-              : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
           )}
         >
           <Users className="h-3.5 w-3.5" />
@@ -965,7 +965,7 @@ export default function UsersPage() {
               "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               activeTab === "members" && filters.role_name === r.value
                 ? "bg-white/[0.08] text-white"
-                : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+                : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
             )}
           >{r.label}</button>
         ))}
@@ -976,7 +976,7 @@ export default function UsersPage() {
             "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             activeTab === "removed"
               ? "bg-white/[0.08] text-white"
-              : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
           )}
         >
           <UserMinus className="h-3.5 w-3.5" />
@@ -1311,7 +1311,7 @@ export default function UsersPage() {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               {selectedUser?.clan_tag && (
-                <span className="rounded px-1.5 py-0.5 text-xs font-bold tracking-wide text-white/40 bg-white/[0.05] border border-white/[0.08]">
+                <span className="rounded px-1.5 py-0.5 text-xs font-bold tracking-wide text-white/60 bg-white/[0.05] border border-white/[0.08]">
                   {selectedUser.clan_tag}
                 </span>
               )}
@@ -1325,7 +1325,7 @@ export default function UsersPage() {
               {selectedUser && parseInt(selectedUser.discord_id) < 0
                 ? "No Discord account linked"
                 : selectedUser?.discord_username
-                  ? <span><span className="text-white/30">@{selectedUser.discord_username}</span> · {selectedUser.discord_id}</span>
+                  ? <span><span className="text-white/50">@{selectedUser.discord_username}</span> · {selectedUser.discord_id}</span>
                   : selectedUser?.discord_id}
             </SheetDescription>
           </SheetHeader>
@@ -1456,7 +1456,7 @@ function RoleHistoryTab({ whitelists }: { whitelists: { slug: string; name: stri
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/40" />
+          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/60" />
           <p className="text-sm font-medium text-white/60">No role losses in the last {days} days</p>
           <p className="mt-1 text-xs text-muted-foreground">Members who lose their whitelist role will appear here.</p>
         </div>
@@ -1550,7 +1550,7 @@ function UserListView({
   return (
     <div className="glass-panel overflow-hidden rounded-xl">
       {/* Header */}
-      <div className="hidden items-center gap-3 border-b border-white/[0.05] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 sm:flex">
+      <div className="hidden items-center gap-3 border-b border-white/[0.10] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 sm:flex">
         <span
           className="flex w-8 cursor-pointer items-center justify-center"
           onClick={(e) => { e.stopPropagation(); onToggleSelectAll(); }}
@@ -1608,7 +1608,7 @@ function UserListView({
               </span>
               <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate">
                 {user.clan_tag && (
-                  <span className="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold tracking-wide text-white/40 bg-white/[0.05] border border-white/[0.08]">
+                  <span className="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold tracking-wide text-white/60 bg-white/[0.05] border border-white/[0.08]">
                     {user.clan_tag}
                   </span>
                 )}
@@ -1626,7 +1626,7 @@ function UserListView({
                 <Link
                   href={`/dashboard/players/${user.discord_id}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+                  className="shrink-0 text-muted-foreground/60 hover:text-white/80 transition-colors"
                   title="View profile"
                 >
                   <ExternalLink className="h-3 w-3" />
@@ -1898,7 +1898,7 @@ function UserCard({
             </CardTitle>
             <Link
               href={`/dashboard/players/${user.discord_id}`}
-              className="shrink-0 text-muted-foreground/40 hover:text-white/60 transition-colors"
+              className="shrink-0 text-muted-foreground/60 hover:text-white/80 transition-colors"
               title="View profile"
             >
               <ExternalLink className="h-3 w-3" />

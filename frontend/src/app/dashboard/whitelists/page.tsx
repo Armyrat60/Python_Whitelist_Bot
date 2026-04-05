@@ -199,7 +199,7 @@ export default function WhitelistsPage() {
 
         {roleWhitelists.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-12 text-center">
-            <Shield className="h-8 w-8 text-muted-foreground/30 mb-3" />
+            <Shield className="h-8 w-8 text-muted-foreground/50 mb-3" />
             <p className="text-sm font-medium">No Discord whitelists yet</p>
             <p className="mt-1 text-xs text-muted-foreground">Create a whitelist to get started.</p>
           </div>
@@ -306,7 +306,7 @@ function WhitelistCard({
             {whitelist.is_default && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Default</Badge>
             )}
-            <span className="text-[10px] font-mono text-muted-foreground/40 select-all" title="Whitelist ID">
+            <span className="text-[10px] font-mono text-muted-foreground/60 select-all" title="Whitelist ID">
               #{whitelist.id}
             </span>
           </div>
@@ -481,7 +481,7 @@ function WhitelistConfigSheet({
             Save
           </Button>
 
-          <div className="border-t border-white/[0.06] pt-4 space-y-3">
+          <div className="border-t border-white/[0.10] pt-4 space-y-3">
             <Label>Whitelist URL</Label>
             {showNewUrl ? (
               <div className="space-y-2">

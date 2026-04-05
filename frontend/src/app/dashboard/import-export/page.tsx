@@ -506,7 +506,7 @@ function ImportTab() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border border-white/[0.06]">
+            <div className="rounded-lg border border-white/[0.10]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -632,7 +632,7 @@ function ExportTab() {
             {whitelists?.map((wl) => (
               <label
                 key={wl.slug}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2 transition-colors hover:bg-white/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.10] px-3 py-2 transition-colors hover:bg-white/5"
               >
                 <Checkbox
                   checked={selectedSlugs.includes(wl.slug)}
@@ -911,7 +911,7 @@ function ReconcileTab() {
             {results.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">No orphan records found — all entries are already linked to Discord members.</p>
             ) : (
-              <div className="rounded-lg border border-white/[0.06]">
+              <div className="rounded-lg border border-white/[0.10]">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1156,7 +1156,7 @@ function RoleSyncTab() {
             </div>
 
             {result.added.length > 0 && (
-              <div className="rounded-lg border border-white/[0.06]">
+              <div className="rounded-lg border border-white/[0.10]">
                 <Table>
                   <TableHeader>
                     <TableRow>

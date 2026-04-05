@@ -113,7 +113,7 @@ export default function PanelsPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {(!panels || panels.length === 0) && !panelsLoading ? (
           <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-            <PanelTop className="h-8 w-8 text-muted-foreground/30 mb-3" />
+            <PanelTop className="h-8 w-8 text-muted-foreground/50 mb-3" />
             <p className="text-sm font-medium">No panels yet</p>
             <p className="mt-1 text-xs text-muted-foreground">Create a panel to let members apply for the whitelist.</p>
           </div>
@@ -241,7 +241,7 @@ function PanelRoleRow({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-sm">
+    <div className="flex items-center gap-2 rounded-lg border border-white/[0.10] px-2.5 py-1.5 text-sm">
       <span className="flex-1 truncate font-medium text-foreground">
         {role.display_name || role.role_name}
       </span>
@@ -419,7 +419,7 @@ function PanelCard({
               {panel.name}
             </span>
           )}
-          <span className="text-[10px] font-mono text-muted-foreground/40 select-all shrink-0" title="Panel ID">
+          <span className="text-[10px] font-mono text-muted-foreground/60 select-all shrink-0" title="Panel ID">
             #{panel.id}
           </span>
           <Switch
@@ -536,7 +536,7 @@ function PanelCard({
               />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-white/[0.06] px-3 py-2">
+            <div className="flex items-center justify-between rounded-lg border border-white/[0.10] px-3 py-2">
               <div>
                 <Label className="text-xs">Show Role Mentions</Label>
                 <p className="text-[10px] text-muted-foreground">Display roles as @mention pills in the panel embed</p>
@@ -548,7 +548,7 @@ function PanelCard({
             </div>
 
             {/* Access Roles */}
-            <div className="border-t border-white/[0.06] pt-3 space-y-3">
+            <div className="border-t border-white/[0.10] pt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">
                   <ShieldCheck className="inline mr-1.5 h-3.5 w-3.5 opacity-60" />

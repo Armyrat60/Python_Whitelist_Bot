@@ -139,7 +139,7 @@ export default function RoleHistoryPage() {
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/40" />
+          <UserRound className="mb-3 h-8 w-8 text-muted-foreground/60" />
           <p className="text-sm font-medium text-white/60">No role losses in the last {days} days</p>
           <p className="mt-1 text-xs text-muted-foreground">Members who lose their whitelist role will appear here.</p>
         </div>

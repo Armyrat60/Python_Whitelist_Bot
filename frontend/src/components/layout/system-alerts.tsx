@@ -106,7 +106,7 @@ export function NotificationBell() {
 
           {count === 0 ? (
             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-              <Bell className="h-6 w-6 text-muted-foreground/40" />
+              <Bell className="h-6 w-6 text-muted-foreground/60" />
               <p className="text-xs text-muted-foreground">No active alerts</p>
             </div>
           ) : (
@@ -132,7 +132,7 @@ export function NotificationBell() {
                     </div>
                     <button
                       onClick={() => setDismissed((prev) => new Set([...prev, key]))}
-                      className="mt-0.5 shrink-0 text-white/20 transition-colors hover:text-white/50"
+                      className="mt-0.5 shrink-0 text-white/50 transition-colors hover:text-white/70"
                       aria-label="Dismiss"
                     >
                       ×
