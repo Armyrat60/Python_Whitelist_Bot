@@ -27,8 +27,8 @@ export default function ManualRosterPage() {
   const { activeGuild } = useGuild();
   const { data: whitelists, isLoading: wlLoading } = useWhitelists();
 
-  const manualWhitelists = useMemo(
-    () => whitelists?.filter((wl) => wl.is_manual) ?? [],
+  const availableWhitelists = useMemo(
+    () => whitelists ?? [],
     [whitelists]
   );
 
@@ -41,10 +41,10 @@ export default function ManualRosterPage() {
 
   // Auto-select first manual whitelist on load
   useEffect(() => {
-    if (manualWhitelists.length > 0 && selectedWhitelistId === null) {
-      setSelectedWhitelistId(manualWhitelists[0].id);
+    if (availableWhitelists.length > 0 && selectedWhitelistId === null) {
+      setSelectedWhitelistId(availableWhitelists[0].id);
     }
-  }, [manualWhitelists, selectedWhitelistId]);
+  }, [availableWhitelists, selectedWhitelistId]);
 
   // Debounce search
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function ManualRosterPage() {
   // Reset entry page when search or category changes
   useEffect(() => { setEntryPage(1); }, [entrySearch, selectedCat?.id]);
 
-  const selectedWhitelist = manualWhitelists.find((wl) => wl.id === selectedWhitelistId) ?? null;
+  const selectedWhitelist = availableWhitelists.find((wl) => wl.id === selectedWhitelistId) ?? null;
 
   if (wlLoading) {
     return (
@@ -80,11 +80,11 @@ export default function ManualRosterPage() {
       </div>
 
       {/* ─── Empty state ─────────────────────────────────────────────────── */}
-      {manualWhitelists.length === 0 ? (
+      {availableWhitelists.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-          <p className="text-sm font-medium">No manual rosters configured</p>
+          <p className="text-sm font-medium">No whitelists found</p>
           <p className="mt-1 text-xs text-muted-foreground mb-4">
-            Go to Whitelists to create one.
+            Create a whitelist first to manage roster entries.
           </p>
           <Link href="/dashboard/whitelists" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             Go to Whitelists
@@ -93,7 +93,7 @@ export default function ManualRosterPage() {
       ) : (
         <>
           {/* ─── Whitelist selector (if multiple) ──────────────────────── */}
-          {manualWhitelists.length > 1 && (
+          {availableWhitelists.length > 1 && (
             <div className="flex items-center gap-3">
               <Label className="text-sm shrink-0">Roster</Label>
               <Select
@@ -108,7 +108,7 @@ export default function ManualRosterPage() {
                   <SelectValue placeholder="Select roster" />
                 </SelectTrigger>
                 <SelectContent>
-                  {manualWhitelists.map((wl) => (
+                  {availableWhitelists.map((wl) => (
                     <SelectItem key={wl.id} value={String(wl.id)}>
                       {wl.name}
                     </SelectItem>

@@ -12,8 +12,9 @@ import {
   UserX,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings } from "@/hooks/use-settings";
+import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings, useRoleStats } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/stats/stat-card";
 import { SetupGuide } from "@/components/setup-guide";
@@ -29,21 +30,29 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
+const OAUTH_ERRORS: Record<string, string> = {
+  oauth_denied: "Discord login was cancelled or denied.",
+  oauth_failed: "Discord authentication failed. Please try again.",
+};
+
 export default function DashboardPage() {
+  const searchParams = useSearchParams();
+  const oauthError = searchParams.get("error");
+
   const { data: stats, isLoading: statsLoading } = useStats();
   const { data: health, isLoading: healthLoading } = useHealth();
   const { data: audit, isLoading: auditLoading } = useAudit(1, 10);
   const { data: whitelists } = useWhitelists();
   const { data: panels } = usePanels();
   const { data: settingsData } = useSettings();
+  const { data: roleStats } = useRoleStats();
 
   const whitelistCount = whitelists?.filter((w) => w.enabled).length ?? 0;
   const panelCount = panels?.length ?? 0;
 
   // Setup guide state
   const hasWhitelistEnabled = whitelists?.some((w) => w.enabled) ?? false;
-  // We don't know whitelist roles here without extra queries — default to false until user visits the page
-  const hasWhitelistRoles = false;
+  const hasWhitelistRoles = (roleStats?.stats?.length ?? 0) > 0;
   const hasPanelChannel = panels?.some((p) => p.channel_id) ?? false;
 
   async function handleResync() {
@@ -57,6 +66,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* OAuth error banner */}
+      {oauthError && OAUTH_ERRORS[oauthError] && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
+          <p className="text-sm text-red-300">{OAUTH_ERRORS[oauthError]}</p>
+        </div>
+      )}
+
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

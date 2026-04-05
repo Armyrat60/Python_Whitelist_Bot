@@ -54,12 +54,17 @@ export default function DashboardLayout({
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
         <Image src="/logo.png" alt="Squad Whitelister" width={64} height={64} className="mb-6 rounded-xl" />
-        <h1 className="mb-2 text-2xl font-bold text-foreground">No Registered Servers</h1>
+        <h1 className="mb-2 text-2xl font-bold text-foreground">No Servers Found</h1>
         <p className="mb-4 max-w-md text-muted-foreground">
-          None of your Discord servers have Squad Whitelister installed.
-          Ask your server administrator to add the bot first.
+          None of your Discord servers have Squad Whitelister set up.
+          You must be an owner, administrator, or have Manage Server permission on a server where the bot is installed.
         </p>
         <div className="flex gap-3">
+          <a href="/my-whitelist">
+            <button className="rounded-lg px-4 py-2 text-sm font-medium text-black" style={{ background: "var(--accent-primary)" }}>
+              My Whitelist
+            </button>
+          </a>
           <a href="/logout">
             <button className="rounded-lg border border-white/[0.10] px-4 py-2 text-sm text-muted-foreground hover:bg-white/5">
               Sign Out
@@ -71,7 +76,28 @@ export default function DashboardLayout({
   }
 
   if (!canAccessDashboard) {
-    return null;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
+        <Image src="/logo.png" alt="Squad Whitelister" width={64} height={64} className="mb-6 rounded-xl" />
+        <h1 className="mb-2 text-2xl font-bold text-foreground">Access Denied</h1>
+        <p className="mb-4 max-w-md text-muted-foreground">
+          You don&apos;t have permission to access the admin dashboard.
+          Contact your server administrator if you believe this is an error.
+        </p>
+        <div className="flex gap-3">
+          <a href="/my-whitelist">
+            <button className="rounded-lg px-4 py-2 text-sm font-medium text-black" style={{ background: "var(--accent-primary)" }}>
+              My Whitelist
+            </button>
+          </a>
+          <a href="/logout">
+            <button className="rounded-lg border border-white/[0.10] px-4 py-2 text-sm text-muted-foreground hover:bg-white/5">
+              Sign Out
+            </button>
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
