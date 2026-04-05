@@ -200,8 +200,8 @@ export default function WhitelistsPage() {
         {roleWhitelists.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-12 text-center">
             <Shield className="h-8 w-8 text-muted-foreground/50 mb-3" />
-            <p className="text-sm font-medium">No Discord whitelists yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Create a whitelist to get started.</p>
+            <p className="text-sm font-medium">No whitelists yet</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-sm">Whitelists hold your player roster. Create one, then add Discord roles under Configure to control who gets whitelisted and how many slots they receive.</p>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

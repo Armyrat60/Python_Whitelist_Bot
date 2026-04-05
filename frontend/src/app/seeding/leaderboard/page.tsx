@@ -58,15 +58,21 @@ export default function SeedingLeaderboardPage() {
         <div>
           <h1 className="text-xl font-bold text-white/90">Seeding Leaderboard</h1>
           <p className="text-xs text-muted-foreground">
-            Players who help seed the server earn whitelist rewards
+            Join the game server when it has few players to earn points. Reach the threshold to unlock whitelist rewards.
           </p>
         </div>
       </div>
 
+      {points_required > 0 && (
+        <p className="text-xs text-muted-foreground border border-white/[0.08] rounded-lg px-3 py-2">
+          Earn <strong className="text-foreground">{points_required} points</strong> (1 point per minute while seeding) to unlock a whitelist slot.
+        </p>
+      )}
+
       {/* Leaderboard */}
       {players.length === 0 ? (
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-12 text-center">
-          <p className="text-sm text-muted-foreground">No seeding data yet. Be the first to help seed the server!</p>
+          <p className="text-sm text-muted-foreground">No seeding activity recorded yet. Join the game server when player count is low to start earning points toward whitelist rewards.</p>
         </div>
       ) : (
         <div className="space-y-2">

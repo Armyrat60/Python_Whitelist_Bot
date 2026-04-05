@@ -115,7 +115,7 @@ export default function PanelsPage() {
           <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
             <PanelTop className="h-8 w-8 text-muted-foreground/50 mb-3" />
             <p className="text-sm font-medium">No panels yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Create a panel to let members apply for the whitelist.</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-sm">Panels are Discord embeds with buttons that let members sign up for the whitelist. Create one, link it to a whitelist, then push it to a channel.</p>
           </div>
         ) : panels?.map((panel) => (
           <PanelCard
@@ -480,10 +480,10 @@ function PanelCard({
           {(!panel.channel_id || !panel.whitelist_id) && (
             <span className="text-xs text-amber-400/80">
               {!panel.channel_id && !panel.whitelist_id
-                ? "No channel or whitelist — configure before pushing"
+                ? "Set a Discord channel and link a whitelist in Configure to push this panel"
                 : !panel.channel_id
-                ? "No channel set — configure before pushing"
-                : "No whitelist linked — configure before pushing"}
+                ? "Set a Discord channel in Configure to push this panel"
+                : "Link a whitelist in Configure so the panel knows what to manage"}
             </span>
           )}
         </div>
@@ -640,7 +640,7 @@ function PanelCard({
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No access roles configured. Add roles to control who gets whitelisted.
+                  No access roles yet. Add Discord roles to define who can sign up through this panel and how many slots they get.
                 </p>
               )}
             </div>

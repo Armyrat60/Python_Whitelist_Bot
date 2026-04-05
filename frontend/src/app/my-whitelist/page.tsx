@@ -433,6 +433,9 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
+        <p className="text-xs text-muted-foreground pb-1">
+          Paste your Steam64 ID, EOS ID, or Steam profile URL. To find your Steam64 ID, visit your Steam profile and copy the number from the URL (e.g. steamcommunity.com/profiles/<strong>76561198012345678</strong>).
+        </p>
         {slots.map((val, i) => {
           const status = getSlotStatus(val);
           return (
