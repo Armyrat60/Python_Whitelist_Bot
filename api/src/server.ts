@@ -119,7 +119,9 @@ async function start() {
 
   // ─── Ensure sessions table exists (non-blocking, never crashes startup) ───────
 
-  ensureSessionsTable(app.prisma).catch(() => {})
+  ensureSessionsTable(app.prisma).catch((err) => {
+    app.log.error({ err }, "Failed to ensure sessions table")
+  })
 
   // ─── Stale job cleanup: mark running jobs older than 10 min as failed ────────
   // Guards against bridge worker crashes leaving jobs stuck in 'running' state.
@@ -136,7 +138,9 @@ async function start() {
     },
   }).then(({ count }) => {
     if (count > 0) app.log.warn(`Cleaned up ${count} stale running job(s)`)
-  }).catch(() => {})
+  }).catch((err) => {
+    app.log.error({ err }, "Failed to clean up stale jobs")
+  })
 
   // ─── Prime Discord guild list (background — must not block listen) ────────────
 
@@ -163,10 +167,14 @@ async function start() {
   }
 
   // Run immediately in background, then on heartbeat
-  refreshAll().catch(() => {})
+  refreshAll().catch((err) => {
+    app.log.error({ err }, "Failed initial Discord guild refresh")
+  })
 
   setInterval(() => {
-    refreshAll().catch(() => {})
+    refreshAll().catch((err) => {
+      app.log.error({ err }, "Failed periodic Discord guild refresh")
+    })
   }, HEARTBEAT_MS).unref()
 }
 

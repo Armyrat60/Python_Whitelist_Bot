@@ -16,6 +16,9 @@ import { env } from "../../lib/env.js"
 const STEAM64_RE = /^[0-9]{17}$/
 const EOSID_RE = /^[0-9a-fA-F]{32}$/
 
+/** Maximum import data size (5 MB) to prevent OOM on huge uploads. */
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
 /** Auto-detect CSV column → field mapping from header names. */
 function autoDetectColumnMap(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {}
@@ -239,6 +242,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const body = req.body as Record<string, unknown>
     const data = String(body?.data ?? body?.paste_data ?? "")
     if (!data.trim()) return reply.code(400).send({ error: "No data provided." })
+    if (data.length > MAX_IMPORT_BYTES) return reply.code(413).send({ error: `Import data exceeds ${MAX_IMPORT_BYTES / 1024 / 1024} MB limit.` })
 
     const headers = parseCsvHeaders(data)
     if (!headers.length) return reply.code(400).send({ error: "Could not detect any CSV columns." })
@@ -252,6 +256,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const body = req.body as Record<string, unknown>
 
     let data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    if (data.length > MAX_IMPORT_BYTES) return reply.code(413).send({ error: `Import data exceeds ${MAX_IMPORT_BYTES / 1024 / 1024} MB limit.` })
     const url = String(body?.url ?? "").trim()
 
     // Fetch from URL if provided and no inline data
@@ -332,6 +337,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const body = req.body as Record<string, unknown>
 
     let data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
+    if (data.length > MAX_IMPORT_BYTES) return reply.code(413).send({ error: `Import data exceeds ${MAX_IMPORT_BYTES / 1024 / 1024} MB limit.` })
     const url = String(body?.url ?? "").trim()
 
     // Fetch from URL if provided and no inline data

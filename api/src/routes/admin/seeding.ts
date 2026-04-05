@@ -228,6 +228,18 @@ export default async function seedingRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "streak_multiplier must be 1-5" })
     }
 
+    // Validate webhook URL (must be HTTPS Discord webhook or empty)
+    if (body.webhook_url) {
+      try {
+        const parsed = new URL(String(body.webhook_url))
+        if (parsed.protocol !== "https:" || !parsed.hostname.endsWith("discord.com")) {
+          return reply.code(400).send({ error: "Webhook URL must be an HTTPS Discord webhook URL." })
+        }
+      } catch {
+        return reply.code(400).send({ error: "Invalid webhook URL format." })
+      }
+    }
+
     // Validate reward group safety
     const groupName = body.reward_group_name ?? existing?.rewardGroupName ?? "Reserve"
     const group = await app.prisma.squadGroup.findUnique({

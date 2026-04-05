@@ -5,16 +5,11 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   Settings2,
-  Plug,
   Clock,
-  CheckCircle2,
-  XCircle,
   Loader2,
   RefreshCw,
   Trash2,
   HelpCircle,
-  Bell,
-  Users,
   ExternalLink,
 } from "lucide-react";
 import {
@@ -42,6 +37,10 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import type { SeedingConfig } from "@/lib/types";
+import { SeedingCard as Card, Sel } from "@/components/seeding/settings-helpers";
+import { RewardConfigSection } from "@/components/seeding/reward-config-section";
+import { NotificationsSection } from "@/components/seeding/notifications-section";
+import { DiscordIntegrationSection } from "@/components/seeding/discord-integration-section";
 
 const MASKED = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 
@@ -131,23 +130,6 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function Card({
-  title,
-  children,
-  className,
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={`rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4 ${className ?? ""}`}>
-      <h2 className="text-sm font-semibold text-white/80">{title}</h2>
-      {children}
-    </div>
-  );
-}
-
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function parseCron(cron: string) {
@@ -177,10 +159,6 @@ function cronToReadable(cron: string): string {
   if (p.frequency === "weekly") return `Resets every ${DAYS_OF_WEEK[p.dayOfWeek]} at ${t}`;
   if (p.frequency === "monthly") return `Resets on day ${p.dayOfMonth} of each month at ${t}`;
   return `Custom schedule: ${cron}`;
-}
-
-function Sel({ value, onChange, children, className }: { value: string; onChange: (v: string) => void; children: React.ReactNode; className?: string }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} className={`flex h-8 w-full rounded-md border border-white/[0.08] px-3 text-xs text-white/80 appearance-none cursor-pointer ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}>{children}</select>;
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -568,95 +546,30 @@ export default function SeedingSettingsPage() {
 
       {/* ── Reward Configuration ───────────────────────────────────────── */}
 
-      <Card title="Reward Tiers">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={tiersEnabled} onCheckedChange={setTiersEnabled} />
-          <Label className="text-sm">{tiersEnabled ? "Tiered rewards — multiple levels" : "Single reward — one threshold"}</Label>
-        </div>
-        {tiersEnabled ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 text-[10px] text-muted-foreground font-medium uppercase tracking-wide px-1">
-              <span>Label</span><span>Hours</span><span>Min</span><span>Duration (h)</span><span></span>
-            </div>
-            {tiers.map((tier, idx) => (
-              <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center">
-                <Input value={tier.label} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], label: e.target.value }; setTiers(t); }} className="h-8 text-xs" />
-                <Input type="number" min={0} max={166} value={tier.hours} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], hours: e.target.value }; setTiers(t); }} className="h-8 text-xs w-16" />
-                <Input type="number" min={0} max={59} value={tier.minutes} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], minutes: e.target.value }; setTiers(t); }} className="h-8 text-xs w-16" />
-                <Input type="number" min={1} max={8760} value={tier.durationHours} onChange={(e) => { const t = [...tiers]; t[idx] = { ...t[idx], durationHours: e.target.value }; setTiers(t); }} className="h-8 text-xs w-20" />
-                {tiers.length > 2 && <button onClick={() => setTiers(tiers.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-300 text-xs px-1">x</button>}
-              </div>
-            ))}
-            {tiers.length < 5 && <button onClick={() => setTiers([...tiers, { label: `Tier ${tiers.length + 1}`, hours: "0", minutes: "0", durationHours: "24" }])} className="text-xs hover:underline" style={{ color: "var(--accent-primary)" }}>+ Add tier</button>}
-          </div>
-        ) : (
-          <>
-            <div className="flex items-end gap-2">
-              <div className="space-y-1"><Label className="text-xs text-muted-foreground">Hours</Label><Input type="number" min={0} max={166} value={seedingHours} onChange={(e) => setSeedingHours(e.target.value)} className="h-8 text-xs w-20" /></div>
-              <span className="text-xs text-muted-foreground pb-2">h</span>
-              <div className="space-y-1"><Label className="text-xs text-muted-foreground">Minutes</Label><Input type="number" min={0} max={59} value={seedingMinutes} onChange={(e) => setSeedingMinutes(e.target.value)} className="h-8 text-xs w-20" /></div>
-              <span className="text-xs text-muted-foreground pb-2">m required</span>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Reward Duration</Label>
-              <div className="flex items-end gap-2">
-                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Days</Label><Input type="number" min={0} max={365} value={rewardDurationDays} onChange={(e) => setRewardDurationDays(e.target.value)} className="h-8 text-xs w-20" /></div>
-                <div className="space-y-1"><Label className="text-[10px] text-muted-foreground/70">Hours</Label><Input type="number" min={0} max={23} value={rewardDurationHoursR} onChange={(e) => setRewardDurationHoursR(e.target.value)} className="h-8 text-xs w-20" /></div>
-              </div>
-            </div>
-          </>
-        )}
-      </Card>
-
-      <Card title="Seeding Thresholds">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Min Players</Label><Input type="number" min={1} max={100} value={startCount} onChange={(e) => setStartCount(e.target.value)} className="h-8 text-xs" /></div>
-          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Max Players</Label><Input type="number" min={2} max={100} value={threshold} onChange={(e) => setThreshold(e.target.value)} className="h-8 text-xs" /></div>
-        </div>
-        <p className="text-[10px] text-muted-foreground/70">Seeding mode active when server has {startCount} to {threshold} players</p>
-      </Card>
-
-      <Card title="Seeding Time Window">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={windowEnabled} onCheckedChange={setWindowEnabled} />
-          <Label className="text-sm">{windowEnabled ? "Only track during set hours" : "Track 24/7"}</Label>
-        </div>
-        {windowEnabled && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Start</Label><Input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">End</Label><Input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} /></div>
-          </div>
-        )}
-      </Card>
-
-      <Card title="Point Management">
-        <div className="flex gap-2">
-          <button onClick={() => setTrackingMode("fixed_reset")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "fixed_reset" ? "border-white/20" : "border-white/[0.10] opacity-60"}`} style={trackingMode === "fixed_reset" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
-            <p className="text-xs font-medium text-white/80">Fixed Reset</p><p className="text-[10px] text-muted-foreground">Reset on schedule</p>
-          </button>
-          <button onClick={() => setTrackingMode("daily_decay")} className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${trackingMode === "daily_decay" ? "border-white/20" : "border-white/[0.10] opacity-60"}`} style={trackingMode === "daily_decay" ? { background: "color-mix(in srgb, var(--accent-primary) 8%, transparent)" } : undefined}>
-            <p className="text-xs font-medium text-white/80">Daily Decay</p><p className="text-[10px] text-muted-foreground">Points decrease when inactive</p>
-          </button>
-        </div>
-        {trackingMode === "fixed_reset" && (() => { const currentCron = buildCron(resetFrequency, parseInt(resetHour, 10) || 12, parseInt(resetMinuteVal, 10) || 0, resetAmPm, parseInt(resetDayOfWeek, 10) || 1, parseInt(resetDayOfMonth, 10) || 1, customCron); return (
-          <div className="space-y-3 pt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Frequency</Label><Sel value={resetFrequency} onChange={setResetFrequency}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom">Custom</option></Sel></div>
-              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Time</Label><div className="flex gap-1.5"><Input type="number" min={1} max={12} value={resetHour} onChange={(e) => setResetHour(e.target.value)} className="h-8 text-xs w-16" /><span className="text-muted-foreground text-xs self-center">:</span><Input type="number" min={0} max={59} value={resetMinuteVal} onChange={(e) => setResetMinuteVal(e.target.value)} className="h-8 text-xs w-16" /><Sel value={resetAmPm} onChange={setResetAmPm} className="w-20"><option value="AM">AM</option><option value="PM">PM</option></Sel></div></div>
-            </div>
-            {resetFrequency === "weekly" && <div className="flex gap-1.5 flex-wrap">{DAYS_OF_WEEK.map((day, idx) => <button key={day} onClick={() => setResetDayOfWeek(String(idx))} className={`px-3 py-1.5 rounded-md text-xs font-medium ${String(idx) === resetDayOfWeek ? "text-black" : "bg-white/[0.04] border border-white/[0.08] text-white/60"}`} style={String(idx) === resetDayOfWeek ? { background: "var(--accent-primary)" } : undefined}>{day.slice(0, 3)}</button>)}</div>}
-            {resetFrequency === "monthly" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Day</Label><Input type="number" min={1} max={28} value={resetDayOfMonth} onChange={(e) => setResetDayOfMonth(e.target.value)} className="h-8 text-xs w-20" /></div>}
-            {resetFrequency === "custom" && <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Cron</Label><Input value={customCron} onChange={(e) => setCustomCron(e.target.value)} className="h-8 text-xs font-mono" /></div>}
-            <div className="rounded-lg bg-white/[0.03] border border-white/[0.10] px-3 py-2"><p className="text-xs text-white/70">{cronToReadable(currentCron)}</p></div>
-          </div>
-        ); })()}
-        {trackingMode === "daily_decay" && (
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Days before decay</Label><Input type="number" min={1} max={30} value={decayDaysThreshold} onChange={(e) => setDecayDaysThreshold(e.target.value)} className="h-8 text-xs" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Points lost per day</Label><Input type="number" min={1} max={1000} value={decayPointsPerDay} onChange={(e) => setDecayPointsPerDay(e.target.value)} className="h-8 text-xs" /></div>
-          </div>
-        )}
-      </Card>
+      <RewardConfigSection
+        tiersEnabled={tiersEnabled} setTiersEnabled={setTiersEnabled}
+        tiers={tiers} setTiers={setTiers}
+        seedingHours={seedingHours} setSeedingHours={setSeedingHours}
+        seedingMinutes={seedingMinutes} setSeedingMinutes={setSeedingMinutes}
+        rewardDurationDays={rewardDurationDays} setRewardDurationDays={setRewardDurationDays}
+        rewardDurationHoursR={rewardDurationHoursR} setRewardDurationHoursR={setRewardDurationHoursR}
+        startCount={startCount} setStartCount={setStartCount}
+        threshold={threshold} setThreshold={setThreshold}
+        windowEnabled={windowEnabled} setWindowEnabled={setWindowEnabled}
+        windowStart={windowStart} setWindowStart={setWindowStart}
+        windowEnd={windowEnd} setWindowEnd={setWindowEnd}
+        trackingMode={trackingMode} setTrackingMode={setTrackingMode}
+        resetFrequency={resetFrequency} setResetFrequency={setResetFrequency}
+        resetHour={resetHour} setResetHour={setResetHour}
+        resetMinuteVal={resetMinuteVal} setResetMinuteVal={setResetMinuteVal}
+        resetAmPm={resetAmPm} setResetAmPm={setResetAmPm}
+        resetDayOfWeek={resetDayOfWeek} setResetDayOfWeek={setResetDayOfWeek}
+        resetDayOfMonth={resetDayOfMonth} setResetDayOfMonth={setResetDayOfMonth}
+        customCron={customCron} setCustomCron={setCustomCron}
+        decayDaysThreshold={decayDaysThreshold} setDecayDaysThreshold={setDecayDaysThreshold}
+        decayPointsPerDay={decayPointsPerDay} setDecayPointsPerDay={setDecayPointsPerDay}
+        buildCron={buildCron} cronToReadable={cronToReadable}
+      />
 
       {/* ── Advanced Reward Features ─────────────────────────────────── */}
 
@@ -757,244 +670,31 @@ export default function SeedingSettingsPage() {
 
       {/* ── Notifications ──────────────────────────────────────────────── */}
 
-      <Card title="In-Game Seeding Broadcasts">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={rconBroadcastEnabled} onCheckedChange={setRconBroadcastEnabled} />
-          <Label className="text-sm">{rconBroadcastEnabled ? "Broadcasts enabled" : "Broadcasts disabled"}</Label>
-        </div>
-        {rconBroadcastEnabled && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Broadcast message</Label>
-              <textarea
-                value={rconBroadcastMessage}
-                onChange={(e) => setRconBroadcastMessage(e.target.value)}
-                rows={2}
-                className="flex w-full rounded-md border border-white/[0.08] px-3 py-2 text-xs text-white/80 resize-none"
-                style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
-              />
-              <p className="text-[10px] text-muted-foreground/70">Variables: {"{player_count}"} {"{threshold}"}</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Interval (minutes)</Label>
-              <Input type="number" min={5} max={60} value={rconBroadcastInterval} onChange={(e) => setRconBroadcastInterval(e.target.value)} className="h-8 text-xs w-20" />
-              <p className="text-[10px] text-muted-foreground/70">How often to send the broadcast to all online players during seeding mode.</p>
-            </div>
-          </div>
-        )}
-      </Card>
+      <NotificationsSection
+        rconBroadcastEnabled={rconBroadcastEnabled} setRconBroadcastEnabled={setRconBroadcastEnabled}
+        rconBroadcastMessage={rconBroadcastMessage} setRconBroadcastMessage={setRconBroadcastMessage}
+        rconBroadcastInterval={rconBroadcastInterval} setRconBroadcastInterval={setRconBroadcastInterval}
+        rconWarningsEnabled={rconWarningsEnabled} setRconWarningsEnabled={setRconWarningsEnabled}
+        rconWarningMessage={rconWarningMessage} setRconWarningMessage={setRconWarningMessage}
+        discordNotifyChannelId={discordNotifyChannelId} setDiscordNotifyChannelId={setDiscordNotifyChannelId}
+        customEmbedTitle={customEmbedTitle} setCustomEmbedTitle={setCustomEmbedTitle}
+        customEmbedDescription={customEmbedDescription} setCustomEmbedDescription={setCustomEmbedDescription}
+        customEmbedImageUrl={customEmbedImageUrl} setCustomEmbedImageUrl={setCustomEmbedImageUrl}
+        customEmbedColor={customEmbedColor} setCustomEmbedColor={setCustomEmbedColor}
+      />
 
-      {/* C. In-Game Milestone Notifications */}
-      <Card title="In-Game Notifications">
-        <div className="flex items-center gap-3">
-          <Switch checked={rconWarningsEnabled} onCheckedChange={setRconWarningsEnabled} />
-          <Label className="text-sm">
-            {rconWarningsEnabled ? "RCON warnings enabled" : "RCON warnings disabled"}
-          </Label>
-        </div>
+      {/* ── Discord Integration ──────────────────────────────────────── */}
 
-        {rconWarningsEnabled && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Message template</Label>
-              <textarea
-                value={rconWarningMessage}
-                onChange={(e) => setRconWarningMessage(e.target.value)}
-                rows={3}
-                className="flex w-full rounded-md border border-white/[0.08] px-3 py-2 text-xs text-white/80 placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
-                style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
-                placeholder="Seeding Progress: {progress}% ({points}/{required}). Keep seeding!"
-              />
-            </div>
-            <div className="rounded-lg bg-black/20 border border-white/[0.10] px-4 py-3 space-y-1.5">
-              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wide">
-                Available variables
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {["{progress}", "{points}", "{required}", "{player_name}"].map((v) => (
-                  <code
-                    key={v}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/60 font-mono"
-                  >
-                    {v}
-                  </code>
-                ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground/60 mt-1">
-                Warnings are sent at milestones: 10%, 25%, 50%, 75%, and 100%
-              </p>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* D. Discord Notifications */}
-      <Card title="Discord Notifications">
-        <div className="flex items-center gap-2 mb-1">
-          <Bell className="h-4 w-4 text-white/60" />
-          <span className="text-xs text-white/60">
-            Seeding events will be posted to this channel
-          </span>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Notification channel ID</Label>
-          <Input
-            value={discordNotifyChannelId}
-            onChange={(e) => setDiscordNotifyChannelId(e.target.value)}
-            placeholder="Discord channel ID"
-            className="h-8 text-xs"
-          />
-        </div>
-        <p className="text-[10px] text-muted-foreground/60">
-          Enable Developer Mode in Discord, right-click a channel, and select "Copy Channel ID"
-        </p>
-      </Card>
-
-      {/* Custom Discord Embeds */}
-      <Card title="Custom Discord Embeds">
-        <p className="text-[10px] text-muted-foreground/70 mb-2">
-          Customize the Discord notification for &quot;Server Is Live&quot; events. Leave blank for defaults.
-        </p>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Embed Title</Label>
-            <Input value={customEmbedTitle} onChange={(e) => setCustomEmbedTitle(e.target.value)} placeholder="Server Is Live!" className="h-8 text-xs" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Embed Description</Label>
-            <textarea
-              value={customEmbedDescription}
-              onChange={(e) => setCustomEmbedDescription(e.target.value)}
-              rows={2}
-              className="flex w-full rounded-md border border-white/[0.08] px-3 py-2 text-xs text-white/80 resize-none"
-              style={{ backgroundColor: "rgba(255,255,255,0.04)", colorScheme: "dark" }}
-              placeholder="Server has reached {player_count} players!"
-            />
-            <p className="text-[10px] text-muted-foreground/70">Variables: {"{player_count}"} {"{threshold}"}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Image URL</Label>
-              <Input value={customEmbedImageUrl} onChange={(e) => setCustomEmbedImageUrl(e.target.value)} placeholder="https://..." className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Color</Label>
-              <div className="flex gap-2 items-center">
-                <input type="color" value={customEmbedColor} onChange={(e) => setCustomEmbedColor(e.target.value)} className="h-8 w-10 rounded border border-white/[0.08] cursor-pointer" style={{ backgroundColor: "transparent" }} />
-                <Input value={customEmbedColor} onChange={(e) => setCustomEmbedColor(e.target.value)} placeholder="#10b981" className="h-8 text-xs font-mono flex-1" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* E. Discord Role Rewards */}
-      <Card title="Discord Role Rewards">
-        <div className="flex items-center gap-3">
-          <Switch checked={discordRoleRewardEnabled} onCheckedChange={setDiscordRoleRewardEnabled} />
-          <Label className="text-sm">
-            {discordRoleRewardEnabled
-              ? "Role rewards enabled"
-              : "Role rewards disabled"}
-          </Label>
-        </div>
-
-        {discordRoleRewardEnabled && (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Reward role ID</Label>
-              <Input
-                value={discordRoleRewardId}
-                onChange={(e) => setDiscordRoleRewardId(e.target.value)}
-                placeholder="Discord role ID"
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={discordRemoveRoleOnExpiry}
-                onCheckedChange={setDiscordRemoveRoleOnExpiry}
-              />
-              <Label className="text-sm">
-                Remove role when reward expires
-              </Label>
-            </div>
-
-            <div className="rounded-lg bg-black/20 border border-white/[0.10] px-4 py-3">
-              <p className="text-[10px] text-muted-foreground/60">
-                When a player reaches the seeding point threshold, they are automatically assigned
-                this Discord role. If "remove on expiry" is enabled, the role will be removed once
-                their whitelist reward expires.
-              </p>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* F. Auto-Seed Alerts */}
-      <Card title="Auto-Seed Alerts">
-        <div className="flex items-center gap-3">
-          <Switch checked={autoSeedAlertEnabled} onCheckedChange={setAutoSeedAlertEnabled} />
-          <Label className="text-sm">
-            {autoSeedAlertEnabled
-              ? "Auto-seed alerts enabled"
-              : "Auto-seed alerts disabled"}
-          </Label>
-        </div>
-
-        {autoSeedAlertEnabled && (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Alert role ID</Label>
-              <Input
-                value={autoSeedAlertRoleId}
-                onChange={(e) => setAutoSeedAlertRoleId(e.target.value)}
-                placeholder="Discord role ID to ping"
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Cooldown (minutes)</Label>
-              <Input
-                type="number"
-                min={5}
-                max={120}
-                value={autoSeedAlertCooldownMin}
-                onChange={(e) => setAutoSeedAlertCooldownMin(e.target.value)}
-                placeholder="30"
-                className="h-8 text-xs w-32"
-              />
-            </div>
-
-            <p className="text-[10px] text-muted-foreground/60">
-              Pings this role when server drops below the seeding threshold. Cooldown prevents
-              alert spam (min 5 minutes, max 120 minutes).
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* Webhook Notifications */}
-      <Card title="Webhook Notifications">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={webhookEnabled} onCheckedChange={setWebhookEnabled} />
-          <Label className="text-sm">{webhookEnabled ? "Webhooks enabled" : "Webhooks disabled"}</Label>
-        </div>
-        {webhookEnabled && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Webhook URL</Label>
-              <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://your-server.com/webhook" className="h-8 text-xs" />
-            </div>
-            <p className="text-[10px] text-muted-foreground/70">
-              Receives JSON POST for events: seeding_reward_granted, seeding_server_live, seeding_needs_seeders.
-              Payload includes event type, timestamp, and event-specific data.
-            </p>
-          </div>
-        )}
-      </Card>
+      <DiscordIntegrationSection
+        discordRoleRewardEnabled={discordRoleRewardEnabled} setDiscordRoleRewardEnabled={setDiscordRoleRewardEnabled}
+        discordRoleRewardId={discordRoleRewardId} setDiscordRoleRewardId={setDiscordRoleRewardId}
+        discordRemoveRoleOnExpiry={discordRemoveRoleOnExpiry} setDiscordRemoveRoleOnExpiry={setDiscordRemoveRoleOnExpiry}
+        autoSeedAlertEnabled={autoSeedAlertEnabled} setAutoSeedAlertEnabled={setAutoSeedAlertEnabled}
+        autoSeedAlertRoleId={autoSeedAlertRoleId} setAutoSeedAlertRoleId={setAutoSeedAlertRoleId}
+        autoSeedAlertCooldownMin={autoSeedAlertCooldownMin} setAutoSeedAlertCooldownMin={setAutoSeedAlertCooldownMin}
+        webhookEnabled={webhookEnabled} setWebhookEnabled={setWebhookEnabled}
+        webhookUrl={webhookUrl} setWebhookUrl={setWebhookUrl}
+      />
 
       {/* G. Public Leaderboard */}
       <Card title="Public Leaderboard">
