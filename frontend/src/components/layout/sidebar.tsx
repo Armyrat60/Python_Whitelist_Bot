@@ -18,6 +18,7 @@ import {
   Sprout,
   Trophy,
   ArrowUpDown,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -59,6 +60,7 @@ const seedingLinks = [
 
 const bottomLinks = [
   { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
+  { href: "/dashboard/conflicts", label: "Steam ID Conflicts", icon: AlertTriangle },
   { href: "/dashboard/settings", label: "Settings", icon: Settings2 },
 ];
 
