@@ -60,7 +60,12 @@ jobs:
 
       - name: Install api deps (only what we need for the SDK)
         working-directory: api
-        run: npm ci
+        # --no-workspaces: the repo root uses npm workspaces but the root
+        # package-lock.json is not committed. Treat api/ as a standalone
+        # package and use api/package-lock.json. Matches how the Dockerfile
+        # installs deps (it only COPYs api/ into the build context so the
+        # workspace parent never enters the picture).
+        run: npm ci --no-workspaces
 
       - name: Run backup
         working-directory: api
