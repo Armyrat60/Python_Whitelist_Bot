@@ -31,6 +31,22 @@ const wasSeeding = new Map<string, boolean>()
  *  Key: `${guildId}:${serverId}` or `broadcast:${guildId}:${serverId}` */
 const lastAutoSeedAlert = new Map<string, number>()
 
+/**
+ * Probabilistic rounding of a fractional multiplier to an integer award count.
+ * For a multiplier M, always awards floor(M), plus one extra with probability (M - floor(M)).
+ * Long-run average equals M exactly, so users get what the UI advertises.
+ *
+ * Examples: 1.5 → 50% chance of 2, 50% chance of 1 (avg 1.5)
+ *           2.0 → always 2
+ *           1.1 → 10% chance of 2, 90% chance of 1 (avg 1.1)
+ */
+function multiplyAward(multiplier: number): number {
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return 0
+  const floor = Math.floor(multiplier)
+  const frac = multiplier - floor
+  return floor + (frac > 0 && Math.random() < frac ? 1 : 0)
+}
+
 /** Format an RCON warning message with template variables. */
 function formatWarning(template: string, progress: number, points: number, required: number, playerName: string): string {
   return template
@@ -63,6 +79,12 @@ export async function pollAllServers(): Promise<void> {
   // Cache guild configs to avoid re-loading for each server in the same guild
   const configCache = new Map<string, db.SeedingConfigRow | null>()
 
+  // Aggregate per-guild poll results so we can mirror status to seeding_configs
+  // (the dashboard reads last_poll_at from seeding_configs — without this,
+  // it shows "Stale connection" forever even when servers are polling fine).
+  interface GuildAgg { guildId: bigint; okCount: number; errCount: number; lastMessage: string; lastErrorMessage: string | null }
+  const guildResults = new Map<string, GuildAgg>()
+
   // Process each server
   const results = await Promise.allSettled(
     servers.map(async (server) => {
@@ -73,7 +95,10 @@ export async function pollAllServers(): Promise<void> {
         configCache.set(guildKey, cfg)
       }
       if (!cfg) return
-      await pollServer(server, cfg)
+      const r = await pollServer(server, cfg)
+      const agg = guildResults.get(guildKey) ?? { guildId: server.guild_id, okCount: 0, errCount: 0, lastMessage: "", lastErrorMessage: null }
+      if (r.status === "ok") { agg.okCount++; agg.lastMessage = r.message } else { agg.errCount++; agg.lastErrorMessage = r.message }
+      guildResults.set(guildKey, agg)
     }),
   )
 
@@ -82,15 +107,37 @@ export async function pollAllServers(): Promise<void> {
     if (results[i].status === "rejected") {
       const err = (results[i] as PromiseRejectedResult).reason
       console.error(`[seeding/tracker] Server ${servers[i].server_name} (guild ${servers[i].guild_id}) poll failed:`, err)
+      const guildKey = String(servers[i].guild_id)
+      const agg = guildResults.get(guildKey) ?? { guildId: servers[i].guild_id, okCount: 0, errCount: 0, lastMessage: "", lastErrorMessage: null }
+      agg.errCount++
+      agg.lastErrorMessage = err instanceof Error ? err.message : String(err)
+      guildResults.set(guildKey, agg)
     }
   }
+
+  // Mirror aggregated status to guild-level seeding_configs.last_poll_at
+  // so the dashboard connection indicator reflects reality.
+  await Promise.all(
+    Array.from(guildResults.values()).map((agg) => {
+      if (agg.okCount > 0) {
+        const total = agg.okCount + agg.errCount
+        const msg = total > 1
+          ? `${agg.okCount}/${total} server(s) polling: ${agg.lastMessage}`
+          : agg.lastMessage
+        return db.updatePollStatus(agg.guildId, "ok", msg).catch(() => {})
+      }
+      return db.updatePollStatus(agg.guildId, "error", agg.lastErrorMessage ?? "All servers failed to poll").catch(() => {})
+    }),
+  )
 
   // Count unique guilds being tracked
   const uniqueGuilds = new Set(servers.map((s) => String(s.guild_id))).size
   updateHealthStats(uniqueGuilds, squadjs.connectionCount())
 }
 
-async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow): Promise<void> {
+type PollResult = { status: "ok" | "error"; message: string }
+
+async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow): Promise<PollResult> {
   const guildId = cfg.guild_id
   const guildKey = String(guildId)
   const serverId = server.id
@@ -106,20 +153,18 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
       // Give it a moment to connect on first attempt
       await new Promise((r) => setTimeout(r, 2000))
     } else {
-      await db.updateServerPollStatus(serverId, "error", "No SquadJS connection configured")
-      return
+      const msg = "No SquadJS connection configured"
+      await db.updateServerPollStatus(serverId, "error", msg)
+      return { status: "error", message: msg }
     }
   }
 
   // Check if actually connected
   if (!squadjs.isConnected(guildKey, serverId)) {
     const status = squadjs.getConnectionStatus(guildKey, serverId)
-    await db.updateServerPollStatus(
-      serverId,
-      "error",
-      `Not connected to SquadJS: ${status.lastError ?? "connecting..."} (attempts: ${status.reconnectAttempts})`,
-    )
-    return
+    const msg = `Not connected to SquadJS: ${status.lastError ?? "connecting..."} (attempts: ${status.reconnectAttempts})`
+    await db.updateServerPollStatus(serverId, "error", msg)
+    return { status: "error", message: msg }
   }
 
   // Check seeding time window (if enabled) — uses guild's timezone from org settings
@@ -151,12 +196,9 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
     }
 
     if (!inWindow) {
-      await db.updateServerPollStatus(
-        serverId,
-        "ok",
-        `Outside seeding window (${cfg.seeding_window_start} - ${cfg.seeding_window_end}). Currently ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
-      )
-      return
+      const msg = `Outside seeding window (${cfg.seeding_window_start} - ${cfg.seeding_window_end}). Currently ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+      await db.updateServerPollStatus(serverId, "ok", msg)
+      return { status: "ok", message: msg }
     }
   }
 
@@ -215,8 +257,9 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
     }
 
     wasSeeding.set(serverKey, false)
-    await db.updateServerPollStatus(serverId, "ok", `Not seeding: ${reason}`)
-    return
+    const msg = `Not seeding: ${reason}`
+    await db.updateServerPollStatus(serverId, "ok", msg)
+    return { status: "ok", message: msg }
   }
 
   wasSeeding.set(serverKey, true)
@@ -255,18 +298,12 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
     }
   }
 
-  // Award points (with multiplier if active)
-  let awarded: number
-  if (pointMultiplier > 1) {
-    // Award multiplied points by calling awardPoints multiple times or using a custom amount
-    // For simplicity, just call awardPoints ceil(multiplier) times with fractional handling
-    const fullPoints = Math.floor(pointMultiplier)
-    awarded = 0
-    for (let i = 0; i < fullPoints; i++) {
-      awarded += await db.awardPoints(guildId, playerInputs, pointServerId)
-    }
-  } else {
-    awarded = await db.awardPoints(guildId, playerInputs, pointServerId)
+  // Award points. For multipliers, use probabilistic rounding so fractional
+  // values (e.g. 1.5x) produce the correct long-run average.
+  const loops = pointMultiplier > 1 ? multiplyAward(pointMultiplier) : 1
+  let awarded = 0
+  for (let i = 0; i < loops; i++) {
+    awarded += await db.awardPoints(guildId, playerInputs, pointServerId)
   }
 
   // ── Streak tracking ───────────────────────────────────────────────────
@@ -283,13 +320,16 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
     const streakResults = await Promise.all(
       playerInputs.map((p) => db.updateStreak(guildId, p.steamId, today))
     )
-    // Award bonus points for players who hit the streak threshold
+    // Award bonus points for players who hit the streak threshold.
+    // streak_multiplier is the TOTAL multiplier (e.g. 1.5 = 1.5x total), so
+    // the bonus on top of the already-awarded base point is (multiplier - 1).
+    // Probabilistic rounding keeps fractional values like 1.5 honest.
     const bonusPlayers = playerInputs.filter((_, idx) =>
       streakResults[idx] >= cfg.streak_days_required && cfg.streak_multiplier > 1
     )
     if (bonusPlayers.length > 0) {
-      const bonusPoints = Math.max(1, Math.ceil(cfg.streak_multiplier - 1))
-      for (let i = 0; i < bonusPoints; i++) {
+      const bonus = multiplyAward(cfg.streak_multiplier - 1)
+      for (let i = 0; i < bonus; i++) {
         await db.awardPoints(guildId, bonusPlayers, pointServerId)
       }
     }
@@ -425,6 +465,7 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
 
   const msg = `Seeding active: ${playerCount} players on ${server.server_name}, ${awarded} points awarded${rewarded > 0 ? `, ${rewarded} rewards granted` : ""}`
   await db.updateServerPollStatus(serverId, "ok", msg)
+  return { status: "ok", message: msg }
 }
 
 

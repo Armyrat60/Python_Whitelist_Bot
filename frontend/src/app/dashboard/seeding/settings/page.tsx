@@ -38,9 +38,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { SeedingConfig } from "@/lib/types";
 import { SeedingCard as Card, Sel } from "@/components/seeding/settings-helpers";
-import { RewardConfigSection } from "@/components/seeding/reward-config-section";
-import { NotificationsSection } from "@/components/seeding/notifications-section";
-import { DiscordIntegrationSection } from "@/components/seeding/discord-integration-section";
+import {
+  RewardTiersCard,
+  SeedingThresholdsCard,
+  TimeWindowCard,
+  PointManagementCard,
+} from "@/components/seeding/reward-config-section";
+import {
+  RconBroadcastCard,
+  RconWarningsCard,
+  DiscordChannelCard,
+  CustomEmbedCard,
+} from "@/components/seeding/notifications-section";
+import {
+  DiscordRoleRewardCard,
+  AutoSeedAlertCard,
+  WebhookCard,
+} from "@/components/seeding/discord-integration-section";
 
 const MASKED = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 
@@ -435,7 +449,7 @@ export default function SeedingSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-6xl space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div
@@ -504,221 +518,283 @@ export default function SeedingSettingsPage() {
         )}
       </div>
 
-      {/* B. SquadJS Connection */}
-      <Card title="SquadJS Connection">
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2 space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Host</Label>
-            <Input
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="your-squadjs-host.com"
-              className="h-8 text-xs"
-            />
+      {/* ── ① Core + ② Connection ──────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Core">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Toggle the seeding tracker and set the player-count range that defines seeding mode.
+          </p>
+          <div className="flex items-center gap-3">
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+            <Label className="text-sm">
+              {enabled ? "Seeding tracker enabled" : "Seeding tracker disabled"}
+            </Label>
+          </div>
+          <div className="pt-2 border-t border-white/[0.06]">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Min players</Label>
+                <Input type="number" min={1} max={100} value={startCount} onChange={(e) => setStartCount(e.target.value)} className="h-8 text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Max players</Label>
+                <Input type="number" min={2} max={100} value={threshold} onChange={(e) => setThreshold(e.target.value)} className="h-8 text-xs" />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground/70 pt-1.5">Seeding mode active between {startCount} – {threshold} players.</p>
+          </div>
+        </Card>
+
+        <Card title="SquadJS Connection">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Read-only Socket.IO link to your SquadJS instance. Points and player data are pulled from here every minute.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Host</Label>
+              <Input
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="your-squadjs-host.com"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Port</Label>
+              <Input
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                placeholder="3000"
+                className="h-8 text-xs"
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Port</Label>
+            <Label className="text-xs text-muted-foreground">Token</Label>
             <Input
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              placeholder="3000"
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={existing ? "Leave blank to keep current" : "SquadJS auth token"}
               className="h-8 text-xs"
             />
           </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Token</Label>
-          <Input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder={existing ? "Leave blank to keep current" : "SquadJS auth token"}
-            className="h-8 text-xs"
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-          <Label className="text-sm">
-            {enabled ? "Seeding tracker enabled" : "Seeding tracker disabled"}
-          </Label>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
-      {/* ── Reward Configuration ───────────────────────────────────────── */}
-
-      <RewardConfigSection
+      {/* ── ③ Rewards (full width) ─────────────────────────────────────── */}
+      <RewardTiersCard
         tiersEnabled={tiersEnabled} setTiersEnabled={setTiersEnabled}
         tiers={tiers} setTiers={setTiers}
         seedingHours={seedingHours} setSeedingHours={setSeedingHours}
         seedingMinutes={seedingMinutes} setSeedingMinutes={setSeedingMinutes}
         rewardDurationDays={rewardDurationDays} setRewardDurationDays={setRewardDurationDays}
         rewardDurationHoursR={rewardDurationHoursR} setRewardDurationHoursR={setRewardDurationHoursR}
-        startCount={startCount} setStartCount={setStartCount}
-        threshold={threshold} setThreshold={setThreshold}
-        windowEnabled={windowEnabled} setWindowEnabled={setWindowEnabled}
-        windowStart={windowStart} setWindowStart={setWindowStart}
-        windowEnd={windowEnd} setWindowEnd={setWindowEnd}
-        trackingMode={trackingMode} setTrackingMode={setTrackingMode}
-        resetFrequency={resetFrequency} setResetFrequency={setResetFrequency}
-        resetHour={resetHour} setResetHour={setResetHour}
-        resetMinuteVal={resetMinuteVal} setResetMinuteVal={setResetMinuteVal}
-        resetAmPm={resetAmPm} setResetAmPm={setResetAmPm}
-        resetDayOfWeek={resetDayOfWeek} setResetDayOfWeek={setResetDayOfWeek}
-        resetDayOfMonth={resetDayOfMonth} setResetDayOfMonth={setResetDayOfMonth}
-        customCron={customCron} setCustomCron={setCustomCron}
-        decayDaysThreshold={decayDaysThreshold} setDecayDaysThreshold={setDecayDaysThreshold}
-        decayPointsPerDay={decayPointsPerDay} setDecayPointsPerDay={setDecayPointsPerDay}
-        buildCron={buildCron} cronToReadable={cronToReadable}
       />
 
-      {/* ── Advanced Reward Features ─────────────────────────────────── */}
-
-      <Card title="Reward Cooldown">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Reward Cooldown">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            How long players must wait between earning rewards. Set to 0 to allow immediate re-earning.
+          </p>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Cooldown (hours)</Label>
-            <Input type="number" min={0} max={720} value={rewardCooldownHours} onChange={(e) => setRewardCooldownHours(e.target.value)} className="h-8 text-xs" />
+            <Input type="number" min={0} max={720} value={rewardCooldownHours} onChange={(e) => setRewardCooldownHours(e.target.value)} className="h-8 text-xs w-32" />
           </div>
-        </div>
-        <p className="text-[10px] text-muted-foreground/70">
-          {parseInt(rewardCooldownHours, 10) > 0
-            ? `After earning a reward, players must wait ${rewardCooldownHours} hours before earning again.`
-            : "No cooldown — players can earn again immediately after being rewarded."}
-        </p>
-      </Card>
-
-      <Card title="Discord Link Requirement">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={requireDiscordLink} onCheckedChange={setRequireDiscordLink} />
-          <Label className="text-sm">
-            {requireDiscordLink ? "Discord link required for rewards" : "Discord link not required"}
-          </Label>
-        </div>
-        <p className="text-[10px] text-muted-foreground/70">
-          {requireDiscordLink
-            ? "Players must link their Discord to their Steam ID before receiving seeding rewards. Points still accumulate normally. Players can link via the bot /whitelist command, the web dashboard, or a Discord panel button."
-            : "Rewards are granted automatically by Steam ID. Players do not need to join Discord or link accounts."}
-        </p>
-      </Card>
-
-      <Card title="Streak Bonuses">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={streakEnabled} onCheckedChange={setStreakEnabled} />
-          <Label className="text-sm">{streakEnabled ? "Streak bonuses enabled" : "Streak bonuses disabled"}</Label>
-        </div>
-        {streakEnabled && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Days required for streak</Label>
-              <Input type="number" min={2} max={30} value={streakDaysRequired} onChange={(e) => setStreakDaysRequired(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Point multiplier</Label>
-              <Input type="number" min={1.1} max={5} step={0.1} value={streakMultiplier} onChange={(e) => setStreakMultiplier(e.target.value)} className="h-8 text-xs" />
-            </div>
-          </div>
-        )}
-        {streakEnabled && (
           <p className="text-[10px] text-muted-foreground/70">
-            Players who seed {streakDaysRequired} days in a row earn {streakMultiplier}x points.
+            {parseInt(rewardCooldownHours, 10) > 0
+              ? `After earning a reward, players must wait ${rewardCooldownHours} hours before earning again.`
+              : "No cooldown — players can earn again immediately after being rewarded."}
           </p>
-        )}
-      </Card>
+        </Card>
 
-      <Card title="Bonus Multiplier Event">
-        <div className="flex items-center gap-3 mb-2">
-          <Switch checked={bonusMultiplierEnabled} onCheckedChange={setBonusMultiplierEnabled} />
-          <Label className="text-sm">{bonusMultiplierEnabled ? "Event active — bonus points!" : "No active event"}</Label>
-        </div>
-        {bonusMultiplierEnabled && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Multiplier</Label>
-              <Sel value={bonusMultiplierValue} onChange={setBonusMultiplierValue}>
-                <option value="1.5">1.5x</option>
-                <option value="2">2x (Double)</option>
-                <option value="3">3x (Triple)</option>
-                <option value="5">5x</option>
-              </Sel>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Start</Label>
-                <Input type="datetime-local" value={bonusMultiplierStart} onChange={(e) => setBonusMultiplierStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">End</Label>
-                <Input type="datetime-local" value={bonusMultiplierEnd} onChange={(e) => setBonusMultiplierEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
-              </div>
-            </div>
-            <p className="text-[10px] text-muted-foreground/70">
-              All seeding points are multiplied by {bonusMultiplierValue}x during this period. Great for events and server launches.
-            </p>
-          </div>
-        )}
-      </Card>
-
-      <Card title="Population Tracking">
-        <div className="flex items-center gap-3">
-          <Switch checked={populationTrackingEnabled} onCheckedChange={setPopulationTrackingEnabled} />
-          <Label className="text-sm">{populationTrackingEnabled ? "Tracking player counts for analytics" : "Population tracking disabled"}</Label>
-        </div>
-        <p className="text-[10px] text-muted-foreground/70">
-          Stores server player count on every poll. Data is kept for 7 days and will power population graphs in a future update.
-        </p>
-      </Card>
-
-      {/* ── Notifications ──────────────────────────────────────────────── */}
-
-      <NotificationsSection
-        rconBroadcastEnabled={rconBroadcastEnabled} setRconBroadcastEnabled={setRconBroadcastEnabled}
-        rconBroadcastMessage={rconBroadcastMessage} setRconBroadcastMessage={setRconBroadcastMessage}
-        rconBroadcastInterval={rconBroadcastInterval} setRconBroadcastInterval={setRconBroadcastInterval}
-        rconWarningsEnabled={rconWarningsEnabled} setRconWarningsEnabled={setRconWarningsEnabled}
-        rconWarningMessage={rconWarningMessage} setRconWarningMessage={setRconWarningMessage}
-        discordNotifyChannelId={discordNotifyChannelId} setDiscordNotifyChannelId={setDiscordNotifyChannelId}
-        customEmbedTitle={customEmbedTitle} setCustomEmbedTitle={setCustomEmbedTitle}
-        customEmbedDescription={customEmbedDescription} setCustomEmbedDescription={setCustomEmbedDescription}
-        customEmbedImageUrl={customEmbedImageUrl} setCustomEmbedImageUrl={setCustomEmbedImageUrl}
-        customEmbedColor={customEmbedColor} setCustomEmbedColor={setCustomEmbedColor}
-      />
-
-      {/* ── Discord Integration ──────────────────────────────────────── */}
-
-      <DiscordIntegrationSection
-        discordRoleRewardEnabled={discordRoleRewardEnabled} setDiscordRoleRewardEnabled={setDiscordRoleRewardEnabled}
-        discordRoleRewardId={discordRoleRewardId} setDiscordRoleRewardId={setDiscordRoleRewardId}
-        discordRemoveRoleOnExpiry={discordRemoveRoleOnExpiry} setDiscordRemoveRoleOnExpiry={setDiscordRemoveRoleOnExpiry}
-        autoSeedAlertEnabled={autoSeedAlertEnabled} setAutoSeedAlertEnabled={setAutoSeedAlertEnabled}
-        autoSeedAlertRoleId={autoSeedAlertRoleId} setAutoSeedAlertRoleId={setAutoSeedAlertRoleId}
-        autoSeedAlertCooldownMin={autoSeedAlertCooldownMin} setAutoSeedAlertCooldownMin={setAutoSeedAlertCooldownMin}
-        webhookEnabled={webhookEnabled} setWebhookEnabled={setWebhookEnabled}
-        webhookUrl={webhookUrl} setWebhookUrl={setWebhookUrl}
-      />
-
-      {/* G. Public Leaderboard */}
-      <Card title="Public Leaderboard">
-        <div className="flex items-center justify-between">
+        <Card title="Discord Link Requirement">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Require players to link Discord ↔ Steam before receiving any whitelist reward.
+          </p>
           <div className="flex items-center gap-3">
-            <Switch checked={leaderboardPublic} onCheckedChange={setLeaderboardPublic} />
+            <Switch checked={requireDiscordLink} onCheckedChange={setRequireDiscordLink} />
             <Label className="text-sm">
-              {leaderboardPublic
-                ? "Public leaderboard visible"
-                : "Public leaderboard hidden"}
+              {requireDiscordLink ? "Discord link required" : "Discord link not required"}
             </Label>
           </div>
-          {leaderboardPublic && (
-            <Link
-              href="/seeding/leaderboard"
-              target="_blank"
-              className="flex items-center gap-1 text-xs hover:underline"
-              style={{ color: "var(--accent-primary)" }}
-            >
-              View leaderboard <ExternalLink className="h-3 w-3" />
-            </Link>
+          <p className="text-[10px] text-muted-foreground/70">
+            {requireDiscordLink
+              ? "Points still accumulate normally. Players can link via the /whitelist command, web dashboard, or a Discord panel button."
+              : "Rewards are granted automatically by Steam ID. Players do not need to join Discord."}
+          </p>
+        </Card>
+      </div>
+
+      {/* ── ④ Point Management + Time Window ──────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PointManagementCard
+          trackingMode={trackingMode} setTrackingMode={setTrackingMode}
+          resetFrequency={resetFrequency} setResetFrequency={setResetFrequency}
+          resetHour={resetHour} setResetHour={setResetHour}
+          resetMinuteVal={resetMinuteVal} setResetMinuteVal={setResetMinuteVal}
+          resetAmPm={resetAmPm} setResetAmPm={setResetAmPm}
+          resetDayOfWeek={resetDayOfWeek} setResetDayOfWeek={setResetDayOfWeek}
+          resetDayOfMonth={resetDayOfMonth} setResetDayOfMonth={setResetDayOfMonth}
+          customCron={customCron} setCustomCron={setCustomCron}
+          decayDaysThreshold={decayDaysThreshold} setDecayDaysThreshold={setDecayDaysThreshold}
+          decayPointsPerDay={decayPointsPerDay} setDecayPointsPerDay={setDecayPointsPerDay}
+          buildCron={buildCron} cronToReadable={cronToReadable}
+        />
+        <TimeWindowCard
+          windowEnabled={windowEnabled} setWindowEnabled={setWindowEnabled}
+          windowStart={windowStart} setWindowStart={setWindowStart}
+          windowEnd={windowEnd} setWindowEnd={setWindowEnd}
+        />
+      </div>
+
+      {/* ── ⑤ Bonuses ──────────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Streak Bonuses">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Reward players who seed multiple days in a row with a points multiplier.
+          </p>
+          <div className="flex items-center gap-3">
+            <Switch checked={streakEnabled} onCheckedChange={setStreakEnabled} />
+            <Label className="text-sm">{streakEnabled ? "Streak bonuses enabled" : "Streak bonuses disabled"}</Label>
+          </div>
+          {streakEnabled && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Days required</Label>
+                  <Input type="number" min={2} max={30} value={streakDaysRequired} onChange={(e) => setStreakDaysRequired(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Point multiplier</Label>
+                  <Input type="number" min={1.1} max={5} step={0.1} value={streakMultiplier} onChange={(e) => setStreakMultiplier(e.target.value)} className="h-8 text-xs" />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/70">
+                Players who seed {streakDaysRequired} days in a row earn {streakMultiplier}x points
+                {Number.isInteger(parseFloat(streakMultiplier)) ? "." : " on average (fractional multipliers round probabilistically each poll)."}
+              </p>
+            </>
           )}
+        </Card>
+
+        <Card title="Bonus Multiplier Event">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Temporarily boost point earn rates for events or server launches.
+          </p>
+          <div className="flex items-center gap-3">
+            <Switch checked={bonusMultiplierEnabled} onCheckedChange={setBonusMultiplierEnabled} />
+            <Label className="text-sm">{bonusMultiplierEnabled ? "Event active — bonus points!" : "No active event"}</Label>
+          </div>
+          {bonusMultiplierEnabled && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Multiplier</Label>
+                <Sel value={bonusMultiplierValue} onChange={setBonusMultiplierValue}>
+                  <option value="1.5">1.5x</option>
+                  <option value="2">2x (Double)</option>
+                  <option value="3">3x (Triple)</option>
+                  <option value="5">5x</option>
+                </Sel>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Start</Label>
+                  <Input type="datetime-local" value={bonusMultiplierStart} onChange={(e) => setBonusMultiplierStart(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">End</Label>
+                  <Input type="datetime-local" value={bonusMultiplierEnd} onChange={(e) => setBonusMultiplierEnd(e.target.value)} className="h-8 text-xs" style={{ colorScheme: "dark" }} />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/70">
+                All seeding points are multiplied by {bonusMultiplierValue}x during this period.
+                {!Number.isInteger(parseFloat(bonusMultiplierValue)) && " Fractional multipliers round probabilistically each poll, averaging to the listed rate over time."}
+              </p>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ── ⑥ In-Game Messages + ⑦ Discord ─────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <RconBroadcastCard
+            rconBroadcastEnabled={rconBroadcastEnabled} setRconBroadcastEnabled={setRconBroadcastEnabled}
+            rconBroadcastMessage={rconBroadcastMessage} setRconBroadcastMessage={setRconBroadcastMessage}
+            rconBroadcastInterval={rconBroadcastInterval} setRconBroadcastInterval={setRconBroadcastInterval}
+          />
+          <RconWarningsCard
+            rconWarningsEnabled={rconWarningsEnabled} setRconWarningsEnabled={setRconWarningsEnabled}
+            rconWarningMessage={rconWarningMessage} setRconWarningMessage={setRconWarningMessage}
+          />
         </div>
-      </Card>
+        <div className="space-y-4">
+          <DiscordChannelCard
+            discordNotifyChannelId={discordNotifyChannelId} setDiscordNotifyChannelId={setDiscordNotifyChannelId}
+          />
+          <DiscordRoleRewardCard
+            discordRoleRewardEnabled={discordRoleRewardEnabled} setDiscordRoleRewardEnabled={setDiscordRoleRewardEnabled}
+            discordRoleRewardId={discordRoleRewardId} setDiscordRoleRewardId={setDiscordRoleRewardId}
+            discordRemoveRoleOnExpiry={discordRemoveRoleOnExpiry} setDiscordRemoveRoleOnExpiry={setDiscordRemoveRoleOnExpiry}
+          />
+          <AutoSeedAlertCard
+            autoSeedAlertEnabled={autoSeedAlertEnabled} setAutoSeedAlertEnabled={setAutoSeedAlertEnabled}
+            autoSeedAlertRoleId={autoSeedAlertRoleId} setAutoSeedAlertRoleId={setAutoSeedAlertRoleId}
+            autoSeedAlertCooldownMin={autoSeedAlertCooldownMin} setAutoSeedAlertCooldownMin={setAutoSeedAlertCooldownMin}
+          />
+          <CustomEmbedCard
+            customEmbedTitle={customEmbedTitle} setCustomEmbedTitle={setCustomEmbedTitle}
+            customEmbedDescription={customEmbedDescription} setCustomEmbedDescription={setCustomEmbedDescription}
+            customEmbedImageUrl={customEmbedImageUrl} setCustomEmbedImageUrl={setCustomEmbedImageUrl}
+            customEmbedColor={customEmbedColor} setCustomEmbedColor={setCustomEmbedColor}
+          />
+          <WebhookCard
+            webhookEnabled={webhookEnabled} setWebhookEnabled={setWebhookEnabled}
+            webhookUrl={webhookUrl} setWebhookUrl={setWebhookUrl}
+          />
+        </div>
+      </div>
+
+      {/* ── ⑧ Public & Analytics ───────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Public Leaderboard">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Expose a read-only leaderboard page at /seeding/leaderboard for players to see their rank.
+          </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Switch checked={leaderboardPublic} onCheckedChange={setLeaderboardPublic} />
+              <Label className="text-sm">
+                {leaderboardPublic ? "Public leaderboard visible" : "Public leaderboard hidden"}
+              </Label>
+            </div>
+            {leaderboardPublic && (
+              <Link
+                href="/seeding/leaderboard"
+                target="_blank"
+                className="flex items-center gap-1 text-xs hover:underline"
+                style={{ color: "var(--accent-primary)" }}
+              >
+                View leaderboard <ExternalLink className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
+        </Card>
+
+        <Card title="Population Tracking">
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed -mt-2">
+            Records server player count on every poll for analytics and future population graphs.
+          </p>
+          <div className="flex items-center gap-3">
+            <Switch checked={populationTrackingEnabled} onCheckedChange={setPopulationTrackingEnabled} />
+            <Label className="text-sm">{populationTrackingEnabled ? "Tracking player counts" : "Population tracking disabled"}</Label>
+          </div>
+          <p className="text-[10px] text-muted-foreground/70">
+            Data is kept for 7 days and will power population graphs in a future update.
+          </p>
+        </Card>
+      </div>
 
       {/* Save + Test buttons */}
       <div className="flex items-center gap-3">

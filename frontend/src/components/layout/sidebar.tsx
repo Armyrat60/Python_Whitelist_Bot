@@ -52,6 +52,7 @@ const whitelistLinks = [
 const seedingLinks = [
   { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/seeding/settings", label: "Configuration", icon: Settings2 },
 ];
 
 const userLinks = [
