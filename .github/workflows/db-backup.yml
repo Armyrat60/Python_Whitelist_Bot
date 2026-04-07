@@ -1,0 +1,81 @@
+name: DB Backup
+
+# Daily encrypted dump of the production Postgres → Cloudflare R2.
+# Also runnable on demand from the Actions tab before any risky deploy.
+
+on:
+  schedule:
+    # 03:00 UTC every day. Cron is in UTC; adjust if you want a different
+    # local time. GitHub may delay scheduled runs by a few minutes under load.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running this manually? (logged for the record)"
+        required: false
+        default: "manual run"
+
+# Only one backup at a time. If a previous run is still going, queue this one.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Dump → Encrypt → Upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log run reason (manual only)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: echo "Manual run reason: ${{ github.event.inputs.reason }}"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install PostgreSQL 16 client
+        # Default ubuntu-latest ships with an older client. We pull pg 16 to
+        # match Railway's server version (avoids "server version mismatch").
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+
+      - name: Verify gpg is available
+        run: gpg --version | head -1
+
+      - name: Install api deps (only what we need for the SDK)
+        working-directory: api
+        run: npm ci
+
+      - name: Run backup
+        working-directory: api
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node scripts/backup-prod.mjs
+
+      - name: Prune old backups
+        working-directory: api
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node scripts/prune-backups.mjs
