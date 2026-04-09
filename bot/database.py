@@ -242,6 +242,22 @@ class Database:
         """Seed a default whitelist and default squad group for a guild if they don't exist."""
         now = utcnow()
 
+        # Clean up legacy lowercase "reserve" group if the canonical "Reserve" also exists.
+        # The seeding-service uses "Reserve" (capitalized); the bot used to seed "reserve"
+        # (lowercase). Postgres PKs are case-sensitive so both could coexist as duplicates.
+        # Migrate any whitelists pointing at the old name, then delete the old row.
+        try:
+            await self.execute(
+                "UPDATE whitelists SET squad_group='Reserve' WHERE guild_id=%s AND squad_group='reserve'",
+                (guild_id,),
+            )
+            await self.execute(
+                "DELETE FROM squad_groups WHERE guild_id=%s AND group_name='reserve'",
+                (guild_id,),
+            )
+        except Exception:
+            pass  # Old row may not exist — that's fine
+
         # Seed default Whitelist squad group
         await self.execute(
             """
@@ -249,7 +265,7 @@ class Database:
             VALUES (%s, %s, %s, %s, TRUE, %s, %s)
             ON CONFLICT (guild_id, group_name) DO NOTHING
             """,
-            (guild_id, "reserve", "reserve", "Reserve slot for whitelisted players", now, now),
+            (guild_id, "Reserve", "reserve", "Reserve slot for whitelisted players", now, now),
         )
 
         # Seed default settings
@@ -275,7 +291,7 @@ class Database:
                     name="Whitelist 1",
                     slug="default",
                     enabled=False,
-                    squad_group="reserve",
+                    squad_group="Reserve",
                     output_filename="whitelist.txt",
                     default_slot_limit=0,
                     stack_roles=False,
