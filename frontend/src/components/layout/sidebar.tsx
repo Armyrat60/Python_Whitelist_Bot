@@ -15,7 +15,10 @@ import {
   BookUser,
   Sprout,
   Trophy,
-
+  ArrowUpDown,
+  Search,
+  AlertTriangle,
+  Globe,
   ChevronRight,
   LogOut,
 } from "lucide-react";
@@ -41,6 +44,8 @@ import { useSession } from "@/hooks/use-session";
 
 const dashboardLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/search", label: "Search", icon: Search },
+  { href: "/dashboard/conflicts", label: "Conflicts", icon: AlertTriangle },
 ];
 
 const whitelistLinks = [
@@ -55,7 +60,11 @@ const seedingLinks = [
   { href: "/dashboard/seeding/settings", label: "Configuration", icon: Settings2 },
 ];
 
-const userLinks = [
+const toolLinks = [
+  { href: "/dashboard/import-export", label: "Import / Export", icon: ArrowUpDown },
+];
+
+const publicLinks = [
   { href: "/my-whitelist", label: "My Whitelist", icon: List },
   { href: "/seeding/leaderboard", label: "Seeding Leaderboard", icon: Trophy },
 ];
@@ -343,13 +352,30 @@ export function Sidebar() {
             ))}
           </CollapsibleSection>
         )}
+
+        {!isRosterManager && (
+          <CollapsibleSection label="Tools" sectionKey="tools" collapsed={collapsed} onToggle={toggleSection}>
+            {toolLinks.map((link) => (
+              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+            ))}
+          </CollapsibleSection>
+        )}
       </nav>
 
-      {/* User links */}
-      <div className="shrink-0 border-t border-white/[0.06] px-3 pt-2 pb-1 space-y-0.5">
-        {userLinks.map((link) => (
-          <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
-        ))}
+      {/* Public-facing pages */}
+      <div className="shrink-0 border-t border-white/[0.06] px-3 pt-1 pb-1">
+        <p
+          className="flex items-center gap-1 pt-2 pb-1 px-0 text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: "color-mix(in srgb, var(--accent-primary) 50%, var(--muted-foreground, #9CA3AF))" }}
+        >
+          <Globe className="h-3 w-3" />
+          Public Sites
+        </p>
+        <div className="space-y-0.5">
+          {publicLinks.map((link) => (
+            <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+          ))}
+        </div>
       </div>
 
       {/* Account bar */}
@@ -412,9 +438,9 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
   const allLinks = isRosterManager
     ? [
         ...whitelistLinks.filter((l) => l.href !== "/dashboard/config" && l.href !== "/dashboard/conflicts"),
-        ...userLinks,
+        ...publicLinks,
       ]
-    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...userLinks];
+    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...toolLinks, ...publicLinks];
 
   return (
     <>
