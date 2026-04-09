@@ -1,8 +1,20 @@
+import * as Sentry from "@sentry/node"
 import Fastify from "fastify"
 import cors from "@fastify/cors"
 import rateLimit from "@fastify/rate-limit"
 
 import { env } from "./lib/env.js"
+
+// ─── Sentry ──────────────────────────────────────────────────────────────────
+// Only active if SENTRY_DSN is set. Optional in development.
+if (env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV || "development",
+    tracesSampleRate: 0.1,
+    sendDefaultPii: false,
+  })
+}
 import prismaPlugin from "./plugins/prisma.js"
 import authPlugin, { ensureSessionsTable } from "./plugins/auth.js"
 import { fileRoutes } from "./routes/files.js"
@@ -42,6 +54,14 @@ async function build() {
         : undefined,
     },
   })
+
+  // ─── Sentry error hook ──────────────────────────────────────────────────────
+  if (env.SENTRY_DSN) {
+    app.addHook("onError", (_request, _reply, error, done) => {
+      Sentry.captureException(error)
+      done()
+    })
+  }
 
   // ─── Plugins ────────────────────────────────────────────────────────────────
 

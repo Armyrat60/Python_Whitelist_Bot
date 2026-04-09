@@ -111,7 +111,3 @@ NOTIFICATION_EVENT_TYPES = {
     "admin_action":      {"label": "Admin Actions",            "description": "Bulk imports, bulk deletes, panel pushes, and settings changes"},
 }
 
-# Legacy: hardcoded type definitions (used by Discord slash command cogs as fallback).
-# New code uses dynamic whitelists from the database instead.
-DEFAULT_TYPES = {}
-WHITELIST_TYPES = ()  # Empty — types are now dynamic from DB

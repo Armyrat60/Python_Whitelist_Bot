@@ -5,12 +5,12 @@ from datetime import timedelta
 import discord
 from discord import app_commands
 from discord.ext import commands
-from bot.config import WHITELIST_TYPES, STEAM64_RE, EOSID_RE, log
+from bot.config import STEAM64_RE, EOSID_RE, log
 from bot.utils import utcnow, validate_identifier, split_identifier_tokens
 
 
 async def type_autocomplete(interaction: discord.Interaction, current: str):
-    return [app_commands.Choice(name=item.title(), value=item) for item in WHITELIST_TYPES if current.lower() in item][:25]
+    return []  # Legacy type system removed — whitelists are now dynamic
 
 
 class ImportExportCog(commands.Cog):
@@ -150,40 +150,17 @@ class ImportExportCog(commands.Cog):
         guild_id = interaction.guild.id
         embed = discord.Embed(title="\U0001f4ca Whitelist Statistics", color=discord.Color.blurple())
 
-        total_active = 0
-        total_ids = 0
-
-        for wt in WHITELIST_TYPES:
-            cfg = await self.bot.db.get_type_config(guild_id, wt)
-            if not cfg:
-                continue
-
-            active = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status='active'", (guild_id, wt,)
-            )
-            inactive = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND whitelist_type=%s AND status<>'active'", (guild_id, wt,)
-            )
-            ids = await self.bot.db.fetchone(
-                "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s AND whitelist_type=%s", (guild_id, wt,)
-            )
-
-            active_count = active[0] if active else 0
-            inactive_count = inactive[0] if inactive else 0
-            id_count = ids[0] if ids else 0
-            total_active += active_count
-            total_ids += id_count
-
-            icon = "\u2705" if cfg["enabled"] else "\u2b1b"
-            embed.add_field(
-                name=f"{icon} {wt.title()}",
-                value=f"Active: `{active_count}` | Inactive: `{inactive_count}` | IDs: `{id_count}`",
-                inline=False,
-            )
+        # Query stats from the dynamic whitelist system
+        active = await self.bot.db.fetchone(
+            "SELECT COUNT(*) FROM whitelist_users WHERE guild_id=%s AND status='active'", (guild_id,)
+        )
+        total_ids = await self.bot.db.fetchone(
+            "SELECT COUNT(*) FROM whitelist_identifiers WHERE guild_id=%s", (guild_id,)
+        )
 
         embed.add_field(
             name="\U0001f4cb Totals",
-            value=f"Active users: `{total_active}` | Total IDs: `{total_ids}`",
+            value=f"Active users: `{active[0] if active else 0}` | Total IDs: `{total_ids[0] if total_ids else 0}`",
             inline=False,
         )
 

@@ -1,16 +1,11 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from bot.config import WHITELIST_TYPES, log
+from bot.config import log
 
 
 async def type_autocomplete(interaction: discord.Interaction, current: str):
-    choices = [app_commands.Choice(name="All Types", value="all")]
-    choices.extend([
-        app_commands.Choice(name=item.title(), value=item)
-        for item in WHITELIST_TYPES if current.lower() in item
-    ])
-    return choices[:25]
+    return [app_commands.Choice(name="All Types", value="all")]
 
 
 class AuditCog(commands.Cog):
@@ -34,7 +29,7 @@ class AuditCog(commands.Cog):
         conditions = ["a.guild_id=%s"]
         params = [guild_id]
 
-        if whitelist_type != "all" and whitelist_type in WHITELIST_TYPES:
+        if whitelist_type != "all":
             conditions.append("a.whitelist_type=%s")
             params.append(whitelist_type)
 

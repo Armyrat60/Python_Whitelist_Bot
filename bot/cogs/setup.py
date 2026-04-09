@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from typing import List
 
-from bot.config import WHITELIST_FILENAME, SQUAD_PERMISSIONS, WHITELIST_TYPES, log
+from bot.config import WHITELIST_FILENAME, SQUAD_PERMISSIONS, log
 from bot.utils import _view_on_error, _modal_on_error
 
 
@@ -168,19 +168,11 @@ class GroupManagementView(discord.ui.View):
             for name, perms, is_default in groups:
                 tag = " *(default)*" if is_default else ""
                 lines.append(f"**{name}**{tag}\n`{perms}`")
-        # Show which types are assigned to which groups
-        assignments = []
-        for wt in WHITELIST_TYPES:
-            cfg = await self.bot.db.get_type_config(guild_id, wt)
-            if cfg:
-                assignments.append(f"{wt.title()} \u2192 `{cfg.get('squad_group', 'Whitelist')}`")
         e = discord.Embed(
             title="\U0001f396\ufe0f Squad Group Management",
             description="\n\n".join(lines) if lines else "No groups configured.",
             color=discord.Color.dark_gold(),
         )
-        if assignments:
-            e.add_field(name="Type Assignments", value="\n".join(assignments), inline=False)
         e.set_footer(text="Groups define the permission set in RemoteAdminList output")
         return e
 
@@ -246,45 +238,12 @@ class GroupManagementView(discord.ui.View):
         if not groups:
             await interaction.response.send_message("Create a group first.", ephemeral=True)
             return
-        # Build type selector
-        type_options = []
-        for wt in WHITELIST_TYPES:
-            cfg = await self.bot.db.get_type_config(guild_id, wt)
-            if cfg and cfg["enabled"]:
-                current = cfg.get("squad_group", "Whitelist")
-                type_options.append(discord.SelectOption(label=wt.title(), value=wt, description=f"Currently: {current}"))
-        if not type_options:
-            await interaction.response.send_message("No enabled whitelist types to assign.", ephemeral=True)
-            return
-        group_options = [
-            discord.SelectOption(label=name, value=name, description=f"Perms: {perms[:80]}")
-            for name, perms, _ in groups
-        ]
-        view = discord.ui.View(timeout=120)
-        type_select = discord.ui.Select(placeholder="Select whitelist type", options=type_options, row=0)
-        group_select = discord.ui.Select(placeholder="Select group to assign", options=group_options, row=1)
-        chosen = {}
-
-        async def _on_type(sel_interaction: discord.Interaction):
-            chosen["type"] = sel_interaction.data["values"][0]
-            await sel_interaction.response.defer()
-
-        async def _on_group(sel_interaction: discord.Interaction):
-            gid = sel_interaction.guild.id
-            wt = chosen.get("type")
-            if not wt:
-                await sel_interaction.response.send_message("Select a whitelist type first.", ephemeral=True)
-                return
-            gname = sel_interaction.data["values"][0]
-            await self.bot.db.set_type_config(gid, wt, squad_group=gname)
-            await self.bot.db.audit(gid, "setup_type", sel_interaction.user.id, None, f"type={wt} squad_group={gname}", wt)
-            await sel_interaction.response.send_message(f"**{wt.title()}** now uses group **{gname}**.", ephemeral=True)
-
-        type_select.callback = _on_type
-        group_select.callback = _on_group
-        view.add_item(type_select)
-        view.add_item(group_select)
-        await interaction.response.send_message("Assign a group to a whitelist type:", view=view, ephemeral=True)
+        # Legacy type-based assignment removed — whitelists are now dynamic.
+        # Group assignment is managed via the web dashboard Configuration page.
+        await interaction.response.send_message(
+            "Group assignment is now managed via the web dashboard (Configuration \u2192 Whitelists \u2192 Configure).",
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, row=2, emoji="\U0001f504")
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -326,31 +285,9 @@ class MainSetupView(discord.ui.View):
             "",
         ]
 
-        for wt in WHITELIST_TYPES:
-            cfg = await self.bot.db.get_type_config(guild_id, wt)
-            if not cfg:
-                continue
-            icon = "\u2705" if cfg["enabled"] else "\u274c"
-            panel_ch = f"<#{cfg['panel_channel_id']}>" if cfg["panel_channel_id"] else "`Not set`"
-            log_ch = f"<#{cfg['log_channel_id']}>" if cfg["log_channel_id"] else "`Not set`"
-            gh_icon = "\u2705" if cfg["github_enabled"] else "\u274c"
-            wl = await self.bot.db.get_whitelist_by_slug(guild_id, wt)
-            panel_rows_hub = await self.bot.db.fetchall(
-                "SELECT id FROM panels WHERE guild_id=%s AND whitelist_id=%s AND enabled=TRUE LIMIT 1",
-                (guild_id, wl["id"] if wl else -1),
-            ) if wl else []
-            if panel_rows_hub:
-                mappings = await self.bot.db.get_panel_roles(guild_id, int(panel_rows_hub[0][0]))
-            else:
-                mappings = []
-            # tuple: (id, role_id, role_name, slot_limit, display_name, sort_order, is_active, is_stackable)
-            active_roles = [f"<@&{r[1]}>=`{r[3]}`" for r in mappings if r[6]]
-            roles_text = ", ".join(active_roles) if active_roles else "`None`"
-            desc_lines.append(f"\U0001f4e6 **{wt.title()}** \u2014 {icon} Enabled")
-            desc_lines.append(f"\u2003Panel: {panel_ch} \u2502 Log: {log_ch} \u2502 GitHub: {gh_icon} `{cfg['github_filename']}`")
-            desc_lines.append(f"\u2003Slots: `{cfg['default_slot_limit']}` \u2502 Stack: `{'Yes' if cfg['stack_roles'] else 'No'}` \u2502 Group: `{cfg.get('squad_group', 'Whitelist')}`")
-            desc_lines.append(f"\u2003Roles: {roles_text}")
-            desc_lines.append("")
+        # Whitelist details are managed via the web dashboard — show a pointer
+        desc_lines.append("\U0001f310 Manage whitelists and panels at **squadwhitelister.com**")
+        desc_lines.append("")
 
         # Squad groups summary
         groups = await self.bot.db.get_squad_groups(guild_id)

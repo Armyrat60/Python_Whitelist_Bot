@@ -23,7 +23,7 @@ export function makeMockPrisma() {
   const mockList = () => vi.fn().mockResolvedValue([])
   const mockCount = () => vi.fn().mockResolvedValue(0)
 
-  return {
+  const mock = {
     panel: {
       findMany:   mockList(),
       findFirst:  mockFn(),
@@ -125,13 +125,20 @@ export function makeMockPrisma() {
       update:     mockFn(),
       count:      mockCount(),
     },
-    $transaction: vi.fn().mockImplementation(async (arg: unknown) => {
-      if (Array.isArray(arg)) return Promise.all(arg)
-      if (typeof arg === 'function') return arg({})
-      return null
-    }),
+    $transaction: vi.fn(),  // wired up below (needs self-reference)
     $queryRaw: vi.fn().mockResolvedValue([]),
   }
+
+  // $transaction passes the mock prisma itself as the `tx` argument so
+  // callback-style transactions (async (tx) => { tx.model.update(...) })
+  // can call the same mocked methods.
+  mock.$transaction.mockImplementation(async (arg: unknown) => {
+    if (Array.isArray(arg)) return Promise.all(arg)
+    if (typeof arg === 'function') return (arg as (tx: typeof mock) => unknown)(mock)
+    return null
+  })
+
+  return mock
 }
 
 export type MockPrisma = ReturnType<typeof makeMockPrisma>

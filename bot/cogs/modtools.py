@@ -2,12 +2,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.config import WHITELIST_TYPES
 from bot.utils import _view_on_error, split_identifier_tokens, validate_identifier
 
 
 async def setup_autocomplete(interaction: discord.Interaction, current: str):
-    return [app_commands.Choice(name=item, value=item) for item in WHITELIST_TYPES if current.lower() in item][:25]
+    return []  # Legacy type system removed — whitelists are now dynamic
 
 
 class ModToolsView(discord.ui.View):
