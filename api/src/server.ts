@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node"
 import Fastify from "fastify"
 import cors from "@fastify/cors"
 import rateLimit from "@fastify/rate-limit"
@@ -6,14 +5,25 @@ import rateLimit from "@fastify/rate-limit"
 import { env } from "./lib/env.js"
 
 // ─── Sentry ──────────────────────────────────────────────────────────────────
-// Only active if SENTRY_DSN is set. Optional in development.
+// Optional: only active if SENTRY_DSN is set AND @sentry/node is installed.
+// @sentry/node v10 conflicts with prisma generate in Docker builds (WASM engine
+// file issue), so it's NOT in package.json dependencies. Install it manually
+// in the Railway runner or add it when upgrading Prisma to v6+.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Sentry: any = null
 if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV || "development",
-    tracesSampleRate: 0.1,
-    sendDefaultPii: false,
-  })
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    Sentry = require("@sentry/node")
+    Sentry.init({
+      dsn: env.SENTRY_DSN,
+      environment: env.NODE_ENV || "development",
+      tracesSampleRate: 0.1,
+      sendDefaultPii: false,
+    })
+  } catch {
+    // @sentry/node not installed — skip silently
+  }
 }
 import prismaPlugin from "./plugins/prisma.js"
 import authPlugin, { ensureSessionsTable } from "./plugins/auth.js"
@@ -56,9 +66,10 @@ async function build() {
   })
 
   // ─── Sentry error hook ──────────────────────────────────────────────────────
-  if (env.SENTRY_DSN) {
+  if (Sentry) {
+    const sentry = Sentry
     app.addHook("onError", (_request, _reply, error, done) => {
-      Sentry.captureException(error)
+      sentry.captureException(error)
       done()
     })
   }

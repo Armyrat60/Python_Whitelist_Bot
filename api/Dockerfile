@@ -18,10 +18,7 @@ COPY prisma ./prisma
 COPY tsconfig.json ./
 # cache-bust: 2026-03-29-v16
 COPY src ./src
-# NODE_OPTIONS=--no-experimental-global-customevent prevents @sentry/node v10's
-# OpenTelemetry hooks from loading during prisma generate. Without this, Sentry
-# tries to instrument @prisma/client before the client files are generated.
-RUN NODE_OPTIONS="" OTEL_SDK_DISABLED=true npx prisma generate
+RUN npx prisma generate
 RUN npm run build
 
 # Production image
