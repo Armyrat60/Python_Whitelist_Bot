@@ -52,10 +52,21 @@ if (missing.length > 0) {
 // whitespace or newlines, which silently break URLs and auth headers.
 const DATABASE_URL = process.env.DATABASE_URL.trim();
 const BACKUP_PASSPHRASE = process.env.BACKUP_PASSPHRASE.trim();
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID.trim();
+let R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID.trim();
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID.trim();
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY.trim();
 const R2_BUCKET = process.env.R2_BUCKET.trim();
+
+// Guard: if the user pasted the full endpoint URL as the account ID, extract
+// just the account ID portion.
+if (R2_ACCOUNT_ID.includes(".r2.cloudflarestorage.com")) {
+  const match = R2_ACCOUNT_ID.match(/(?:https?:\/\/)?([a-f0-9]+)\.r2\.cloudflarestorage\.com/i);
+  if (match) {
+    console.log("→ backup-prod: R2_ACCOUNT_ID contained a full URL, extracting account ID");
+    R2_ACCOUNT_ID = match[1];
+  }
+}
+console.log(`→ backup-prod: R2_ACCOUNT_ID length=${R2_ACCOUNT_ID.length} chars=${R2_ACCOUNT_ID.slice(0, 6)}...`);
 
 // ─── Build object key ───────────────────────────────────────────────────────
 
@@ -173,6 +184,18 @@ if (encrypted.length === 0) {
 
 const r2Endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 console.log(`→ backup-prod: uploading to ${r2Endpoint} bucket=${R2_BUCKET}`);
+
+// TLS connectivity test — bypass the SDK to isolate the issue
+try {
+  const testResp = await fetch(r2Endpoint, { method: "HEAD" });
+  console.log(`→ backup-prod: R2 TLS connectivity OK (HTTP ${testResp.status})`);
+} catch (tlsErr) {
+  console.error(`✗ backup-prod: R2 TLS connectivity test failed: ${tlsErr.message}`);
+  console.error("  This means the GitHub Actions runner cannot establish a TLS connection");
+  console.error("  to the R2 endpoint. Check that R2_ACCOUNT_ID is a 32-char hex string.");
+  console.error(`  Endpoint tested: ${r2Endpoint}`);
+  process.exit(1);
+}
 
 const s3 = new S3Client({
   region: "auto",
