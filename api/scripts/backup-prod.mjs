@@ -85,6 +85,7 @@ const pgDump = spawn(
     "--if-exists",
     "--quote-all-identifiers",
     "--format=plain",
+    "--dbname",
     DATABASE_URL,
   ],
   { stdio: ["ignore", "pipe", "inherit"] },
@@ -138,7 +139,7 @@ try {
     new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: objectKey,
-      Body: Readable.toWeb(gpg.stdout),
+      Body: gpg.stdout,
       ContentType: "application/octet-stream",
       Metadata: {
         "backup-source": "github-actions",
