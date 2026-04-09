@@ -58,6 +58,7 @@ def _make_db(
     db.get_setting = _get_setting
     db.get_whitelists = AsyncMock(return_value=whitelists)
     db.get_squad_groups = AsyncMock(return_value=squad_groups)
+    db.get_disabled_squad_group_names = AsyncMock(return_value=[])
     db.get_active_export_rows = AsyncMock(return_value=export_rows)
     return db
 

@@ -46,6 +46,7 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
     # Get all squad groups for this guild
     squad_groups = await db.get_squad_groups(guild_id)
     group_perms = {row[0]: row[1] for row in squad_groups}
+    disabled_groups = set(await db.get_disabled_squad_group_names(guild_id))
 
     # Get all active export rows
     # Returns: (whitelist_slug, output_filename, discord_id, discord_name, id_type, id_value)
@@ -76,6 +77,8 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
         if not wl.get("enabled"):
             continue
         grp = wl.get("squad_group") or "Whitelist"
+        if grp in disabled_groups:
+            continue
         all_enabled_groups.add(grp)
         per_wl_default_groups[wl["slug"]] = {grp}
 
@@ -98,6 +101,8 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
         if not wl or not wl.get("enabled"):
             continue
         group_name = wl["squad_group"] or "Whitelist"
+        if group_name in disabled_groups:
+            continue
 
         line = build_line(id_type, id_value, discord_name, group_name)
         dedup_key = f"{id_type}:{id_value}" if dedupe else line
@@ -132,6 +137,8 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
         for wl in whitelists:
             if not wl.get("enabled"):
                 continue
+            if (wl.get("squad_group") or "Whitelist") in disabled_groups:
+                continue
             wl_fn = wl.get("output_filename")
             if wl_fn and wl_fn != combined_filename:
                 outputs[wl_fn] = combined_content
@@ -140,6 +147,8 @@ async def generate_output_files(db: "Database", guild_id: int) -> dict[str, str]
     if output_mode in ("separate", "hybrid"):
         for wl in whitelists:
             if not wl["enabled"]:
+                continue
+            if (wl.get("squad_group") or "Whitelist") in disabled_groups:
                 continue
             slug = wl["slug"]
             filename = wl["output_filename"]

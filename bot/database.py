@@ -13,7 +13,6 @@ from bot.config import (
     DATABASE_URL,
     SQUAD_PERMISSIONS,
     DEFAULT_SETTINGS,
-    DEFAULT_TYPES,
     log,
 )
 from bot.utils import utcnow, to_bool
@@ -146,455 +145,18 @@ class _PostgresAdapter:
 
 
 # ─── Schema ──────────────────────────────────────────────────────────────────
-
-POSTGRES_SCHEMA = [
-    """
-    CREATE TABLE IF NOT EXISTS bot_settings (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        setting_key VARCHAR(100) NOT NULL,
-        setting_value TEXT NOT NULL,
-        PRIMARY KEY (guild_id, setting_key)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelists (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        slug VARCHAR(50) NOT NULL,
-        enabled BOOLEAN NOT NULL DEFAULT FALSE,
-        panel_channel_id BIGINT NULL,
-        panel_message_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        squad_group VARCHAR(100) NOT NULL DEFAULT 'Whitelist',
-        output_filename VARCHAR(255) NOT NULL DEFAULT 'whitelist.txt',
-        default_slot_limit INT NOT NULL DEFAULT 1,
-        stack_roles BOOLEAN NOT NULL DEFAULT FALSE,
-        is_default BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL,
-        UNIQUE (guild_id, slug)
-    )
-    """,
-    # Legacy table kept for migration; new code uses whitelists
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_types (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NOT NULL,
-        enabled BOOLEAN NOT NULL DEFAULT FALSE,
-        panel_channel_id BIGINT NULL,
-        panel_message_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        github_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        github_filename VARCHAR(255) NOT NULL,
-        input_mode VARCHAR(20) NOT NULL DEFAULT 'modal',
-        stack_roles BOOLEAN NOT NULL DEFAULT TRUE,
-        default_slot_limit INT NOT NULL DEFAULT 1,
-        squad_group VARCHAR(100) NOT NULL DEFAULT 'Whitelist',
-        updated_at TIMESTAMP NOT NULL,
-        PRIMARY KEY (guild_id, whitelist_type)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_users (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        discord_id BIGINT NOT NULL,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        discord_name VARCHAR(255) NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'active',
-        slot_limit_override INT NULL,
-        effective_slot_limit INT NOT NULL DEFAULT 0,
-        last_plan_name VARCHAR(255) NULL,
-        updated_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP NOT NULL,
-        PRIMARY KEY (guild_id, discord_id, whitelist_id)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_identifiers (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        discord_id BIGINT NOT NULL,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        id_type VARCHAR(20) NOT NULL,
-        id_value VARCHAR(255) NOT NULL,
-        is_verified BOOLEAN NOT NULL DEFAULT FALSE,
-        verification_source VARCHAR(100) NULL,
-        created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL,
-        UNIQUE (guild_id, discord_id, whitelist_id, id_type, id_value)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS audit_log (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        whitelist_type VARCHAR(20) NULL,
-        whitelist_id INT NULL,
-        action_type VARCHAR(100) NOT NULL,
-        actor_discord_id BIGINT NULL,
-        target_discord_id BIGINT NULL,
-        details TEXT NULL,
-        created_at TIMESTAMP NOT NULL
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_audit_guild_created ON audit_log (guild_id, created_at)
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS squad_permissions (
-        permission VARCHAR(50) PRIMARY KEY,
-        description VARCHAR(255) NOT NULL,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS squad_groups (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        group_name VARCHAR(100) NOT NULL,
-        permissions TEXT NOT NULL,
-        description VARCHAR(255) NOT NULL DEFAULT '',
-        is_default BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL,
-        PRIMARY KEY (guild_id, group_name)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS panels (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        name VARCHAR(100) NOT NULL,
-        channel_id BIGINT NULL,
-        log_channel_id BIGINT NULL,
-        whitelist_id INT NULL REFERENCES whitelists(id) ON DELETE SET NULL,
-        panel_message_id BIGINT NULL,
-        is_default BOOLEAN NOT NULL DEFAULT FALSE,
-        enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL,
-        updated_at TIMESTAMP NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS panel_roles (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        panel_id INTEGER NOT NULL,
-        role_id BIGINT NOT NULL,
-        role_name VARCHAR(100) NOT NULL,
-        slot_limit INTEGER NOT NULL DEFAULT 1,
-        is_stackable BOOLEAN NOT NULL DEFAULT FALSE,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-        display_name VARCHAR(100),
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        FOREIGN KEY (panel_id) REFERENCES panels(id) ON DELETE CASCADE,
-        UNIQUE (guild_id, panel_id, role_id)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS panel_refresh_queue (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        panel_id INT NOT NULL,
-        reason VARCHAR(200) NOT NULL DEFAULT 'settings_changed',
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        processed BOOLEAN NOT NULL DEFAULT FALSE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS notification_routing (
-        guild_id BIGINT NOT NULL DEFAULT 0,
-        event_type VARCHAR(50) NOT NULL,
-        channel_id VARCHAR(20) NOT NULL DEFAULT '',
-        PRIMARY KEY (guild_id, event_type)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS whitelist_categories (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        whitelist_id INTEGER NOT NULL REFERENCES whitelists(id) ON DELETE CASCADE,
-        name VARCHAR(100) NOT NULL,
-        slot_limit INTEGER NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (whitelist_id, name)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS category_managers (
-        id SERIAL PRIMARY KEY,
-        category_id INTEGER NOT NULL REFERENCES whitelist_categories(id) ON DELETE CASCADE,
-        discord_id BIGINT NOT NULL,
-        discord_name VARCHAR(255) NOT NULL,
-        added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (category_id, discord_id)
-    )
-    """,
-]
-
-# ─── Migration statements ────────────────────────────────────────────────────
-# These handle upgrading from the old whitelist_types schema to the new
-# whitelists table.  They add whitelist_id columns to existing tables and
-# migrate data from whitelist_type -> whitelists -> whitelist_id.
-
-POSTGRES_MIGRATIONS = [
-    # --- Legacy guild_id migrations (from previous multi-guild update) ---
-    "ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE bot_settings DROP CONSTRAINT IF EXISTS bot_settings_pkey, ADD PRIMARY KEY (guild_id, setting_key)",
-    "ALTER TABLE whitelist_types ADD COLUMN IF NOT EXISTS guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE whitelist_types DROP CONSTRAINT IF EXISTS whitelist_types_pkey, ADD PRIMARY KEY (guild_id, whitelist_type)",
-    "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS guild_id BIGINT NOT NULL DEFAULT 0",
-    "ALTER TABLE squad_groups DROP CONSTRAINT IF EXISTS squad_groups_pkey, ADD PRIMARY KEY (guild_id, group_name)",
-
-    # --- Make legacy whitelist_type columns nullable ---
-    "ALTER TABLE role_mappings ALTER COLUMN whitelist_type DROP NOT NULL",
-    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_type DROP NOT NULL",
-    "ALTER TABLE whitelist_identifiers ALTER COLUMN whitelist_type DROP NOT NULL",
-
-    # --- New whitelists migration: add whitelist_id columns ---
-    "ALTER TABLE role_mappings ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",
-    "ALTER TABLE whitelist_identifiers ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",
-    "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS whitelist_id INT NULL",
-
-    # --- Migrate data from whitelist_types into whitelists table ---
-    """
-    INSERT INTO whitelists (guild_id, name, slug, enabled, panel_channel_id, panel_message_id,
-        log_channel_id, squad_group, output_filename, default_slot_limit, stack_roles, is_default, created_at, updated_at)
-    SELECT guild_id, whitelist_type, whitelist_type, enabled, panel_channel_id, panel_message_id,
-        log_channel_id, squad_group, github_filename, default_slot_limit, stack_roles, FALSE, updated_at, updated_at
-    FROM whitelist_types
-    ON CONFLICT (guild_id, slug) DO NOTHING
-    """,
-
-    # Populate whitelist_id from the old whitelist_type values
-    """
-    UPDATE role_mappings SET whitelist_id = w.id
-    FROM whitelists w
-    WHERE w.guild_id = role_mappings.guild_id AND w.slug = role_mappings.whitelist_type
-      AND role_mappings.whitelist_id IS NULL AND role_mappings.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE whitelist_users SET whitelist_id = w.id
-    FROM whitelists w
-    WHERE w.guild_id = whitelist_users.guild_id AND w.slug = whitelist_users.whitelist_type
-      AND whitelist_users.whitelist_id IS NULL AND whitelist_users.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE whitelist_identifiers SET whitelist_id = w.id
-    FROM whitelists w
-    WHERE w.guild_id = whitelist_identifiers.guild_id AND w.slug = whitelist_identifiers.whitelist_type
-      AND whitelist_identifiers.whitelist_id IS NULL AND whitelist_identifiers.whitelist_type IS NOT NULL
-    """,
-    """
-    UPDATE audit_log SET whitelist_id = w.id
-    FROM whitelists w
-    WHERE w.guild_id = audit_log.guild_id AND w.slug = audit_log.whitelist_type
-      AND audit_log.whitelist_id IS NULL AND audit_log.whitelist_type IS NOT NULL
-    """,
-
-    # --- Force whitelist_type nullable (may have failed in earlier migration) ---
-    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_type DROP NOT NULL",
-    "ALTER TABLE whitelist_identifiers ALTER COLUMN whitelist_type DROP NOT NULL",
-    "ALTER TABLE role_mappings ALTER COLUMN whitelist_type DROP NOT NULL",
-
-    # --- Ensure unique constraints exist for ON CONFLICT to work ---
-    # Delete orphaned rows with NULL whitelist_id before adding constraints
-    "DELETE FROM whitelist_users WHERE whitelist_id IS NULL",
-    "DELETE FROM whitelist_identifiers WHERE whitelist_id IS NULL AND id_value IS NULL",
-    # Make whitelist_id NOT NULL now that migration is done
-    "ALTER TABLE whitelist_users ALTER COLUMN whitelist_id SET NOT NULL",
-    # Add unique constraint if not exists (idempotent via DO NOTHING on error)
-    """
-    DO $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_wu_guild_discord_wl') THEN
-            ALTER TABLE whitelist_users ADD CONSTRAINT uq_wu_guild_discord_wl UNIQUE (guild_id, discord_id, whitelist_id);
-        END IF;
-    END $$
-    """,
-
-    # --- Clean up legacy whitelist_types table to prevent re-migration ---
-    # This stops old clan/staff/subscription from being re-created after deletion
-    "TRUNCATE TABLE whitelist_types",
-
-    # --- Performance indexes ---
-    "CREATE INDEX IF NOT EXISTS idx_wu_guild_wl ON whitelist_users (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_wi_guild_wl ON whitelist_identifiers (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_al_guild_created ON audit_log (guild_id, created_at DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_rm_guild_wl ON role_mappings (guild_id, whitelist_id)",
-    "CREATE INDEX IF NOT EXISTS idx_wu_status ON whitelist_users (guild_id, whitelist_id, status)",
-
-    # --- Tier categories migration ---
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS tier_category_id INT NULL",
-
-    # --- Panel enabled column ---
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
-
-    # --- Timed whitelist: optional expiration ---
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NULL",
-
-    # --- Registration source tracking ---
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS created_via VARCHAR(50) NULL",
-
-    # --- Tier entry per-role stackable flag ---
-    "ALTER TABLE tier_entries ADD COLUMN IF NOT EXISTS is_stackable BOOLEAN NOT NULL DEFAULT FALSE",
-
-    # --- Fix duplicate is_default flags on squad_groups ---
-    """
-    UPDATE squad_groups
-    SET is_default = FALSE
-    WHERE is_default = TRUE
-      AND group_name != (
-          SELECT MIN(g2.group_name)
-          FROM squad_groups g2
-          WHERE g2.guild_id = squad_groups.guild_id
-            AND g2.is_default = TRUE
-      )
-    """,
-
-    # --- Steam name cache ---
-    """
-    CREATE TABLE IF NOT EXISTS steam_name_cache (
-        steam_id VARCHAR(20) PRIMARY KEY,
-        persona_name VARCHAR(255) NOT NULL,
-        cached_at TIMESTAMP NOT NULL
-    )
-    """,
-
-    # --- Squad group description column ---
-    "ALTER TABLE squad_groups ADD COLUMN IF NOT EXISTS description VARCHAR(255) NOT NULL DEFAULT ''",
-
-    # --- Per-panel role mention toggle ---
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS show_role_mentions BOOLEAN NOT NULL DEFAULT TRUE",
-
-    # --- Panel refresh queue: action + message coordinates for delete support ---
-    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'refresh'",
-    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS channel_id BIGINT NULL",
-    "ALTER TABLE panel_refresh_queue ADD COLUMN IF NOT EXISTS message_id BIGINT NULL",
-
-    "ALTER TABLE panels DROP COLUMN IF EXISTS tier_category_id",
-
-    # --- Manual whitelist flag ---
-    "ALTER TABLE whitelists ADD COLUMN IF NOT EXISTS is_manual BOOLEAN NOT NULL DEFAULT FALSE",
-
-    # --- Category assignment on whitelist users ---
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS category_id INTEGER NULL REFERENCES whitelist_categories(id) ON DELETE SET NULL",
-
-    # --- User notes column (may be absent on older deployments) ---
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS notes VARCHAR(500) NULL",
-
-    # --- Dashboard permissions (Phase 5) ---
-    """
-    CREATE TABLE IF NOT EXISTS dashboard_permissions (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        discord_id VARCHAR(32) NOT NULL,
-        discord_name VARCHAR(100),
-        permission_level VARCHAR(20) NOT NULL DEFAULT 'viewer',
-        granted_by VARCHAR(32),
-        granted_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        UNIQUE (guild_id, discord_id)
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_dashboard_permissions_guild ON dashboard_permissions (guild_id)",
-
-    # --- Dashboard role permissions (grants by Discord role, not user ID) ---
-    """
-    CREATE TABLE IF NOT EXISTS dashboard_role_permissions (
-        id SERIAL PRIMARY KEY,
-        guild_id BIGINT NOT NULL,
-        role_id VARCHAR(32) NOT NULL,
-        role_name VARCHAR(100),
-        permission_level VARCHAR(20) NOT NULL DEFAULT 'viewer',
-        granted_by VARCHAR(32),
-        granted_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        UNIQUE (guild_id, role_id)
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_drp_guild ON dashboard_role_permissions (guild_id)",
-    # --- SquadJS bridge configs: per-guild MySQL connection settings ---
-    """
-    CREATE TABLE IF NOT EXISTS bridge_configs (
-        id                    SERIAL PRIMARY KEY,
-        guild_id              BIGINT       NOT NULL UNIQUE,
-        mysql_host            VARCHAR(255) NOT NULL,
-        mysql_port            INT          NOT NULL DEFAULT 3306,
-        mysql_database        VARCHAR(255) NOT NULL,
-        mysql_user            VARCHAR(255) NOT NULL,
-        mysql_password        VARCHAR(500) NOT NULL,
-        server_name           VARCHAR(255) NOT NULL DEFAULT 'Game Server',
-        sync_interval_minutes INT          NOT NULL DEFAULT 15,
-        enabled               BOOLEAN      NOT NULL DEFAULT TRUE,
-        last_sync_at          TIMESTAMP    NULL,
-        last_sync_status      VARCHAR(20)  NULL,
-        last_sync_message     TEXT         NULL,
-        created_at            TIMESTAMP    NOT NULL DEFAULT NOW(),
-        updated_at            TIMESTAMP    NOT NULL DEFAULT NOW()
-    )
-    """,
-    # --- SquadJS bridge: in-game player records synced from SquadJS MySQL ---
-    """
-    CREATE TABLE IF NOT EXISTS squad_players (
-        id             SERIAL PRIMARY KEY,
-        guild_id       BIGINT       NOT NULL,
-        steam_id       VARCHAR(32)  NOT NULL,
-        last_seen_name VARCHAR(255),
-        server_name    VARCHAR(255),
-        first_seen_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
-        last_seen_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
-        discord_id     BIGINT       NULL,
-        UNIQUE (guild_id, steam_id)
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_squad_players_guild ON squad_players (guild_id)",
-    "CREATE INDEX IF NOT EXISTS idx_squad_players_discord ON squad_players (discord_id) WHERE discord_id IS NOT NULL",
-    # --- Job queue: async background jobs (bridge sync, role sync, etc.) ---
-    """
-    CREATE TABLE IF NOT EXISTS job_queue (
-        id           SERIAL PRIMARY KEY,
-        guild_id     BIGINT       NOT NULL,
-        job_type     VARCHAR(50)  NOT NULL,
-        payload      JSONB        NOT NULL DEFAULT '{}',
-        status       VARCHAR(20)  NOT NULL DEFAULT 'pending',
-        priority     INT          NOT NULL DEFAULT 0,
-        created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
-        started_at   TIMESTAMP    NULL,
-        completed_at TIMESTAMP    NULL,
-        result       JSONB        NULL,
-        error        TEXT         NULL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_job_queue_guild_status ON job_queue (guild_id, status)",
-    "CREATE INDEX IF NOT EXISTS idx_job_queue_status_priority ON job_queue (status, priority, created_at)",
-    # --- Per-category squad group assignment ---
-    "ALTER TABLE whitelist_categories ADD COLUMN IF NOT EXISTS squad_group VARCHAR(100) NULL",
-
-    # --- Panel push status tracking ---
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_status VARCHAR(20) NULL",
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_error TEXT NULL",
-    "ALTER TABLE panels ADD COLUMN IF NOT EXISTS last_push_at TIMESTAMP NULL",
-
-    # --- Discord username / server nickname / clan tag ---
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(255) NULL",
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS discord_nick VARCHAR(255) NULL",
-    "ALTER TABLE whitelist_users ADD COLUMN IF NOT EXISTS clan_tag VARCHAR(50) NULL",
-
-    # --- Backfill clan_tag from existing discord_name values (e.g. "[TAG] Name") ---
-    """
-    UPDATE whitelist_users
-    SET clan_tag = TRIM(SUBSTRING(discord_name FROM 2 FOR POSITION(']' IN discord_name) - 2))
-    WHERE clan_tag IS NULL
-      AND discord_name ~ '^\\[[A-Za-z0-9 _\\-]{1,15}\\]'
-    """,
-]
-
+#
+# Schema definitions and incremental migrations have moved to Prisma. The
+# canonical source of truth is `api/prisma/schema.prisma`, applied to the
+# database via `prisma migrate deploy` (run by Railway as the API service's
+# preDeployCommand). The bot is now a CONSUMER of the schema only — it must
+# never run DDL.
+#
+# See:
+#   - api/prisma/schema.prisma            (model definitions)
+#   - api/prisma/migrations/              (migration history)
+#   - api/scripts/db-snapshot-checklist.md (data-safety checklist)
+#   - bot/database.py: Database.verify_schema() (read-only health check)
 
 # ─── Database class (engine-agnostic) ────────────────────────────────────────
 
@@ -622,19 +184,50 @@ class Database:
     async def fetchall(self, query: str, params: tuple = ()) -> List[tuple]:
         return await self._adapter.fetchall(query, params)
 
-    async def init_schema(self):
-        for stmt in POSTGRES_SCHEMA:
-            await self.execute(stmt)
+    async def verify_schema(self):
+        """Verify that the database has been migrated by Prisma.
 
-        # Run migrations (idempotent)
-        for stmt in POSTGRES_MIGRATIONS:
-            try:
-                await self.execute(stmt)
-            except Exception as exc:
-                # Column/constraint already exists or old constraint not found -- usually safe to ignore
-                log.debug("Migration skipped (likely already applied): %s", str(exc)[:80])
+        Reads `_prisma_migrations` and refuses to start if no migrations have
+        been applied. This is the safety net against the bot starting against
+        an unmigrated DB (e.g. the API service hasn't deployed yet, or
+        DATABASE_URL points at the wrong instance).
 
-        # Seed Squad permissions (global, no guild_id)
+        Read-only — never runs DDL. All schema changes go through
+        `prisma migrate deploy` from the api service.
+        """
+        try:
+            row = await self.fetchone(
+                """
+                SELECT migration_name
+                FROM _prisma_migrations
+                WHERE finished_at IS NOT NULL
+                ORDER BY finished_at DESC
+                LIMIT 1
+                """
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Database has not been migrated by Prisma — `_prisma_migrations` "
+                "is missing or unreadable. Run `prisma migrate deploy` from the "
+                "api service first, then restart the bot. "
+                f"Underlying error: {exc}"
+            )
+
+        if not row:
+            raise RuntimeError(
+                "Database has no applied Prisma migrations. Run "
+                "`prisma migrate deploy` from the api service first, then "
+                "restart the bot."
+            )
+
+        log.info("DB schema verified — latest applied migration: %s", row[0])
+
+    async def seed_global_defaults(self):
+        """Seed global (non-per-guild) reference data.
+
+        Currently only the `squad_permissions` lookup table. Idempotent —
+        safe to run on every startup.
+        """
         for perm, desc in SQUAD_PERMISSIONS.items():
             await self.execute(
                 """
@@ -644,9 +237,6 @@ class Database:
                 """,
                 (perm, desc),
             )
-
-        # Note: guild defaults are seeded per-guild in bot on_ready / web startup
-        # No longer seed for guild_id=0 (legacy artifact)
 
     async def seed_guild_defaults(self, guild_id: int):
         """Seed a default whitelist and default squad group for a guild if they don't exist."""
@@ -1343,6 +933,13 @@ class Database:
             "SELECT group_name, permissions, is_default, description FROM squad_groups WHERE guild_id=%s AND group_name=%s",
             (guild_id, group_name),
         )
+
+    async def get_disabled_squad_group_names(self, guild_id: int) -> List[str]:
+        rows = await self.fetchall(
+            "SELECT group_name FROM squad_groups WHERE guild_id=%s AND enabled=FALSE",
+            (guild_id,),
+        )
+        return [r[0] for r in rows]
 
     async def create_squad_group(self, guild_id: int, group_name: str, permissions: str, is_default: bool = False, description: str = ""):
         now = utcnow()

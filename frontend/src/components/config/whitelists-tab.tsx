@@ -239,16 +239,33 @@ export default function WhitelistsTab() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[60px]">On</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Squad Group</TableHead>
-                <TableHead>Output File</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Whitelist URL</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {roleWhitelists.map((wl) => (
                 <TableRow key={wl.id}>
+                  {/* Status (far left) */}
+                  <TableCell>
+                    <Switch
+                      checked={wl.enabled}
+                      onCheckedChange={() =>
+                        toggleWhitelist.mutate(wl.slug, {
+                          onSuccess: () =>
+                            toast.success(
+                              `Whitelist ${wl.enabled ? "disabled" : "enabled"}`
+                            ),
+                          onError: () =>
+                            toast.error("Failed to toggle whitelist"),
+                        })
+                      }
+                    />
+                  </TableCell>
+
                   {/* Name */}
                   <TableCell>
                     <button
@@ -268,33 +285,39 @@ export default function WhitelistsTab() {
                     </button>
                   </TableCell>
 
-                  {/* Squad Group */}
-                  <TableCell className="text-muted-foreground">
-                    {wl.squad_group || "\u2014"}
+                  {/* Squad Group as chip */}
+                  <TableCell>
+                    {wl.squad_group ? (
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-[11px] border-white/[0.10] bg-white/[0.03]"
+                      >
+                        {wl.squad_group}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
 
-                  {/* Output File */}
+                  {/* Whitelist URL — inline, easy to read & copy */}
                   <TableCell>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {wl.output_filename || "\u2014"}
-                    </span>
-                  </TableCell>
-
-                  {/* Status */}
-                  <TableCell>
-                    <Switch
-                      checked={wl.enabled}
-                      onCheckedChange={() =>
-                        toggleWhitelist.mutate(wl.slug, {
-                          onSuccess: () =>
-                            toast.success(
-                              `Whitelist ${wl.enabled ? "disabled" : "enabled"}`
-                            ),
-                          onError: () =>
-                            toast.error("Failed to toggle whitelist"),
-                        })
-                      }
-                    />
+                    {wl.url ? (
+                      <div className="flex items-center gap-1 max-w-[340px]">
+                        <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                          {wl.url}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => copyUrl(wl.url)}
+                          title="Copy URL"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
 
                   {/* Actions */}
@@ -308,16 +331,6 @@ export default function WhitelistsTab() {
                         <Settings className="mr-1 h-3 w-3" />
                         Configure
                       </Button>
-                      {wl.url && (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => copyUrl(wl.url)}
-                          title="Copy URL"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      )}
                       {!wl.is_default && (
                         <AlertDialog>
                           <AlertDialogTrigger

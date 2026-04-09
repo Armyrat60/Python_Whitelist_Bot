@@ -3,6 +3,10 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# Pre-deploy: applies any pending Prisma migrations BEFORE traffic shifts to the
+# new container. Failed migration = failed deploy = automatic rollback. Runs
+# the destructive-migration safety check first; see api/scripts/ for details.
+preDeployCommand = "npm run db:deploy"
 startCommand = "node dist/server.js"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 120

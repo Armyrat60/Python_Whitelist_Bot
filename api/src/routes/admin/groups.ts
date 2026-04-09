@@ -67,8 +67,31 @@ export default async function groupRoutes(app: FastifyInstance) {
         permissions: g.permissions,
         is_default:  g.isDefault,
         description: g.description,
+        enabled:     g.enabled,
       }))
     })
+  })
+
+  // PATCH /api/admin/groups/:groupName/toggle  — flip enabled
+  app.patch("/groups/:groupName/toggle", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const { groupName } = req.params as { groupName: string }
+
+    const existing = await prisma.squadGroup.findUnique({
+      where: { guildId_groupName: { guildId, groupName } }
+    })
+    if (!existing) {
+      return reply.code(404).send({ error: `Group "${groupName}" not found` })
+    }
+
+    const updated = await prisma.squadGroup.update({
+      where: { guildId_groupName: { guildId, groupName } },
+      data:  { enabled: !existing.enabled, updatedAt: new Date() }
+    })
+
+    await triggerSync(app, guildId)
+
+    return reply.send({ ok: true, enabled: updated.enabled })
   })
 
   // GET /api/admin/permissions

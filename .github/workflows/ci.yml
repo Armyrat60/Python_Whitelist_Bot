@@ -11,7 +11,7 @@ jobs:
     name: Python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -41,11 +41,11 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -70,10 +70,10 @@ jobs:
     name: API Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: api/package-lock.json
       - name: Install dependencies
@@ -92,10 +92,10 @@ jobs:
     needs: frontend
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
@@ -109,7 +109,7 @@ jobs:
         working-directory: frontend
         env:
           BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL || 'https://squadwhitelister.com' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report

@@ -120,6 +120,8 @@ model WhitelistUser {
   whitelist Whitelist @relation(fields: [whitelistId], references: [id])
 
   @@id([guildId, discordId, whitelistId])
+  @@index([guildId, whitelistId], map: "idx_wu_guild_wl")
+  @@index([guildId, whitelistId, status], map: "idx_wu_status")
   @@map("whitelist_users")
 }
 
@@ -139,6 +141,7 @@ model WhitelistIdentifier {
   whitelist Whitelist? @relation(fields: [whitelistId], references: [id], onDelete: SetNull)
 
   @@unique([guildId, discordId, whitelistId, idType, idValue])
+  @@index([guildId, whitelistId], map: "idx_wi_guild_wl")
   @@map("whitelist_identifiers")
 }
 
@@ -171,6 +174,7 @@ model SquadGroup {
   permissions String
   description String   @default("") @db.VarChar(255)
   isDefault   Boolean  @default(false) @map("is_default")
+  enabled     Boolean  @default(true)
   createdAt   DateTime @map("created_at")
   updatedAt   DateTime @map("updated_at")
 
@@ -309,8 +313,13 @@ model SquadPlayer {
   discordId    BigInt?  @map("discord_id")
 
   @@unique([guildId, steamId])
-  @@index([guildId])
-  @@index([discordId])
+  @@index([guildId], map: "idx_squad_players_guild")
+  // NOTE: production has this as a partial index
+  //   CREATE INDEX idx_squad_players_discord ON squad_players (discord_id) WHERE discord_id IS NOT NULL
+  // Prisma cannot express partial indexes in the schema model. The baseline migration
+  // SQL preserves the partial form by hand. If you regenerate this index via Prisma,
+  // it will become a full index — see api/prisma/migrations/.../baseline.
+  @@index([discordId], map: "idx_squad_players_discord")
   @@map("squad_players")
 }
 
@@ -381,7 +390,7 @@ model SeedingConfig {
   createdAt                 DateTime  @default(now()) @map("created_at")
   updatedAt                 DateTime  @updatedAt @map("updated_at")
 
-  servers                   SeedingServer[]
+  servers SeedingServer[]
 
   @@map("seeding_configs")
 }
@@ -400,7 +409,7 @@ model SeedingServer {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  config          SeedingConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  config SeedingConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@unique([guildId, serverName])
   @@index([guildId])

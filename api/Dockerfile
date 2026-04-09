@@ -30,7 +30,9 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/package.json ./package.json
 COPY prisma ./prisma
+COPY scripts ./scripts
 
 EXPOSE 8080
 ENV PORT=8080

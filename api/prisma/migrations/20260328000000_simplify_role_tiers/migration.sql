@@ -24,9 +24,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "panel_roles_guild_id_panel_id_role_id_key"
     ON "panel_roles"("guild_id", "panel_id", "role_id");
 
 -- 2. Remove tier_category_id from panels
+-- @safe-destructive: tier_categories table is being removed entirely; the FK column has no remaining references
 ALTER TABLE "panels" DROP COLUMN IF EXISTS "tier_category_id";
 
 -- 3. Drop old tables (order matters: dependent tables first)
+-- @safe-destructive: data already migrated to panel_roles; legacy tier model retired
 DROP TABLE IF EXISTS "tier_entries";
+-- @safe-destructive: data already migrated to panel_roles; legacy tier model retired
 DROP TABLE IF EXISTS "tier_categories";
+-- @safe-destructive: data already migrated to panel_roles; legacy role_mappings retired
 DROP TABLE IF EXISTS "role_mappings";

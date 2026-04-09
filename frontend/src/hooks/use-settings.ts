@@ -159,6 +159,18 @@ export function useDeleteGroup() {
   });
 }
 
+export function useToggleGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (group_name: string) =>
+      api.patch(`/api/admin/groups/${encodeURIComponent(group_name)}/toggle`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["groups"] });
+      qc.invalidateQueries({ queryKey: ["whitelists"] });
+    },
+  });
+}
+
 export function useSquadPermissions() {
   return useQuery<Record<string, string>>({
     queryKey: ["squad-permissions"],

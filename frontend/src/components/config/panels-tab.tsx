@@ -169,10 +169,10 @@ export default function PanelsTab() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[60px]">On</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Channel</TableHead>
               <TableHead>Whitelist</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -187,6 +187,16 @@ export default function PanelsTab() {
 
               return (
                 <TableRow key={panel.id}>
+                  {/* Status toggle (far left) */}
+                  <TableCell>
+                    <Switch
+                      checked={panel.enabled}
+                      onCheckedChange={(checked) =>
+                        handleToggleEnabled(panel, checked)
+                      }
+                    />
+                  </TableCell>
+
                   {/* Name */}
                   <TableCell>
                     <button
@@ -209,17 +219,6 @@ export default function PanelsTab() {
                   {/* Whitelist */}
                   <TableCell className="text-muted-foreground">
                     {wlName ?? "\u2014"}
-                  </TableCell>
-
-                  {/* Status toggle */}
-                  <TableCell>
-                    <Switch
-                      checked={panel.enabled}
-                      onCheckedChange={(checked) =>
-                        handleToggleEnabled(panel, checked)
-                      }
-                      className="scale-75"
-                    />
                   </TableCell>
 
                   {/* Actions */}

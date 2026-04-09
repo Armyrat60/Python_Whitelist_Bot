@@ -8,10 +8,12 @@ import {
   useCreateGroup,
   useUpdateGroup,
   useDeleteGroup,
+  useToggleGroup,
   useSquadPermissions,
   useWhitelists,
   useUpdateWhitelist,
 } from "@/hooks/use-settings";
+import { Switch } from "@/components/ui/switch";
 import type { SquadGroup, Whitelist } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -481,6 +483,7 @@ export default function GroupsTab() {
   const { data: groups, isLoading, isError } = useGroups();
   const { data: availablePerms } = useSquadPermissions();
   const { data: allWhitelists } = useWhitelists();
+  const toggleGroup = useToggleGroup();
 
   const [showCreate, setShowCreate] = useState(false);
   const [editingGroup, setEditingGroup] = useState<SquadGroup | null>(null);
@@ -563,6 +566,7 @@ export default function GroupsTab() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[60px]">On</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Permissions</TableHead>
                 <TableHead>Used By</TableHead>
@@ -573,7 +577,31 @@ export default function GroupsTab() {
               {groups.map((group) => {
                 const usedBy = usageMap[group.group_name] ?? [];
                 return (
-                  <TableRow key={group.group_name}>
+                  <TableRow
+                    key={group.group_name}
+                    className={!group.enabled ? "opacity-60" : undefined}
+                  >
+                    {/* Status toggle (far left) */}
+                    <TableCell>
+                      <Switch
+                        checked={group.enabled}
+                        disabled={toggleGroup.isPending}
+                        onCheckedChange={() =>
+                          toggleGroup.mutate(group.group_name, {
+                            onSuccess: () =>
+                              toast.success(
+                                `Group ${group.enabled ? "disabled" : "enabled"}`
+                              ),
+                            onError: (err: unknown) =>
+                              toast.error(
+                                (err as { message?: string })?.message ??
+                                  "Failed to toggle group"
+                              ),
+                          })
+                        }
+                      />
+                    </TableCell>
+
                     {/* Name */}
                     <TableCell>
                       <button

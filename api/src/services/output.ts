@@ -39,6 +39,7 @@ export async function syncOutputs(
 
   const groups = await prisma.squadGroup.findMany({ where: { guildId } })
   const groupPerms = Object.fromEntries(groups.map((g) => [g.groupName, g.permissions]))
+  const disabledGroups = new Set(groups.filter((g) => !g.enabled).map((g) => g.groupName))
 
   // Query includes created_via and category for section grouping
   const rows = await prisma.$queryRaw<ExportRow[]>`
@@ -95,7 +96,9 @@ export async function syncOutputs(
 
   // ── Build per-whitelist output ──────────────────────────────────────────
 
-  const enabledWhitelists = whitelists.filter((w) => w.enabled)
+  const enabledWhitelists = whitelists.filter(
+    (w) => w.enabled && !disabledGroups.has(w.squadGroup),
+  )
   const wlBySlug = Object.fromEntries(whitelists.map((w) => [w.slug, w]))
 
   // Structured output: section -> lines

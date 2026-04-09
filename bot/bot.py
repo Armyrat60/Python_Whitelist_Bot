@@ -55,7 +55,10 @@ class WhitelistBot(commands.Bot):
 
     async def setup_hook(self):
         await self.db.connect()
-        await self.db.init_schema()
+        # Schema is owned by Prisma (api/prisma/schema.prisma). The bot only
+        # verifies that migrations have been applied before starting up.
+        await self.db.verify_schema()
+        await self.db.seed_global_defaults()
         if self.github:
             try:
                 self.github.connect()

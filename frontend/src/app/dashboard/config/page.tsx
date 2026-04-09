@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Shield, PanelTop, Layers, ArrowUpDown, Link2, RefreshCw } from "lucide-react";
+import { Shield, PanelTop, Layers, ArrowUpDown, Link2, RefreshCw, Upload, Download } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -15,8 +15,11 @@ import ExportTab from "@/components/import-export/export-tab";
 import ReconcileTab from "@/components/import-export/reconcile-tab";
 import RoleSyncTab from "@/components/import-export/role-sync-tab";
 
-const VALID_TABS = ["whitelists", "panels", "groups", "import-export"] as const;
+const VALID_TABS = ["whitelists", "groups", "panels"] as const;
 type TabValue = (typeof VALID_TABS)[number];
+
+const VALID_IO_TABS = ["import", "export", "reconcile", "role-sync"] as const;
+type IoTabValue = (typeof VALID_IO_TABS)[number];
 
 function ConfigTabs() {
   const searchParams = useSearchParams();
@@ -26,6 +29,11 @@ function ConfigTabs() {
   const activeTab: TabValue = VALID_TABS.includes(rawTab as TabValue)
     ? (rawTab as TabValue)
     : "whitelists";
+
+  const rawIo = searchParams.get("io");
+  const activeIo: IoTabValue = VALID_IO_TABS.includes(rawIo as IoTabValue)
+    ? (rawIo as IoTabValue)
+    : "import";
 
   function handleTabChange(value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -38,65 +46,97 @@ function ConfigTabs() {
     router.replace(`/dashboard/config${qs ? `?${qs}` : ""}`, { scroll: false });
   }
 
+  function handleIoChange(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "import") {
+      params.delete("io");
+    } else {
+      params.set("io", value);
+    }
+    const qs = params.toString();
+    router.replace(`/dashboard/config${qs ? `?${qs}` : ""}`, { scroll: false });
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-xl font-semibold">Configuration</h1>
         <p className="text-sm text-muted-foreground">
-          Manage whitelists, signup panels, permission groups, and data imports.
+          Manage whitelists, permission groups, and signup panels.
         </p>
       </div>
 
+      {/* Primary tabs — prominent card-like style */}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList>
-          <TabsTrigger value="whitelists">
-            <Shield className="mr-1.5 h-3.5 w-3.5" />
+        <TabsList className="h-11 gap-1 rounded-xl border border-white/[0.08] bg-card p-1 shadow-sm">
+          <TabsTrigger
+            value="whitelists"
+            className="h-9 px-4 text-sm font-semibold data-active:bg-white/[0.06] data-active:text-foreground data-active:ring-1 data-active:ring-white/[0.10]"
+          >
+            <Shield className="mr-1.5 h-4 w-4" />
             Whitelists
           </TabsTrigger>
-          <TabsTrigger value="panels">
-            <PanelTop className="mr-1.5 h-3.5 w-3.5" />
-            Panels
-          </TabsTrigger>
-          <TabsTrigger value="groups">
-            <Layers className="mr-1.5 h-3.5 w-3.5" />
+          <TabsTrigger
+            value="groups"
+            className="h-9 px-4 text-sm font-semibold data-active:bg-white/[0.06] data-active:text-foreground data-active:ring-1 data-active:ring-white/[0.10]"
+          >
+            <Layers className="mr-1.5 h-4 w-4" />
             Groups
           </TabsTrigger>
-          <TabsTrigger value="import-export">
-            <ArrowUpDown className="mr-1.5 h-3.5 w-3.5" />
-            Import / Export
+          <TabsTrigger
+            value="panels"
+            className="h-9 px-4 text-sm font-semibold data-active:bg-white/[0.06] data-active:text-foreground data-active:ring-1 data-active:ring-white/[0.10]"
+          >
+            <PanelTop className="mr-1.5 h-4 w-4" />
+            Panels
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="whitelists">
+        <TabsContent value="whitelists" className="mt-6">
           <WhitelistsTab />
         </TabsContent>
-        <TabsContent value="panels">
-          <PanelsTab />
-        </TabsContent>
-        <TabsContent value="groups">
+        <TabsContent value="groups" className="mt-6">
           <GroupsTab />
         </TabsContent>
-        <TabsContent value="import-export">
-          <Tabs defaultValue="import">
-            <TabsList>
-              <TabsTrigger value="import">Import</TabsTrigger>
-              <TabsTrigger value="export">Export</TabsTrigger>
-              <TabsTrigger value="reconcile">
-                <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                Reconcile
-              </TabsTrigger>
-              <TabsTrigger value="role-sync">
-                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                Role Sync
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="import"><ImportTab /></TabsContent>
-            <TabsContent value="export"><ExportTab /></TabsContent>
-            <TabsContent value="reconcile"><ReconcileTab /></TabsContent>
-            <TabsContent value="role-sync"><RoleSyncTab /></TabsContent>
-          </Tabs>
+        <TabsContent value="panels" className="mt-6">
+          <PanelsTab />
         </TabsContent>
       </Tabs>
+
+      {/* Import / Export — separated section */}
+      <section className="space-y-3 border-t border-white/[0.06] pt-6">
+        <div className="flex items-center gap-2">
+          <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-base font-semibold">Import &amp; Export</h2>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Bulk import players, export rosters, reconcile manual lists, and sync Discord roles.
+        </p>
+        <Tabs value={activeIo} onValueChange={handleIoChange}>
+          <TabsList variant="line" className="gap-2">
+            <TabsTrigger value="import">
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
+              Import
+            </TabsTrigger>
+            <TabsTrigger value="export">
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </TabsTrigger>
+            <TabsTrigger value="reconcile">
+              <Link2 className="mr-1.5 h-3.5 w-3.5" />
+              Reconcile
+            </TabsTrigger>
+            <TabsTrigger value="role-sync">
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              Role Sync
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="import" className="mt-4"><ImportTab /></TabsContent>
+          <TabsContent value="export" className="mt-4"><ExportTab /></TabsContent>
+          <TabsContent value="reconcile" className="mt-4"><ReconcileTab /></TabsContent>
+          <TabsContent value="role-sync" className="mt-4"><RoleSyncTab /></TabsContent>
+        </Tabs>
+      </section>
     </div>
   );
 }

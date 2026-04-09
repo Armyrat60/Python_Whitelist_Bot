@@ -104,6 +104,7 @@ export interface SquadGroup {
   permissions: string;
   is_default: boolean;
   description: string;
+  enabled: boolean;
 }
 
 export interface DiscordRole {
