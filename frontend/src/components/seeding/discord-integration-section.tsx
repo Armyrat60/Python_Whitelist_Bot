@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { SeedingCard as Card } from "./settings-helpers";
 
 // ─── Discord Role Rewards ────────────────────────────────────────────────────
@@ -14,12 +15,14 @@ export interface DiscordRoleRewardCardProps {
   setDiscordRoleRewardId: (v: string) => void;
   discordRemoveRoleOnExpiry: boolean;
   setDiscordRemoveRoleOnExpiry: (v: boolean) => void;
+  roleOptions: ComboboxOption[];
 }
 
 export function DiscordRoleRewardCard({
   discordRoleRewardEnabled, setDiscordRoleRewardEnabled,
   discordRoleRewardId, setDiscordRoleRewardId,
   discordRemoveRoleOnExpiry, setDiscordRemoveRoleOnExpiry,
+  roleOptions,
 }: DiscordRoleRewardCardProps) {
   return (
     <Card title="Discord Role Rewards">
@@ -33,12 +36,14 @@ export function DiscordRoleRewardCard({
       {discordRoleRewardEnabled && (
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Reward role ID</Label>
-            <Input
+            <Label className="text-xs text-muted-foreground">Reward role</Label>
+            <Combobox
+              options={roleOptions}
               value={discordRoleRewardId}
-              onChange={(e) => setDiscordRoleRewardId(e.target.value)}
-              placeholder="Discord role ID"
-              className="h-8 text-xs"
+              onValueChange={setDiscordRoleRewardId}
+              placeholder="Select role"
+              searchPlaceholder="Search roles..."
+              emptyText="No roles found."
             />
           </div>
 
@@ -72,12 +77,14 @@ export interface AutoSeedAlertCardProps {
   setAutoSeedAlertRoleId: (v: string) => void;
   autoSeedAlertCooldownMin: string;
   setAutoSeedAlertCooldownMin: (v: string) => void;
+  roleOptions: ComboboxOption[];
 }
 
 export function AutoSeedAlertCard({
   autoSeedAlertEnabled, setAutoSeedAlertEnabled,
   autoSeedAlertRoleId, setAutoSeedAlertRoleId,
   autoSeedAlertCooldownMin, setAutoSeedAlertCooldownMin,
+  roleOptions,
 }: AutoSeedAlertCardProps) {
   return (
     <Card title="Auto-Seed Alerts">
@@ -91,12 +98,14 @@ export function AutoSeedAlertCard({
       {autoSeedAlertEnabled && (
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Alert role ID</Label>
-            <Input
+            <Label className="text-xs text-muted-foreground">Alert role</Label>
+            <Combobox
+              options={roleOptions}
               value={autoSeedAlertRoleId}
-              onChange={(e) => setAutoSeedAlertRoleId(e.target.value)}
-              placeholder="Discord role ID to ping"
-              className="h-8 text-xs"
+              onValueChange={setAutoSeedAlertRoleId}
+              placeholder="Select role to ping"
+              searchPlaceholder="Search roles..."
+              emptyText="No roles found."
             />
           </div>
 

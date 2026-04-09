@@ -17,6 +17,8 @@ import {
   useSaveSeedingConfig,
   useDeleteSeedingConfig,
   useTestSeedingConnection,
+  useRoles,
+  useChannels,
 } from "@/hooks/use-settings";
 import { useSession } from "@/hooks/use-session";
 import { Input } from "@/components/ui/input";
@@ -182,6 +184,11 @@ export default function SeedingSettingsPage() {
   const save = useSaveSeedingConfig();
   const remove = useDeleteSeedingConfig();
   const testConn = useTestSeedingConnection();
+  const { data: discordRoles } = useRoles();
+  const { data: discordChannels } = useChannels();
+
+  const roleOptions = (discordRoles ?? []).map((r) => ({ value: r.id, label: r.name }));
+  const channelOptions = (discordChannels ?? []).map((c) => ({ value: c.id, label: `#${c.name}` }));
 
   const existing = data?.config ?? null;
   const connStatus = getConnectionStatus(existing);
@@ -732,16 +739,19 @@ export default function SeedingSettingsPage() {
         <div className="space-y-4">
           <DiscordChannelCard
             discordNotifyChannelId={discordNotifyChannelId} setDiscordNotifyChannelId={setDiscordNotifyChannelId}
+            channelOptions={channelOptions}
           />
           <DiscordRoleRewardCard
             discordRoleRewardEnabled={discordRoleRewardEnabled} setDiscordRoleRewardEnabled={setDiscordRoleRewardEnabled}
             discordRoleRewardId={discordRoleRewardId} setDiscordRoleRewardId={setDiscordRoleRewardId}
             discordRemoveRoleOnExpiry={discordRemoveRoleOnExpiry} setDiscordRemoveRoleOnExpiry={setDiscordRemoveRoleOnExpiry}
+            roleOptions={roleOptions}
           />
           <AutoSeedAlertCard
             autoSeedAlertEnabled={autoSeedAlertEnabled} setAutoSeedAlertEnabled={setAutoSeedAlertEnabled}
             autoSeedAlertRoleId={autoSeedAlertRoleId} setAutoSeedAlertRoleId={setAutoSeedAlertRoleId}
             autoSeedAlertCooldownMin={autoSeedAlertCooldownMin} setAutoSeedAlertCooldownMin={setAutoSeedAlertCooldownMin}
+            roleOptions={roleOptions}
           />
           <CustomEmbedCard
             customEmbedTitle={customEmbedTitle} setCustomEmbedTitle={setCustomEmbedTitle}

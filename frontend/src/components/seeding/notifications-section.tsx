@@ -4,6 +4,7 @@ import { Bell } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { SeedingCard as Card } from "./settings-helpers";
 
 // ─── In-Game Broadcasts ──────────────────────────────────────────────────────
@@ -106,9 +107,10 @@ export function RconWarningsCard({
 export interface DiscordChannelCardProps {
   discordNotifyChannelId: string;
   setDiscordNotifyChannelId: (v: string) => void;
+  channelOptions: ComboboxOption[];
 }
 
-export function DiscordChannelCard({ discordNotifyChannelId, setDiscordNotifyChannelId }: DiscordChannelCardProps) {
+export function DiscordChannelCard({ discordNotifyChannelId, setDiscordNotifyChannelId, channelOptions }: DiscordChannelCardProps) {
   return (
     <Card title="Discord Notifications">
       <div className="flex items-center gap-2">
@@ -116,17 +118,16 @@ export function DiscordChannelCard({ discordNotifyChannelId, setDiscordNotifyCha
         <span className="text-xs text-white/60">Seeding events will be posted to this channel</span>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">Notification channel ID</Label>
-        <Input
+        <Label className="text-xs text-muted-foreground">Notification channel</Label>
+        <Combobox
+          options={channelOptions}
           value={discordNotifyChannelId}
-          onChange={(e) => setDiscordNotifyChannelId(e.target.value)}
-          placeholder="Discord channel ID"
-          className="h-8 text-xs"
+          onValueChange={setDiscordNotifyChannelId}
+          placeholder="Select channel"
+          searchPlaceholder="Search channels..."
+          emptyText="No channels found."
         />
       </div>
-      <p className="text-[10px] text-muted-foreground/60">
-        Enable Developer Mode in Discord, right-click a channel, and select &quot;Copy Channel ID&quot;
-      </p>
     </Card>
   );
 }
