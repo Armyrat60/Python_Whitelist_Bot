@@ -48,14 +48,14 @@ if (missing.length > 0) {
   process.exit(2);
 }
 
-const {
-  DATABASE_URL,
-  BACKUP_PASSPHRASE,
-  R2_ACCOUNT_ID,
-  R2_ACCESS_KEY_ID,
-  R2_SECRET_ACCESS_KEY,
-  R2_BUCKET,
-} = process.env;
+// Trim all values — copy-paste from dashboards often introduces trailing
+// whitespace or newlines, which silently break URLs and auth headers.
+const DATABASE_URL = process.env.DATABASE_URL.trim();
+const BACKUP_PASSPHRASE = process.env.BACKUP_PASSPHRASE.trim();
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID.trim();
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID.trim();
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY.trim();
+const R2_BUCKET = process.env.R2_BUCKET.trim();
 
 // ─── Build object key ───────────────────────────────────────────────────────
 
@@ -171,9 +171,12 @@ if (encrypted.length === 0) {
 
 // ─── Upload buffer to R2 ────────────────────────────────────────────────────
 
+const r2Endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+console.log(`→ backup-prod: uploading to ${r2Endpoint} bucket=${R2_BUCKET}`);
+
 const s3 = new S3Client({
   region: "auto",
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: r2Endpoint,
   credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
