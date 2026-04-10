@@ -235,7 +235,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     })
 
     const outputs = await syncOutputs(app.prisma, guildId)
-    cache.set(guildId, outputs)
+    await cache.set(guildId, outputs)
 
     return reply.send({ ok: true, message: "Whitelist updated successfully." })
   }

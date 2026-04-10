@@ -53,15 +53,15 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // ── Serve from cache, regenerating on miss or staleness ─────────────
-    if (!cache.hasFile(guildId, filename) || cache.isStale(guildId)) {
+    if (!(await cache.hasFile(guildId, filename)) || (await cache.isStale(guildId))) {
       try {
         const outputs = await syncOutputs(app.prisma, guildId)
-        cache.set(guildId, outputs)
+        await cache.set(guildId, outputs)
         cache.registerToken(token, guildId)
       } catch (err) {
         app.log.error({ err, guildId, filename }, "Failed to regenerate whitelist cache")
         // If stale but file exists, serve stale content rather than 404
-        if (cache.hasFile(guildId, filename)) {
+        if (await cache.hasFile(guildId, filename)) {
           // fall through to serve stale
         } else {
           return reply.code(404).type("text/plain").send("Not found")
@@ -69,7 +69,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const content = cache.get(guildId, filename)
+    const content = await cache.get(guildId, filename)
     if (content === null) {
       return reply.code(404).type("text/plain").send("Not found")
     }

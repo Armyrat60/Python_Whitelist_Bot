@@ -40,7 +40,7 @@ async function queuePanelRefresh(
 async function triggerSync(app: FastifyInstance, guildId: bigint) {
   try {
     const outputs = await syncOutputs(app.prisma, guildId)
-    cache.set(guildId, outputs)
+    await cache.set(guildId, outputs)
   } catch (err) {
     app.log.error({ err, guildId }, "triggerSync failed")
   }

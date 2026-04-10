@@ -66,7 +66,7 @@ async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<v
 async function triggerSync(app: FastifyInstance, guildId: bigint): Promise<void> {
   try {
     const outputs = await syncOutputs(app.prisma, guildId)
-    cache.set(guildId, outputs)
+    await cache.set(guildId, outputs)
     const salt = await app.prisma.botSetting.findUnique({
       where: { guildId_settingKey: { guildId, settingKey: "url_salt" } },
     })

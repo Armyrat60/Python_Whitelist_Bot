@@ -12,9 +12,12 @@ const adminHook = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!guild?.isAdmin) return reply.code(403).send({ error: "Admin access required" })
 }
 
-// Simple in-memory cache to avoid hitting Discord rate limits
-const guildInfoCache = new Map<string, { data: unknown; expiresAt: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+import { cacheGet, cacheSet } from "../../lib/redis.js"
+
+// In-memory fallback + Redis cache for guild info
+const guildInfoMem = new Map<string, { data: unknown; expiresAt: number }>()
+const CACHE_TTL = 5 * 60 // 5 minutes (seconds for Redis)
+const CACHE_TTL_MS = CACHE_TTL * 1000
 
 export default async function guildInfoRoutes(app: FastifyInstance) {
 
@@ -24,10 +27,14 @@ export default async function guildInfoRoutes(app: FastifyInstance) {
     const guildId = BigInt(req.session.activeGuildId!)
     const cacheKey = String(guildId)
 
-    // Check cache
-    const cached = guildInfoCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return reply.send(cached.data)
+    // Check Redis cache first, then in-memory fallback
+    const redisCached = await cacheGet(`guild-info:${cacheKey}`)
+    if (redisCached) {
+      return reply.send(JSON.parse(redisCached))
+    }
+    const memCached = guildInfoMem.get(cacheKey)
+    if (memCached && memCached.expiresAt > Date.now()) {
+      return reply.send(memCached.data)
     }
 
     try {
@@ -44,7 +51,8 @@ export default async function guildInfoRoutes(app: FastifyInstance) {
         role_count:    roles.length,
       }
 
-      guildInfoCache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL })
+      guildInfoMem.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL_MS })
+      await cacheSet(`guild-info:${cacheKey}`, JSON.stringify(result), CACHE_TTL)
       return reply.send(result)
     } catch (err) {
       app.log.error({ err, guildId }, "Failed to fetch guild info from Discord")

@@ -40,7 +40,7 @@ function isRosterManager(req: FastifyRequest) {
 async function triggerSync(app: FastifyInstance, guildId: bigint) {
   try {
     const outputs = await syncOutputs(app.prisma, guildId)
-    cache.set(guildId, outputs)
+    await cache.set(guildId, outputs)
     const salt = await app.prisma.botSetting.findUnique({
       where: { guildId_settingKey: { guildId, settingKey: "url_salt" } }
     })

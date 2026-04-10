@@ -1065,10 +1065,25 @@ export default function SettingsPage() {
 
       {/* ── Account ── */}
       {activeTab === "connections" && (
-        <div className="max-w-2xl space-y-6">
-          <BridgeSettings />
-          <BMSettings />
-          <GameServerSettings />
+        <div className="max-w-2xl space-y-8">
+          {/* Data Sources */}
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-white/80">Data Sources</h3>
+              <p className="text-xs text-muted-foreground">External services that feed player data into the dashboard.</p>
+            </div>
+            <BridgeSettings />
+            <BMSettings />
+          </div>
+
+          {/* Game Servers */}
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-white/80">Game Servers</h3>
+              <p className="text-xs text-muted-foreground">SFTP and RCON connections to your Squad servers for file management and live administration.</p>
+            </div>
+            <GameServerSettings />
+          </div>
         </div>
       )}
 

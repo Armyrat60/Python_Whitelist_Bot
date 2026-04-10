@@ -56,6 +56,7 @@ import seedingRoutes from "./routes/admin/seeding.js"
 import seedingPublicRoutes from "./routes/seeding-public.js"
 import jobRoutes from "./routes/admin/jobs.js"
 import { cache } from "./services/cache.js"
+import { initRedis, closeRedis } from "./lib/redis.js"
 import { DiscordRESTClient } from "./lib/discord.js"
 import { syncOutputs } from "./services/output.js"
 
@@ -102,6 +103,9 @@ async function build() {
 
   await app.register(prismaPlugin)
   await app.register(authPlugin)
+
+  // ─── Redis (optional — gracefully degrades to in-memory) ────────────────────
+  initRedis()
 
   // ─── Discord REST client (shared across routes) ──────────────────────────────
 
@@ -197,7 +201,7 @@ async function start() {
     for (const guild of discord.getGuilds()) {
       try {
         const outputs = await syncOutputs(app.prisma, guild.id)
-        cache.set(guild.id, outputs)
+        await cache.set(guild.id, outputs)
         app.log.info(`Primed cache for guild ${guild.name} (${guild.id})`)
       } catch (err) {
         app.log.error({ err, guildId: guild.id }, "Failed to prime cache at startup")

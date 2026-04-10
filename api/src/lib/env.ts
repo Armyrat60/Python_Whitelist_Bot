@@ -34,4 +34,5 @@ export const env = {
   CORS_ORIGIN:           optional("CORS_ORIGIN"),
   NODE_ENV:              optional("NODE_ENV", "development"),
   SENTRY_DSN:            optional("SENTRY_DSN"),
+  REDIS_URL:             optional("REDIS_URL"),
 }
