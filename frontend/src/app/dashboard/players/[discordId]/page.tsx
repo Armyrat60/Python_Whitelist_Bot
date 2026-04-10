@@ -14,7 +14,7 @@ import {
   Gamepad2,
   BadgeCheck,
 } from "lucide-react";
-import { usePlayerProfile } from "@/hooks/use-settings";
+import { usePlayerProfile, useBattleMetricsPlayer } from "@/hooks/use-settings";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,6 +67,8 @@ function formatActionType(t: string) {
 export default function PlayerProfilePage() {
   const { discordId } = useParams<{ discordId: string }>();
   const { data: player, isLoading, error } = usePlayerProfile(discordId ?? null);
+  const primarySteamId = player?.steam_ids?.[0] ?? null;
+  const { data: bmData } = useBattleMetricsPlayer(primarySteamId);
 
   if (isLoading) {
     return (
@@ -159,6 +161,51 @@ export default function PlayerProfilePage() {
           ))}
         </CardContent>
       </Card>
+
+      {/* BattleMetrics hours */}
+      {bmData?.player && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              BattleMetrics
+              {bmData.player.online && (
+                <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[9px]">Online</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Last 30 Days</p>
+                <p className="text-xl font-bold text-white/90">{bmData.player.hours30d}h</p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">All Time</p>
+                <p className="text-xl font-bold text-white/90">{bmData.player.hoursAllTime}h</p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">First Seen</p>
+                <p className="text-sm text-white/70">
+                  {bmData.player.firstSeen ? new Date(bmData.player.firstSeen).toLocaleDateString() : "—"}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Last Seen</p>
+                <p className="text-sm text-white/70">
+                  {bmData.player.lastSeen ? new Date(bmData.player.lastSeen).toLocaleDateString() : "—"}
+                </p>
+              </div>
+            </div>
+            {(bmData.player.serverName || bmData.player.bmName) && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-white/[0.06] text-xs text-muted-foreground">
+                {bmData.player.serverName && <span>Server: <span className="text-white/70">{bmData.player.serverName}</span></span>}
+                {bmData.player.bmName && <span>BM Name: <span className="text-white/70">{bmData.player.bmName}</span></span>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* SquadJS in-game names */}
       {player.squad_players && player.squad_players.length > 0 && (

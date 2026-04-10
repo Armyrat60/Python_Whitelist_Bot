@@ -288,6 +288,18 @@ model BridgeConfig {
   @@map("bridge_configs")
 }
 
+model BattleMetricsConfig {
+  guildId    BigInt   @id @map("guild_id")
+  apiKey     String   @map("api_key")
+  serverId   String?  @map("server_id") @db.VarChar(32)
+  serverName String?  @map("server_name") @db.VarChar(255)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("battlemetrics_configs")
+}
+
 model JobQueue {
   id          Int       @id @default(autoincrement())
   guildId     BigInt    @map("guild_id")

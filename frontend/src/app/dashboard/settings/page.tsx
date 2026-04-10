@@ -8,6 +8,7 @@ import {
   Send, Link2, Sprout, Sparkles,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
+import { BattleMetricsSettings as BMSettings } from "@/components/battlemetrics-settings";
 import {
   useSettings,
   useRoles,
@@ -1063,8 +1064,9 @@ export default function SettingsPage() {
 
       {/* ── Account ── */}
       {activeTab === "connections" && (
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-6">
           <BridgeSettings />
+          <BMSettings />
         </div>
       )}
 

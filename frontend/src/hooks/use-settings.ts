@@ -967,6 +967,71 @@ export function useJobStatus(jobId: number | null) {
   });
 }
 
+// ── BattleMetrics config hooks ──────────────────────────────────────────────
+
+interface BMConfig {
+  config: {
+    server_id: string | null;
+    server_name: string | null;
+    enabled: boolean;
+    api_key: string;
+    has_api_key: boolean;
+  } | null;
+}
+
+export function useBattleMetricsConfig() {
+  return useQuery<BMConfig>({
+    queryKey: ["bm-config"],
+    queryFn: () => api.get<BMConfig>("/api/admin/battlemetrics-config"),
+  });
+}
+
+export function useSaveBattleMetricsConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { api_key?: string; server_id?: string; server_name?: string; enabled?: boolean }) =>
+      api.put("/api/admin/battlemetrics-config", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bm-config"] }),
+  });
+}
+
+export function useDeleteBattleMetricsConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete("/api/admin/battlemetrics-config"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bm-config"] }),
+  });
+}
+
+export function useTestBattleMetrics() {
+  return useMutation<{ ok: boolean; message: string; server_name?: string }, Error, { api_key?: string; server_id?: string }>({
+    mutationFn: (data) => api.post("/api/admin/battlemetrics-config/test", data),
+  });
+}
+
+interface BMPlayerData {
+  player: {
+    bmId: string;
+    bmName: string | null;
+    serverName: string | null;
+    hoursAllTime: number;
+    hours30d: number;
+    firstSeen: string | null;
+    lastSeen: string | null;
+    online: boolean;
+  } | null;
+  reason?: string;
+}
+
+export function useBattleMetricsPlayer(steamId: string | null) {
+  return useQuery<BMPlayerData>({
+    queryKey: ["bm-player", steamId],
+    queryFn: () => api.get<BMPlayerData>(`/api/admin/battlemetrics/player/${steamId}`),
+    enabled: !!steamId,
+    staleTime: 5 * 60 * 1000,  // cache for 5 min
+  });
+}
+
 // ── Seeding config hooks ────────────────────────────────────────────────────
 
 export function useSeedingConfig() {
