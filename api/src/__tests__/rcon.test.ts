@@ -382,22 +382,18 @@ describe('RCON Routes', () => {
   // ── Permission tests ──────────────────────────────────────────────────
 
   describe('permission gating', () => {
-    function setupNonAdmin(t: TestApp, permissions: Record<string, boolean>) {
-      t.app.addHook('onRequest', async (req) => {
-        req.session.guilds = [{
-          id: TEST_GUILD_ID,
-          name: 'Test Guild',
-          icon: null,
-          isAdmin: false,
-          permissionLevel: 'granular' as const,
-          granularPermissions: permissions,
-        }]
-      })
+    async function buildReadOnlyApp() {
+      const app = await buildTestApp(
+        async (a) => { await a.register(rconRoutes, { prefix: '/api/admin' }) },
+        [{ id: TEST_GUILD_ID, name: 'Test Guild', icon: null, isAdmin: false, permissionLevel: 'granular', granularPermissions: { rcon_read: true } }],
+      )
+      setupServer(app)
+      return app
     }
 
     it('kick requires rcon_kick permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/kick',
         payload: { player_id: '1' },
       })
@@ -405,8 +401,8 @@ describe('RCON Routes', () => {
     })
 
     it('warn requires rcon_warn permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/warn',
         payload: { target: '123', message: 'test' },
       })
@@ -414,8 +410,8 @@ describe('RCON Routes', () => {
     })
 
     it('broadcast requires rcon_broadcast permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/broadcast',
         payload: { message: 'test' },
       })
@@ -423,8 +419,8 @@ describe('RCON Routes', () => {
     })
 
     it('change-layer requires rcon_map_change permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/change-layer',
         payload: { layer: 'Yehorivka_RAAS_v1' },
       })
@@ -432,16 +428,16 @@ describe('RCON Routes', () => {
     })
 
     it('end-match requires rcon_map_change permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/end-match',
       })
       expect(res.statusCode).toBe(403)
     })
 
     it('demote-commander requires rcon_demote permission', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const res = await t.app.inject({
+      const a = await buildReadOnlyApp()
+      const res = await a.app.inject({
         method: 'POST', url: '/api/admin/game-servers/1/rcon/demote-commander',
         payload: { team_id: '1' },
       })
@@ -449,10 +445,10 @@ describe('RCON Routes', () => {
     })
 
     it('read endpoints work with just rcon_read', async () => {
-      setupNonAdmin(t, { rcon_read: true })
-      const status = await t.app.inject({ method: 'GET', url: '/api/admin/game-servers/1/rcon/status' })
+      const a = await buildReadOnlyApp()
+      const status = await a.app.inject({ method: 'GET', url: '/api/admin/game-servers/1/rcon/status' })
       expect(status.statusCode).toBe(200)
-      const players = await t.app.inject({ method: 'GET', url: '/api/admin/game-servers/1/rcon/players' })
+      const players = await a.app.inject({ method: 'GET', url: '/api/admin/game-servers/1/rcon/players' })
       expect(players.statusCode).toBe(200)
     })
   })

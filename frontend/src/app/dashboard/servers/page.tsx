@@ -68,6 +68,17 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 // ─── Kit/Role Display ───────────────────────────────────────────────────────
 
@@ -257,77 +268,106 @@ function ServerCommandsMenu({ serverId }: { serverId: number }) {
   const endMatchMut = useEndMatch();
   const restartMatchMut = useRestartMatch();
 
-  const [mode, setMode] = useState<"idle" | "change-map" | "set-next-map" | "confirm-end" | "confirm-restart">("idle");
+  const [mode, setMode] = useState<"idle" | "change-map" | "set-next-map">("idle");
+  const [confirm, setConfirm] = useState<{ action: "change-map" | "set-next-map" | "end-match" | "restart-match"; layer?: string } | null>(null);
 
   if (mode === "change-map" || mode === "set-next-map") {
     return (
       <LayerPicker
         serverId={serverId}
         onCancel={() => setMode("idle")}
-        onSelect={async (layer) => {
-          try {
-            if (mode === "change-map") {
-              await changeLayerMut.mutateAsync({ serverId, layer });
-              toast.success(`Changing map to ${layer}`);
-            } else {
-              await setNextLayerMut.mutateAsync({ serverId, layer });
-              toast.success(`Next map set to ${layer}`);
-            }
-            setMode("idle");
-          } catch { toast.error("Command failed"); }
+        onSelect={(layer) => {
+          setConfirm({ action: mode, layer });
+          setMode("idle");
         }}
       />
     );
   }
 
-  if (mode === "confirm-end" || mode === "confirm-restart") {
-    const isEnd = mode === "confirm-end";
-    const mut = isEnd ? endMatchMut : restartMatchMut;
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">{isEnd ? "End match?" : "Restart match?"}</span>
-        <Button
-          size="sm" variant="outline"
-          className={`h-7 text-[11px] ${isEnd ? "text-red-400 border-red-500/30" : "text-amber-400 border-amber-500/30"}`}
-          disabled={mut.isPending}
-          onClick={async () => {
-            try {
-              await mut.mutateAsync({ serverId });
-              toast.success(isEnd ? "Match ended" : "Match restarting");
-              setMode("idle");
-            } catch { toast.error("Command failed"); }
-          }}
-        >
-          {mut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
-        </Button>
-        <button onClick={() => setMode("idle")} className="text-muted-foreground/50 text-xs px-1">x</button>
-      </div>
-    );
+  async function executeConfirmed() {
+    if (!confirm) return;
+    try {
+      switch (confirm.action) {
+        case "change-map":
+          await changeLayerMut.mutateAsync({ serverId, layer: confirm.layer! });
+          toast.success(`Changing map to ${confirm.layer}`);
+          break;
+        case "set-next-map":
+          await setNextLayerMut.mutateAsync({ serverId, layer: confirm.layer! });
+          toast.success(`Next map set to ${confirm.layer}`);
+          break;
+        case "end-match":
+          await endMatchMut.mutateAsync({ serverId });
+          toast.success("Match ended");
+          break;
+        case "restart-match":
+          await restartMatchMut.mutateAsync({ serverId });
+          toast.success("Match restarting");
+          break;
+      }
+    } catch { toast.error("Command failed"); }
+    setConfirm(null);
   }
 
+  const confirmTitle = confirm?.action === "change-map" ? "Change Map"
+    : confirm?.action === "set-next-map" ? "Set Next Map"
+    : confirm?.action === "end-match" ? "End Match"
+    : "Restart Match";
+
+  const confirmDesc = confirm?.action === "change-map" ? `Change the map to ${confirm.layer}? This will end the current match immediately.`
+    : confirm?.action === "set-next-map" ? `Set the next map to ${confirm.layer}? This takes effect after the current match ends.`
+    : confirm?.action === "end-match" ? "End the current match? Players will be returned to staging."
+    : "Restart the current match from the beginning?";
+
+  const isPending = changeLayerMut.isPending || setNextLayerMut.isPending || endMatchMut.isPending || restartMatchMut.isPending;
+  const isDestructive = confirm?.action === "end-match" || confirm?.action === "change-map";
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={
-        <button className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-white hover:bg-white/[0.06] transition-colors border border-white/[0.08] bg-white/[0.02]">
-          <Settings2 className="h-3.5 w-3.5" /> Server <ChevronDown className="h-3 w-3" />
-        </button>
-      } />
-      <DropdownMenuContent side="bottom" align="end">
-        <DropdownMenuItem onClick={() => setMode("change-map")}>
-          <Map className="h-3.5 w-3.5 mr-2" /> Change Map
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setMode("set-next-map")}>
-          <SkipForward className="h-3.5 w-3.5 mr-2" /> Set Next Map
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setMode("confirm-end")} className="text-red-400">
-          <Square className="h-3.5 w-3.5 mr-2" /> End Match
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setMode("confirm-restart")} className="text-amber-400">
-          <RotateCcw className="h-3.5 w-3.5 mr-2" /> Restart Match
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={
+          <button className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-white hover:bg-white/[0.06] transition-colors border border-white/[0.08] bg-white/[0.02]">
+            <Settings2 className="h-3.5 w-3.5" /> Server <ChevronDown className="h-3 w-3" />
+          </button>
+        } />
+        <DropdownMenuContent side="bottom" align="end">
+          <DropdownMenuItem onClick={() => setMode("change-map")}>
+            <Map className="h-3.5 w-3.5 mr-2" /> Change Map
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMode("set-next-map")}>
+            <SkipForward className="h-3.5 w-3.5 mr-2" /> Set Next Map
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setConfirm({ action: "end-match" })} className="text-red-400">
+            <Square className="h-3.5 w-3.5 mr-2" /> End Match
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setConfirm({ action: "restart-match" })} className="text-amber-400">
+            <RotateCcw className="h-3.5 w-3.5 mr-2" /> Restart Match
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Confirmation dialog */}
+      <AlertDialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null) }}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDesc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirm(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executeConfirmed}
+              disabled={isPending}
+              className={isDestructive ? "bg-red-600 hover:bg-red-700" : ""}
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {confirmTitle}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -353,13 +393,14 @@ function PlayerActionMenu({
   const demoteCmd = useDemoteCommander();
   const [mode, setMode] = useState<"idle" | "kick" | "warn">("idle");
   const [inputVal, setInputVal] = useState("");
+  const [confirmAction, setConfirmAction] = useState<"kick" | "demote" | "team-change" | null>(null);
 
-  async function handleKick() {
+  async function executeKick() {
     try {
       await kick.mutateAsync({ serverId, player_id: player.id, player_name: player.name, reason: inputVal || "Kicked by admin" });
       toast.success(`Kicked ${player.name}`);
-      setMode("idle"); setInputVal("");
-    } catch { toast.error("Kick failed"); }
+      setMode("idle"); setInputVal(""); setConfirmAction(null);
+    } catch { toast.error("Kick failed"); setConfirmAction(null); }
   }
 
   async function handleWarn() {
@@ -371,19 +412,62 @@ function PlayerActionMenu({
     } catch { toast.error("Warn failed"); }
   }
 
+  async function executeDemote() {
+    if (!teamId) return;
+    try {
+      await demoteCmd.mutateAsync({ serverId, team_id: teamId });
+      toast.success("Commander demoted");
+    } catch { toast.error("Demote failed"); }
+    setConfirmAction(null);
+  }
+
+  async function executeTeamChange() {
+    try {
+      await forceTeam.mutateAsync({ serverId, player_id: player.id, player_name: player.name });
+      toast.success(`Moved ${player.name}`);
+    } catch { toast.error("Failed"); }
+    setConfirmAction(null);
+  }
+
   if (mode !== "idle") {
     return (
       <div className="flex items-center gap-1 shrink-0">
         <Input value={inputVal} onChange={(e) => setInputVal(e.target.value)}
           placeholder={mode === "kick" ? "Reason..." : "Warning message..."}
           className="h-6 w-36 text-[10px]" autoFocus
-          onKeyDown={(e) => { if (e.key === "Enter") mode === "kick" ? handleKick() : handleWarn(); if (e.key === "Escape") { setMode("idle"); setInputVal(""); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              if (mode === "kick") setConfirmAction("kick");
+              else handleWarn();
+            }
+            if (e.key === "Escape") { setMode("idle"); setInputVal(""); }
+          }}
         />
         <Button size="sm" variant="ghost" className={`h-6 px-1.5 text-[10px] ${mode === "kick" ? "text-red-400" : "text-amber-400"}`}
-          onClick={mode === "kick" ? handleKick : handleWarn} disabled={kick.isPending || warn.isPending}>
+          onClick={() => { if (mode === "kick") setConfirmAction("kick"); else handleWarn(); }}
+          disabled={kick.isPending || warn.isPending}>
           {(kick.isPending || warn.isPending) ? <Loader2 className="h-3 w-3 animate-spin" /> : mode === "kick" ? "Kick" : "Warn"}
         </Button>
         <button onClick={() => { setMode("idle"); setInputVal(""); }} className="text-muted-foreground/50 text-xs px-1">x</button>
+
+        {/* Kick confirmation dialog */}
+        <AlertDialog open={confirmAction === "kick"} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Kick {player.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {inputVal ? `Reason: "${inputVal}"` : "No reason provided."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmAction(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={executeKick} disabled={kick.isPending} className="bg-red-600 hover:bg-red-700">
+                {kick.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Kick
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
@@ -393,52 +477,84 @@ function PlayerActionMenu({
   const showDemote = isCommanderRole(player.role) && teamId && perms.canDemote;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<button className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-white hover:bg-white/[0.08] transition-colors border border-white/[0.08] bg-white/[0.03]" />}>
-        Actions <ChevronDown className="h-3 w-3" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="left" align="start">
-        {perms.canWarn && (
-          <DropdownMenuItem onClick={() => setMode("warn")}>
-            <MessageSquareWarning className="h-3.5 w-3.5 mr-2 text-amber-400" /> Warn
-          </DropdownMenuItem>
-        )}
-        {perms.canKick && (
-          <DropdownMenuItem onClick={() => setMode("kick")} className="text-red-400">
-            <UserX className="h-3.5 w-3.5 mr-2" /> Kick
-          </DropdownMenuItem>
-        )}
-        {(perms.canWarn || perms.canKick) && perms.canTeamChange && <DropdownMenuSeparator />}
-        {perms.canTeamChange && (
-          <>
-            <DropdownMenuItem onClick={async () => {
-              try { await forceTeam.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Moved ${player.name}`); } catch { toast.error("Failed"); }
-            }}>
-              <ArrowLeftRight className="h-3.5 w-3.5 mr-2" /> Force Team Change
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<button className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-white hover:bg-white/[0.08] transition-colors border border-white/[0.08] bg-white/[0.03]" />}>
+          Actions <ChevronDown className="h-3 w-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="left" align="start">
+          {perms.canWarn && (
+            <DropdownMenuItem onClick={() => setMode("warn")}>
+              <MessageSquareWarning className="h-3.5 w-3.5 mr-2 text-amber-400" /> Warn
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={async () => {
-              try { await removeSquad.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Removed ${player.name} from squad`); } catch { toast.error("Failed"); }
-            }}>
-              <UserMinus className="h-3.5 w-3.5 mr-2" /> Remove from Squad
+          )}
+          {perms.canKick && (
+            <DropdownMenuItem onClick={() => setMode("kick")} className="text-red-400">
+              <UserX className="h-3.5 w-3.5 mr-2" /> Kick
             </DropdownMenuItem>
-          </>
-        )}
-        {showDemote && (
-          <DropdownMenuItem onClick={async () => {
-            try { await demoteCmd.mutateAsync({ serverId, team_id: teamId }); toast.success("Commander demoted"); } catch { toast.error("Demote failed"); }
-          }} className="text-amber-400">
-            <ShieldMinus className="h-3.5 w-3.5 mr-2" /> Demote Commander
+          )}
+          {(perms.canWarn || perms.canKick) && perms.canTeamChange && <DropdownMenuSeparator />}
+          {perms.canTeamChange && (
+            <>
+              <DropdownMenuItem onClick={() => setConfirmAction("team-change")}>
+                <ArrowLeftRight className="h-3.5 w-3.5 mr-2" /> Force Team Change
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={async () => {
+                try { await removeSquad.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Removed ${player.name} from squad`); } catch { toast.error("Failed"); }
+              }}>
+                <UserMinus className="h-3.5 w-3.5 mr-2" /> Remove from Squad
+              </DropdownMenuItem>
+            </>
+          )}
+          {showDemote && (
+            <DropdownMenuItem onClick={() => setConfirmAction("demote")} className="text-amber-400">
+              <ShieldMinus className="h-3.5 w-3.5 mr-2" /> Demote Commander
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(player.steamId); toast.success("Steam ID copied"); }}>
+            <Copy className="h-3.5 w-3.5 mr-2" /> Copy Steam ID
           </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(player.steamId); toast.success("Steam ID copied"); }}>
-          <Copy className="h-3.5 w-3.5 mr-2" /> Copy Steam ID
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => window.open(`https://www.battlemetrics.com/rcon/players?filter[search]=${player.steamId}`, "_blank")}>
-          <ExternalLink className="h-3.5 w-3.5 mr-2" /> BattleMetrics
-        </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => window.open(`https://www.battlemetrics.com/rcon/players?filter[search]=${player.steamId}`, "_blank")}>
+            <ExternalLink className="h-3.5 w-3.5 mr-2" /> BattleMetrics
+          </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+
+      {/* Demote Commander confirmation */}
+      <AlertDialog open={confirmAction === "demote"} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Demote Commander</AlertDialogTitle>
+            <AlertDialogDescription>Demote the commander on Team {teamId}? They will lose commander abilities.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmAction(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDemote} disabled={demoteCmd.isPending} className="bg-amber-600 hover:bg-amber-700">
+              {demoteCmd.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Demote
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Force Team Change confirmation */}
+      <AlertDialog open={confirmAction === "team-change"} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force Team Change</AlertDialogTitle>
+            <AlertDialogDescription>Move {player.name} to the other team?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmAction(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeTeamChange} disabled={forceTeam.isPending}>
+              {forceTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
