@@ -255,6 +255,14 @@ export async function removeFromSquad(config: RconConfig, playerId: string): Pro
   return withRcon(config, (client) => client.execute(`AdminRemovePlayerFromSquad ${playerId}`))
 }
 
+export async function disbandSquad(config: RconConfig, teamId: string, squadId: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminDisbandSquad ${teamId} ${squadId}`))
+}
+
+export async function demoteCommander(config: RconConfig, teamId: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminDemoteCommander ${teamId}`))
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function toRconConfig(server: {

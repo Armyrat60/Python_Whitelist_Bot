@@ -1232,6 +1232,18 @@ export function useRemoveFromSquad() {
   });
 }
 
+export function useDisbandSquad() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; team_id: string; squad_id: string; squad_name?: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/disband-squad`, data),
+  });
+}
+
+export function useDemoteCommander() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; team_id: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/demote-commander`, data),
+  });
+}
+
 export function useTestRcon() {
   return useMutation<{ ok: boolean; message: string }, Error, number>({
     mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/rcon/test`),

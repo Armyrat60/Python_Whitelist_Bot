@@ -13,6 +13,8 @@ import {
   broadcast,
   forceTeamChange,
   removeFromSquad,
+  disbandSquad,
+  demoteCommander,
   toRconConfig,
 } from "../../lib/squad-rcon.js"
 
@@ -200,6 +202,52 @@ export default async function rconRoutes(app: FastifyInstance) {
       const response = await removeFromSquad(result.config, player_id)
       await auditRcon(result.guildId, req.session.userId!, "rcon_remove_from_squad", {
         server: result.server.name, playerId: player_id, playerName: player_name,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/disband-squad ──────────────────────────────
+
+  app.post<{
+    Params: { id: string }
+    Body: { team_id: string; squad_id: string; squad_name?: string }
+  }>("/game-servers/:id/rcon/disband-squad", { preHandler: requireRconExecute }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    const { team_id, squad_id, squad_name } = req.body
+    if (!team_id || !squad_id) return reply.code(400).send({ error: "team_id and squad_id are required" })
+
+    try {
+      const response = await disbandSquad(result.config, team_id, squad_id)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_disband_squad", {
+        server: result.server.name, teamId: team_id, squadId: squad_id, squadName: squad_name,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/demote-commander ──────────────────────────
+
+  app.post<{
+    Params: { id: string }
+    Body: { team_id: string }
+  }>("/game-servers/:id/rcon/demote-commander", { preHandler: requireRconExecute }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    const { team_id } = req.body
+    if (!team_id) return reply.code(400).send({ error: "team_id is required" })
+
+    try {
+      const response = await demoteCommander(result.config, team_id)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_demote_commander", {
+        server: result.server.name, teamId: team_id,
       })
       return reply.send({ ok: true, response })
     } catch (err) {
