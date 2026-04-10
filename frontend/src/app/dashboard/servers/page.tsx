@@ -238,19 +238,24 @@ function TeamColumn({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Shield className="h-4 w-4 shrink-0" style={{ color: factionColor }} />
-        <div className="flex items-baseline gap-1.5">
-          <h3 className="text-sm font-semibold text-white/80">
+      <div className="flex items-center gap-2.5">
+        <div
+          className="flex h-7 w-7 items-center justify-center rounded-md shrink-0"
+          style={{ backgroundColor: factionColor }}
+        >
+          <span className="text-xs font-bold text-white">{team.teamId}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5 min-w-0">
+          <h3 className="text-sm font-semibold text-white/90 truncate">
             {team.factionName || `Team ${team.teamId}`}
           </h3>
           {team.factionTag && (
-            <span className="text-[10px] font-medium" style={{ color: factionColor }}>
-              ({team.factionTag})
+            <span className="text-[10px] font-medium text-muted-foreground shrink-0">
+              {team.factionTag}
             </span>
           )}
         </div>
-        <Badge variant="secondary" className="text-[9px]">{totalPlayers} players</Badge>
+        <Badge variant="secondary" className="text-[9px] shrink-0">{totalPlayers}</Badge>
       </div>
 
       {team.squads.map((squad) => (

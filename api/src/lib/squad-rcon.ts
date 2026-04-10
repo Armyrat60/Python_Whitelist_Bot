@@ -182,6 +182,12 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
     const squads = parseSquads(squadsText)
     const info = parseServerInfo(infoText)
 
+    // Debug: log parsed counts and dump raw on parse failure
+    console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads, server: "${info.name}"`)
+    if (squads.length === 0 && squadsText.length > 50) {
+      console.log(`[rcon] SQUAD PARSE FAIL — first 500 chars: ${squadsText.slice(0, 500)}`)
+    }
+
     // Group into teams with faction detection
     const teamIds = [...new Set([...players.map((p) => p.teamId), ...squads.map((s) => s.teamId)])]
       .filter((id) => id !== "0")
