@@ -8,6 +8,7 @@ from bot.utils import utcnow
 class NotificationsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._notified_expiry: set[str] = set()  # dedup keys for expiry notifications
         self.expiry_check.start()
         self.bridge_health_check.start()
         self.seeding_notification_check.start()
@@ -31,17 +32,28 @@ class NotificationsCog(commands.Cog):
 
     # ── Expiry notifications ──────────────────────────────────────────────────
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=12)
     async def expiry_check(self):
-        """Check for memberships expiring in 7 or 1 days and notify users + channel."""
+        """Check for memberships expiring in 7 or 1 days and notify users + channel.
+
+        Uses a date-based window (midnight to midnight) so each expiring user
+        is only matched on the exact day they hit the 7-day or 1-day threshold.
+        Tracks sent notifications in an in-memory set (keyed by discord_id +
+        whitelist + day) to prevent duplicates within the same bot session,
+        even if the loop fires more than once per day due to restarts.
+        """
+        today = utcnow().date()
+
         for guild in self.bot.guilds:
             guild_id = guild.id
 
             notification_channel = await self._get_notification_channel(guild_id)
 
             for days_before in (7, 1):
-                window_start = utcnow()
-                window_end   = utcnow() + timedelta(days=days_before)
+                # Target date: exactly N days from today
+                target_date = today + timedelta(days=days_before)
+                window_start = f"{target_date} 00:00:00"
+                window_end   = f"{target_date} 23:59:59"
 
                 rows = await self.bot.db.fetchall(
                     """
@@ -52,7 +64,7 @@ class NotificationsCog(commands.Cog):
                       AND wu.status = 'active'
                       AND wu.expires_at IS NOT NULL
                       AND wu.expires_at >= %s
-                      AND wu.expires_at < %s
+                      AND wu.expires_at <= %s
                     """,
                     (guild_id, window_start, window_end),
                 )
@@ -60,6 +72,12 @@ class NotificationsCog(commands.Cog):
                 for row in rows:
                     discord_id, discord_name, wl_name, expires_at = row
                     exp_str = expires_at.strftime("%Y-%m-%d") if expires_at else "soon"
+
+                    # Dedup: skip if we already notified this user for this window today
+                    dedup_key = f"{guild_id}:{discord_id}:{wl_name}:{days_before}:{today}"
+                    if dedup_key in self._notified_expiry:
+                        continue
+                    self._notified_expiry.add(dedup_key)
 
                     dm_msg = (
                         f"\u26a0\ufe0f Your **{wl_name}** whitelist membership expires on **{exp_str}** "

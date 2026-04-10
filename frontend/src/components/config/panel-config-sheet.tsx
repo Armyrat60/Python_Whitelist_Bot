@@ -80,7 +80,10 @@ export default function PanelConfigSheet({
   }, [discordRoles, panelRoles]);
 
   const channelOptions: ComboboxOption[] = useMemo(
-    () => channels.map((ch) => ({ value: ch.id, label: `#${ch.name}` })),
+    () => [
+      { value: "", label: "None (no channel)" },
+      ...channels.map((ch) => ({ value: ch.id, label: `#${ch.name}` })),
+    ],
     [channels]
   );
 
