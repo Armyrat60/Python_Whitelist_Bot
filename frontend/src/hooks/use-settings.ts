@@ -22,6 +22,7 @@ import type {
   DashboardPermission,
   DashboardRolePermission,
   PermissionLevel,
+  GranularPermissions,
   BridgeConfig,
 } from "@/lib/types";
 
@@ -814,7 +815,7 @@ export function usePermissions() {
 export function useGrantPermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { discord_id: string; discord_name?: string; permission_level: PermissionLevel }) =>
+    mutationFn: (data: { discord_id: string; discord_name?: string; permission_level: PermissionLevel; permissions?: GranularPermissions }) =>
       api.post<DashboardPermission>("/api/admin/dashboard-permissions", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
@@ -823,8 +824,8 @@ export function useGrantPermission() {
 export function useUpdatePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ discordId, permission_level }: { discordId: string; permission_level: PermissionLevel }) =>
-      api.put(`/api/admin/dashboard-permissions/${discordId}`, { permission_level }),
+    mutationFn: ({ discordId, permission_level, permissions }: { discordId: string; permission_level: PermissionLevel; permissions?: GranularPermissions }) =>
+      api.put(`/api/admin/dashboard-permissions/${discordId}`, { permission_level, permissions }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["permissions"] }),
   });
 }
@@ -849,7 +850,7 @@ export function useRolePermissions() {
 export function useGrantRolePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { role_id: string; role_name?: string; permission_level: PermissionLevel }) =>
+    mutationFn: (data: { role_id: string; role_name?: string; permission_level: PermissionLevel; permissions?: GranularPermissions }) =>
       api.post<DashboardRolePermission>("/api/admin/dashboard-role-permissions", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
   });
@@ -858,8 +859,8 @@ export function useGrantRolePermission() {
 export function useUpdateRolePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ roleId, permission_level }: { roleId: string; permission_level: PermissionLevel }) =>
-      api.put(`/api/admin/dashboard-role-permissions/${roleId}`, { permission_level }),
+    mutationFn: ({ roleId, permission_level, permissions }: { roleId: string; permission_level: PermissionLevel; permissions?: GranularPermissions }) =>
+      api.put(`/api/admin/dashboard-role-permissions/${roleId}`, { permission_level, permissions }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["role-permissions"] }),
   });
 }

@@ -18,7 +18,12 @@ import {
   useTriggerReport,
   useBoosterRole,
   useWhitelists,
+  useRolePermissions,
+  useGrantRolePermission,
+  useUpdateRolePermission,
+  useRevokeRolePermission,
 } from "@/hooks/use-settings";
+import type { GranularPermissions } from "@/lib/types";
 import { useSession } from "@/hooks/use-session";
 import type { Settings } from "@/lib/types";
 
@@ -140,6 +145,232 @@ function LiveClock({ timezone }: { timezone: string }) {
   if (!time) return null;
   return (
     <span className="font-mono text-sm text-foreground">{time}</span>
+  );
+}
+
+/* ─── Permission Flags (must match api/src/lib/permissions.ts) ─── */
+const PERMISSION_FLAGS = [
+  { key: "view_stats",          label: "View Stats",          group: "Dashboard" },
+  { key: "view_logs",           label: "View Logs",           group: "Dashboard" },
+  { key: "manage_users",        label: "Manage Users",        group: "Content" },
+  { key: "manage_whitelists",   label: "Manage Whitelists",   group: "Content" },
+  { key: "manage_panels",       label: "Manage Panels",       group: "Content" },
+  { key: "manage_settings",     label: "Manage Settings",     group: "Content" },
+  { key: "manage_seeding",      label: "Manage Seeding",      group: "Content" },
+  { key: "manage_permissions",  label: "Manage Permissions",  group: "Content" },
+  { key: "sftp_read",           label: "SFTP Read",           group: "Server" },
+  { key: "sftp_write",          label: "SFTP Write",          group: "Server" },
+  { key: "rcon_read",           label: "RCON Read",           group: "Server" },
+  { key: "rcon_execute",        label: "RCON Execute",        group: "Server" },
+  { key: "push_config",         label: "Push Config",         group: "Server" },
+] as const;
+
+const FLAG_GROUPS = ["Dashboard", "Content", "Server"] as const;
+
+/* ─── Granular Permission Toggles ─── */
+function PermissionToggles({
+  permissions,
+  onChange,
+}: {
+  permissions: GranularPermissions;
+  onChange: (perms: GranularPermissions) => void;
+}) {
+  return (
+    <div className="space-y-3 pt-2">
+      {FLAG_GROUPS.map((group) => (
+        <div key={group}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">{group}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {PERMISSION_FLAGS.filter((f) => f.group === group).map((flag) => (
+              <label
+                key={flag.key}
+                className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 cursor-pointer hover:bg-white/[0.04] transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={permissions[flag.key as keyof GranularPermissions] ?? false}
+                  onChange={(e) => onChange({ ...permissions, [flag.key]: e.target.checked })}
+                  className="rounded border-white/20 bg-transparent accent-[var(--accent-primary)]"
+                />
+                <span className="text-xs text-white/80">{flag.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Role Permission Grants ─── */
+function RolePermissionGrants() {
+  const { data: roleGrants, isLoading } = useRolePermissions();
+  const { data: discordRoles } = useRoles();
+  const grantRole = useGrantRolePermission();
+  const updateRole = useUpdateRolePermission();
+  const revokeRole = useRevokeRolePermission();
+
+  const [addPopoverOpen, setAddPopoverOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [editPerms, setEditPerms] = useState<GranularPermissions>({});
+  const [editLevel, setEditLevel] = useState<string>("viewer");
+
+  const grants = roleGrants ?? [];
+  const grantedRoleIds = new Set(grants.map((g) => g.role_id));
+
+  async function handleAddRole(roleId: string, roleName: string) {
+    setAddPopoverOpen(false);
+    try {
+      await grantRole.mutateAsync({
+        role_id: roleId,
+        role_name: roleName,
+        permission_level: "viewer",
+      });
+      toast.success(`Added ${roleName}`);
+    } catch {
+      toast.error("Failed to add role");
+    }
+  }
+
+  function startEdit(grant: typeof grants[number]) {
+    setEditingRole(grant.role_id);
+    setEditLevel(grant.permission_level);
+    setEditPerms((grant.permissions as GranularPermissions) ?? {});
+  }
+
+  async function saveEdit() {
+    if (!editingRole) return;
+    try {
+      await updateRole.mutateAsync({
+        roleId: editingRole,
+        permission_level: editLevel as any,
+        permissions: editLevel === "granular" ? editPerms : undefined,
+      });
+      toast.success("Updated");
+      setEditingRole(null);
+    } catch {
+      toast.error("Failed to update");
+    }
+  }
+
+  async function handleRevoke(roleId: string) {
+    try {
+      await revokeRole.mutateAsync(roleId);
+      toast.success("Revoked");
+    } catch {
+      toast.error("Failed to revoke");
+    }
+  }
+
+  if (isLoading) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Role Permission Grants</CardTitle>
+        <CardDescription>
+          Grant dashboard access to specific Discord roles. Choose a preset level or customize with granular permissions.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {grants.length === 0 && (
+          <p className="text-sm text-muted-foreground/60 italic">No role grants configured.</p>
+        )}
+        {grants.map((grant) => {
+          const role = discordRoles?.find((r) => r.id === grant.role_id);
+          const isEditing = editingRole === grant.role_id;
+
+          return (
+            <div key={grant.role_id} className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-3 w-3 rounded-full ring-1 ring-white/20"
+                    style={{ backgroundColor: role?.color || "#99AAB5" }}
+                  />
+                  <span className="text-sm font-medium text-white/90">{role?.name ?? grant.role_name ?? grant.role_id}</span>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {grant.permission_level === "granular" ? "Custom" : grant.permission_level}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => isEditing ? setEditingRole(null) : startEdit(grant)}>
+                    {isEditing ? "Cancel" : "Edit"}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-red-400 hover:text-red-300" onClick={() => handleRevoke(grant.role_id)}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+
+              {isEditing && (
+                <div className="space-y-3 pt-1 border-t border-white/[0.06]">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Permission Level</Label>
+                    <select
+                      value={editLevel}
+                      onChange={(e) => setEditLevel(e.target.value)}
+                      className="flex h-8 w-48 items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+                    >
+                      <option value="viewer">Viewer (read-only)</option>
+                      <option value="roster_manager">Roster Manager</option>
+                      <option value="granular">Custom (granular)</option>
+                    </select>
+                  </div>
+                  {editLevel === "granular" && (
+                    <PermissionToggles permissions={editPerms} onChange={setEditPerms} />
+                  )}
+                  <Button size="sm" onClick={saveEdit} disabled={updateRole.isPending} className="font-semibold text-black" style={{ background: "var(--accent-primary)" }}>
+                    <Save className="mr-1.5 h-3.5 w-3.5" />
+                    Save
+                  </Button>
+                </div>
+              )}
+
+              {!isEditing && grant.permission_level === "granular" && grant.permissions && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {Object.entries(grant.permissions as Record<string, boolean>).filter(([, v]) => v).map(([key]) => (
+                    <Badge key={key} variant="outline" className="text-[9px] bg-white/[0.04]">
+                      {key.replace(/_/g, " ")}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <Popover open={addPopoverOpen} onOpenChange={setAddPopoverOpen}>
+          <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+            + Add Role
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-0">
+            <Command>
+              <CommandInput placeholder="Search role…" />
+              <CommandList>
+                <CommandEmpty>No roles found.</CommandEmpty>
+                <CommandGroup>
+                  {discordRoles
+                    ?.filter((r) => !grantedRoleIds.has(r.id))
+                    .map((role) => (
+                      <CommandItem
+                        key={role.id}
+                        onSelect={() => handleAddRole(role.id, role.name)}
+                      >
+                        <span
+                          className="mr-2 inline-block h-3 w-3 rounded-full"
+                          style={{ backgroundColor: role.color || "#99AAB5" }}
+                        />
+                        {role.name}
+                      </CommandItem>
+                    ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -824,6 +1055,9 @@ export default function SettingsPage() {
               </Button>
             </CardFooter>
           </Card>
+
+          {/* Role permission grants with granular toggles */}
+          <RolePermissionGrants />
         </div>
       )}
 
