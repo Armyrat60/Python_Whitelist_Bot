@@ -11,6 +11,7 @@
     "db:deploy": "node scripts/check-destructive-migration.mjs && prisma migrate deploy",
     "db:push": "prisma db push",
     "db:drift": "node scripts/check-prod-drift.mjs",
+    "db:seed": "npx tsx prisma/seed.ts",
     "db:backup": "node scripts/backup-prod.mjs",
     "db:backup:list": "node scripts/restore-prod.mjs --list",
     "db:restore": "node scripts/restore-prod.mjs",
