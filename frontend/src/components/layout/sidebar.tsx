@@ -22,6 +22,7 @@ import {
   ChevronRight,
   LogOut,
   History,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -60,6 +61,10 @@ const seedingLinks = [
   { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/dashboard/seeding/settings", label: "Configuration", icon: Settings2 },
+];
+
+const serverLinks = [
+  { href: "/dashboard/servers", label: "Live Dashboard", icon: Radio },
 ];
 
 const toolLinks = [
@@ -356,6 +361,14 @@ export function Sidebar() {
         )}
 
         {!isRosterManager && (
+          <CollapsibleSection label="Servers" sectionKey="servers" collapsed={collapsed} onToggle={toggleSection}>
+            {serverLinks.map((link) => (
+              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+            ))}
+          </CollapsibleSection>
+        )}
+
+        {!isRosterManager && (
           <CollapsibleSection label="Tools" sectionKey="tools" collapsed={collapsed} onToggle={toggleSection}>
             {toolLinks.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
@@ -442,7 +455,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
         ...whitelistLinks.filter((l) => l.href !== "/dashboard/config" && l.href !== "/dashboard/conflicts"),
         ...publicLinks,
       ]
-    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...toolLinks, ...publicLinks];
+    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...serverLinks, ...toolLinks, ...publicLinks];
 
   return (
     <>

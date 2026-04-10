@@ -39,6 +39,7 @@ import reconcileRoutes from "./routes/admin/reconcile.js"
 import guildInfoRoutes from "./routes/admin/guild-info.js"
 import battlemetricsRoutes from "./routes/admin/battlemetrics.js"
 import gameServerRoutes from "./routes/admin/game-servers.js"
+import rconRoutes from "./routes/admin/rcon.js"
 import { adminSettingsRoutes } from "./routes/admin/settings.js"
 import whitelistRoutes from "./routes/admin/whitelists.js"
 import groupRoutes from "./routes/admin/groups.js"
@@ -133,6 +134,7 @@ async function build() {
   await app.register(guildInfoRoutes, { prefix: "/api/admin" })
   await app.register(battlemetricsRoutes, { prefix: "/api/admin" })
   await app.register(gameServerRoutes, { prefix: "/api/admin" })
+  await app.register(rconRoutes, { prefix: "/api/admin" })
   await app.register(myWhitelistRoutes, { prefix: "/api" })
   await app.register(seedingPublicRoutes, { prefix: "/api" })
   await app.register(steamRoutes, { prefix: "/api" })

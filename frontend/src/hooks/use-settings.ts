@@ -1042,6 +1042,9 @@ interface GameServer {
   sftp_user: string | null;
   sftp_password: string | null;
   sftp_base_path: string;
+  rcon_host: string | null;
+  rcon_port: number;
+  rcon_password: string | null;
   enabled: boolean;
   created_at: string;
 }
@@ -1088,6 +1091,89 @@ export function useTestSftp() {
 export function usePushWhitelist() {
   return useMutation<{ ok: boolean; message: string; results?: Array<{ filename: string; ok: boolean; error?: string }> }, Error, number>({
     mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/sftp/push-whitelist`),
+  });
+}
+
+// ── RCON hooks ──────────────────────────────────────────────────────────────
+
+interface RconServerInfo {
+  status: string;
+  name?: string;
+  map?: string;
+  playerCount?: number;
+  maxPlayers?: number;
+  error?: string;
+}
+
+interface RconPlayer {
+  id: string;
+  steamId: string;
+  name: string;
+  teamId: string;
+  squadId: string;
+}
+
+interface RconSquad {
+  id: string;
+  name: string;
+  teamId: string;
+  size: number;
+  leader: string;
+  players: RconPlayer[];
+}
+
+interface RconTeam {
+  teamId: string;
+  squads: RconSquad[];
+  unassigned: RconPlayer[];
+}
+
+export interface RconServerState {
+  info: { name: string; map: string; playerCount: number; maxPlayers: number } | null;
+  teams: RconTeam[];
+  totalPlayers: number;
+  error?: string;
+}
+
+export function useRconPlayers(serverId: number | null) {
+  return useQuery<RconServerState>({
+    queryKey: ["rcon-players", serverId],
+    queryFn: () => api.get<RconServerState>(`/api/admin/game-servers/${serverId}/rcon/players`),
+    enabled: serverId !== null,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useRconStatus(serverId: number | null) {
+  return useQuery<RconServerInfo>({
+    queryKey: ["rcon-status", serverId],
+    queryFn: () => api.get<RconServerInfo>(`/api/admin/game-servers/${serverId}/rcon/status`),
+    enabled: serverId !== null,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useKickPlayer() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; player_id: string; reason?: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/kick`, data),
+  });
+}
+
+export function useWarnPlayer() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; target: string; message: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/warn`, data),
+  });
+}
+
+export function useBroadcast() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; message: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/broadcast`, data),
+  });
+}
+
+export function useTestRcon() {
+  return useMutation<{ ok: boolean; message: string }, Error, number>({
+    mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/rcon/test`),
   });
 }
 

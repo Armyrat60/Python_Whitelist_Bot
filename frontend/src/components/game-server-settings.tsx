@@ -54,8 +54,8 @@ function ServerForm({
   onCancel,
   saving,
 }: {
-  initial?: { name: string; sftp_host: string; sftp_port: number; sftp_user: string; sftp_password: string; sftp_base_path: string };
-  onSave: (data: { name: string; sftp_host: string; sftp_port: number; sftp_user: string; sftp_password: string; sftp_base_path: string }) => void;
+  initial?: { name: string; sftp_host: string; sftp_port: number; sftp_user: string; sftp_password: string; sftp_base_path: string; rcon_host: string; rcon_port: number; rcon_password: string };
+  onSave: (data: Record<string, unknown>) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
@@ -65,17 +65,22 @@ function ServerForm({
   const [user, setUser] = useState(initial?.sftp_user ?? "");
   const [password, setPassword] = useState(initial?.sftp_password ?? "");
   const [basePath, setBasePath] = useState(initial?.sftp_base_path ?? "/SquadGame/ServerConfig");
+  const [rconHost, setRconHost] = useState(initial?.rcon_host ?? "");
+  const [rconPort, setRconPort] = useState(String(initial?.rcon_port ?? 21114));
+  const [rconPassword, setRconPassword] = useState(initial?.rcon_password ?? "");
 
   return (
     <div className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Server Name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. US Server 1" className="h-8 text-xs" />
+      </div>
+
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground pt-1">SFTP</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Server Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. US Server 1" className="h-8 text-xs" />
-        </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2 space-y-1.5">
-            <Label className="text-xs text-muted-foreground">SFTP Host</Label>
+            <Label className="text-xs text-muted-foreground">Host</Label>
             <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="your-server.com" className="h-8 text-xs" />
           </div>
           <div className="space-y-1.5">
@@ -83,25 +88,42 @@ function ServerForm({
             <Input value={port} onChange={(e) => setPort(e.target.value)} placeholder="22" className="h-8 text-xs" />
           </div>
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Username</Label>
-          <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="sftp_user" className="h-8 text-xs" />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Password</Label>
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={initial ? "Leave blank to keep" : "Password"} className="h-8 text-xs" />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Username</Label>
+            <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="sftp_user" className="h-8 text-xs" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Password</Label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={initial ? "Keep current" : "Password"} className="h-8 text-xs" />
+          </div>
         </div>
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Base Path</Label>
         <Input value={basePath} onChange={(e) => setBasePath(e.target.value)} placeholder="/SquadGame/ServerConfig" className="h-8 text-xs" />
       </div>
-      <div className="flex gap-2">
+
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground pt-1">RCON</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Host</Label>
+          <Input value={rconHost} onChange={(e) => setRconHost(e.target.value)} placeholder="same as SFTP host" className="h-8 text-xs" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Port</Label>
+          <Input value={rconPort} onChange={(e) => setRconPort(e.target.value)} placeholder="21114" className="h-8 text-xs" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Password</Label>
+          <Input type="password" value={rconPassword} onChange={(e) => setRconPassword(e.target.value)} placeholder={initial ? "Keep current" : "RCON password"} className="h-8 text-xs" />
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-1">
         <Button
           size="sm"
-          onClick={() => onSave({ name: name.trim(), sftp_host: host.trim(), sftp_port: parseInt(port, 10) || 22, sftp_user: user.trim(), sftp_password: password, sftp_base_path: basePath.trim() })}
+          onClick={() => onSave({ name: name.trim(), sftp_host: host.trim(), sftp_port: parseInt(port, 10) || 22, sftp_user: user.trim(), sftp_password: password, sftp_base_path: basePath.trim(), rcon_host: rconHost.trim(), rcon_port: parseInt(rconPort, 10) || 21114, rcon_password: rconPassword })}
           disabled={saving || !name.trim()}
           className="font-semibold text-black"
           style={{ background: "var(--accent-primary)" }}
@@ -115,7 +137,7 @@ function ServerForm({
   );
 }
 
-function ServerCard({ server }: { server: { id: number; name: string; sftp_host: string | null; sftp_port: number; sftp_user: string | null; sftp_password: string | null; sftp_base_path: string; enabled: boolean } }) {
+function ServerCard({ server }: { server: { id: number; name: string; sftp_host: string | null; sftp_port: number; sftp_user: string | null; sftp_password: string | null; sftp_base_path: string; rcon_host: string | null; rcon_port: number; rcon_password: string | null; enabled: boolean } }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const update = useUpdateGameServer();
@@ -225,6 +247,9 @@ function ServerCard({ server }: { server: { id: number; name: string; sftp_host:
               sftp_user: server.sftp_user ?? "",
               sftp_password: server.sftp_password ?? "",
               sftp_base_path: server.sftp_base_path,
+              rcon_host: server.rcon_host ?? "",
+              rcon_port: server.rcon_port,
+              rcon_password: server.rcon_password ?? "",
             }}
             onSave={handleUpdate}
             onCancel={() => setEditing(false)}

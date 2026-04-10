@@ -46,6 +46,7 @@ const requireSftpWrite = async (req: FastifyRequest, reply: FastifyReply) => {
 function maskServer(s: {
   id: number; name: string; sftpHost: string | null; sftpPort: number;
   sftpUser: string | null; sftpPassword: string | null; sftpBasePath: string;
+  rconHost: string | null; rconPort: number; rconPassword: string | null;
   enabled: boolean; createdAt: Date; updatedAt: Date;
 }) {
   return {
@@ -56,6 +57,9 @@ function maskServer(s: {
     sftp_user: s.sftpUser,
     sftp_password: s.sftpPassword ? MASKED : null,
     sftp_base_path: s.sftpBasePath,
+    rcon_host: s.rconHost,
+    rcon_port: s.rconPort,
+    rcon_password: s.rconPassword ? MASKED : null,
     enabled: s.enabled,
     created_at: s.createdAt.toISOString(),
   }
@@ -78,10 +82,10 @@ export default async function gameServerRoutes(app: FastifyInstance) {
   // ── POST /game-servers ────────────────────────────────────────────────────
 
   app.post<{
-    Body: { name: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string }
+    Body: { name: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string; rcon_host?: string; rcon_port?: number; rcon_password?: string }
   }>("/game-servers", { preHandler: requireSftpWrite }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
-    const { name, sftp_host, sftp_port, sftp_user, sftp_password, sftp_base_path } = req.body
+    const { name, sftp_host, sftp_port, sftp_user, sftp_password, sftp_base_path, rcon_host, rcon_port, rcon_password } = req.body
 
     if (!name?.trim()) return reply.code(400).send({ error: "Server name is required" })
 
@@ -98,6 +102,9 @@ export default async function gameServerRoutes(app: FastifyInstance) {
         sftpUser: sftp_user?.trim() ?? null,
         sftpPassword: sftp_password ?? null,
         sftpBasePath: sftp_base_path?.trim() || "/SquadGame/ServerConfig",
+        rconHost: rcon_host?.trim() ?? null,
+        rconPort: rcon_port ?? 21114,
+        rconPassword: rcon_password ?? null,
       },
     })
 
@@ -108,16 +115,17 @@ export default async function gameServerRoutes(app: FastifyInstance) {
 
   app.put<{
     Params: { id: string }
-    Body: { name?: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string; enabled?: boolean }
+    Body: { name?: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string; rcon_host?: string; rcon_port?: number; rcon_password?: string; enabled?: boolean }
   }>("/game-servers/:id", { preHandler: requireSftpWrite }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const id = parseInt(req.params.id, 10)
-    const { name, sftp_host, sftp_port, sftp_user, sftp_password, sftp_base_path, enabled } = req.body
+    const { name, sftp_host, sftp_port, sftp_user, sftp_password, sftp_base_path, rcon_host, rcon_port, rcon_password, enabled } = req.body
 
     const existing = await prisma.gameServer.findFirst({ where: { id, guildId } })
     if (!existing) return reply.code(404).send({ error: "Server not found" })
 
-    const effectivePassword = sftp_password === MASKED ? existing.sftpPassword : sftp_password
+    const effectiveSftpPass = sftp_password === MASKED ? existing.sftpPassword : sftp_password
+    const effectiveRconPass = rcon_password === MASKED ? existing.rconPassword : rcon_password
 
     const server = await prisma.gameServer.update({
       where: { id },
@@ -126,8 +134,11 @@ export default async function gameServerRoutes(app: FastifyInstance) {
         sftpHost:     sftp_host !== undefined ? sftp_host?.trim() ?? null : undefined,
         sftpPort:     sftp_port ?? undefined,
         sftpUser:     sftp_user !== undefined ? sftp_user?.trim() ?? null : undefined,
-        sftpPassword: effectivePassword !== undefined ? effectivePassword : undefined,
+        sftpPassword: effectiveSftpPass !== undefined ? effectiveSftpPass : undefined,
         sftpBasePath: sftp_base_path?.trim() ?? undefined,
+        rconHost:     rcon_host !== undefined ? rcon_host?.trim() ?? null : undefined,
+        rconPort:     rcon_port ?? undefined,
+        rconPassword: effectiveRconPass !== undefined ? effectiveRconPass : undefined,
         enabled:      enabled ?? undefined,
       },
     })
