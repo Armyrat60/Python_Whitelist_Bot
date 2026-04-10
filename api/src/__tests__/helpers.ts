@@ -141,6 +141,7 @@ export function makeMockPrisma() {
       findFirst:  mockFn(),
       findUnique: mockFn(),
       create:     mockFn(),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
       upsert:     mockFn(),
       update:     mockFn(),
       delete:     mockFn(),
@@ -202,6 +203,7 @@ export interface TestApp {
  */
 export async function buildTestApp(
   registerRoutes: (app: FastifyInstance) => Promise<void>,
+  sessionGuilds?: Array<Record<string, unknown>>,
 ): Promise<TestApp> {
   const mockPrisma  = makeMockPrisma()
   const mockDiscord = makeMockDiscord()
@@ -237,12 +239,12 @@ export async function buildTestApp(
     saveUninitialized: false,
   })
 
-  // ── Inject admin session on every request ─────────────────────────────────
+  // ── Inject session on every request ────────────────────────────────────
   app.addHook('onRequest', async (req) => {
     req.session.userId       = TEST_USER_ID
     req.session.username     = 'TestAdmin'
     req.session.activeGuildId = TEST_GUILD_ID
-    req.session.guilds = [
+    req.session.guilds = sessionGuilds ?? [
       { id: TEST_GUILD_ID, name: 'Test Guild', icon: null, isAdmin: true, permissionLevel: 'admin' as const },
     ]
   })

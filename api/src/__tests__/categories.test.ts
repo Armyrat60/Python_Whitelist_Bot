@@ -354,3 +354,159 @@ describe('Category Entries', () => {
     expect(t.prisma.$transaction).toHaveBeenCalled()
   })
 })
+
+// ─── Bulk Delete ─────────────────────────────────────────────────────────────
+
+describe('POST /entries/bulk-delete', () => {
+  let t: TestApp
+
+  beforeEach(async () => {
+    t = await buildTestApp(async (app) => {
+      await app.register(categoryRoutes, { prefix: '/api/admin' })
+    })
+  })
+
+  it('deletes import-created entries and unassigns role-based', async () => {
+    t.prisma.whitelistCategory.findFirst.mockResolvedValueOnce(makeCategory())
+    t.prisma.whitelistUser.findMany.mockResolvedValueOnce([
+      { discordId: 100n, createdVia: 'import' },
+      { discordId: 200n, createdVia: 'role_whitelist_1' },
+    ])
+
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/entries/bulk-delete`,
+      payload: { discord_ids: ['100', '200'] },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.deleted).toBe(1)
+    expect(body.unassigned).toBe(1)
+  })
+
+  it('rejects empty discord_ids', async () => {
+    t.prisma.whitelistCategory.findFirst.mockResolvedValueOnce(makeCategory())
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/entries/bulk-delete`,
+      payload: { discord_ids: [] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+})
+
+// ─── Bulk Move ───────────────────────────────────────────────────────────────
+
+describe('POST /entries/bulk-move', () => {
+  let t: TestApp
+
+  beforeEach(async () => {
+    t = await buildTestApp(async (app) => {
+      await app.register(categoryRoutes, { prefix: '/api/admin' })
+    })
+  })
+
+  it('moves entries to target category', async () => {
+    t.prisma.whitelistCategory.findFirst
+      .mockResolvedValueOnce(makeCategory()) // source
+      .mockResolvedValueOnce(makeCategory({ id: 20, name: 'Target' })) // target
+    t.prisma.whitelistUser.updateMany.mockResolvedValueOnce({ count: 3 })
+
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/entries/bulk-move`,
+      payload: { discord_ids: ['100', '200', '300'], target_category_id: 20 },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).moved).toBe(3)
+  })
+
+  it('returns 404 for missing target category', async () => {
+    t.prisma.whitelistCategory.findFirst
+      .mockResolvedValueOnce(makeCategory()) // source
+      .mockResolvedValueOnce(null) // target not found
+
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/entries/bulk-move`,
+      payload: { discord_ids: ['100'], target_category_id: 999 },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+
+describe('GET /entries/export', () => {
+  let t: TestApp
+
+  beforeEach(async () => {
+    t = await buildTestApp(async (app) => {
+      await app.register(categoryRoutes, { prefix: '/api/admin' })
+    })
+  })
+
+  it('returns CSV with correct headers and data', async () => {
+    t.prisma.whitelistCategory.findFirst.mockResolvedValueOnce(makeCategory({ name: 'TestExport' }))
+    t.prisma.whitelistUser.findMany.mockResolvedValueOnce([
+      { discordId: 444n, discordName: 'Player1', notes: 'VIP', expiresAt: null, createdAt: new Date('2026-01-15') },
+    ])
+    t.prisma.whitelistIdentifier.findMany.mockResolvedValueOnce([
+      { discordId: 444n, idType: 'steam64', idValue: '76561198000000001' },
+    ])
+
+    const res = await t.app.inject({
+      method: 'GET',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/entries/export`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/csv')
+    const lines = res.body.split('\n')
+    expect(lines[0]).toBe('steam_id,discord_id,discord_name,notes,expires_at,created_at')
+    expect(lines[1]).toContain('76561198000000001')
+    expect(lines[1]).toContain('Player1')
+  })
+})
+
+// ─── Clone ───────────────────────────────────────────────────────────────────
+
+describe('POST /categories/:categoryId/clone', () => {
+  let t: TestApp
+
+  beforeEach(async () => {
+    t = await buildTestApp(async (app) => {
+      await app.register(categoryRoutes, { prefix: '/api/admin' })
+    })
+  })
+
+  it('clones category with managers but no entries', async () => {
+    t.prisma.whitelistCategory.findFirst.mockResolvedValueOnce({
+      ...makeCategory({ name: 'Original', tags: 'clan,vip', squadGroup: 'reserve' }),
+      managers: [makeManager()],
+    })
+    t.prisma.whitelistCategory.count.mockResolvedValueOnce(5)
+    t.prisma.whitelistCategory.create.mockResolvedValueOnce(
+      makeCategory({ id: 99, name: 'Original (Copy)' })
+    )
+    t.prisma.categoryManager.createMany.mockResolvedValueOnce({ count: 1 })
+
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/${CAT_ID}/clone`,
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.ok).toBe(true)
+    expect(body.name).toBe('Original (Copy)')
+    expect(t.prisma.categoryManager.createMany).toHaveBeenCalled()
+  })
+
+  it('returns 404 for missing category', async () => {
+    t.prisma.whitelistCategory.findFirst.mockResolvedValueOnce(null)
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/whitelists/${WL_ID}/categories/999/clone`,
+    })
+    expect(res.statusCode).toBe(404)
+  })
+})
