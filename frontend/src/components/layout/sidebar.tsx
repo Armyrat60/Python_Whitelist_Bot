@@ -49,6 +49,7 @@ const dashboardLinks = [
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/conflicts", label: "Conflicts", icon: AlertTriangle },
   { href: "/dashboard/logs", label: "Logs", icon: History },
+  { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
 const whitelistLinks = [

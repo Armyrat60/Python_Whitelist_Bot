@@ -13,6 +13,10 @@ import {
   AlertCircle,
   Gamepad2,
   BadgeCheck,
+  TrendingUp,
+  Sprout,
+  Calendar,
+  Flame,
 } from "lucide-react";
 import { usePlayerProfile, useBattleMetricsPlayer } from "@/hooks/use-settings";
 import { Badge } from "@/components/ui/badge";
@@ -120,6 +124,42 @@ export default function PlayerProfilePage() {
           </div>
           <p className="text-xs text-muted-foreground font-mono mt-0.5">{player.discord_id}</p>
         </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3 w-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Member</span>
+          </div>
+          <p className="text-xl font-bold text-white/90">{player.stats.member_days}d</p>
+        </div>
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <Shield className="h-3 w-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Whitelists</span>
+          </div>
+          <p className="text-xl font-bold text-white/90">{player.stats.active_whitelists}<span className="text-sm text-muted-foreground">/{player.stats.total_whitelists}</span></p>
+        </div>
+        {player.seeding && (
+          <>
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <Sprout className="h-3 w-3 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Seeding</span>
+              </div>
+              <p className="text-xl font-bold text-white/90">{player.seeding.seeding_hours}h</p>
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <Flame className="h-3 w-3 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Streak</span>
+              </div>
+              <p className="text-xl font-bold text-white/90">{player.seeding.current_streak}<span className="text-sm text-muted-foreground">d</span></p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Identifiers */}

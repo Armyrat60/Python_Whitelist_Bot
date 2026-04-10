@@ -750,6 +750,37 @@ export interface PlayerProfile {
     server_name: string | null;
     last_seen_at: string;
   }>;
+  seeding: {
+    points: number;
+    seeding_hours: number;
+    rewarded: boolean;
+    current_streak: number;
+  } | null;
+  stats: {
+    member_days: number;
+    active_whitelists: number;
+    total_whitelists: number;
+  };
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  discord_id: string | null;
+  player_name: string | null;
+  steam_id: string | null;
+  member_days: number | null;
+  whitelist_name?: string;
+  seeding_points: number | null;
+  seeding_hours: number | null;
+  rewarded: boolean | null;
+  current_streak: number | null;
+}
+
+export function usePlayerLeaderboard(sort: string) {
+  return useQuery<{ entries: LeaderboardEntry[]; sort: string; total: number }>({
+    queryKey: ["player-leaderboard", sort],
+    queryFn: () => api.get(`/api/admin/player-leaderboard?sort=${sort}&limit=50`),
+  });
 }
 
 export function usePlayerSearch(q: string) {

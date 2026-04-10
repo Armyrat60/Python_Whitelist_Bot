@@ -234,6 +234,30 @@ export default async function playerRoutes(app: FastifyInstance) {
       last_seen_at:  p.lastSeenAt.toISOString(),
     }))
 
+    // Fetch seeding data for this player's Steam IDs
+    let seedingData: { points: number; seeding_hours: number; rewarded: boolean; current_streak: number } | null = null
+    if (steam_ids.length > 0) {
+      const seedingRecord = await prisma.seedingPoints.findFirst({
+        where: { guildId, steamId: { in: steam_ids } },
+        orderBy: { points: "desc" },
+      })
+      if (seedingRecord) {
+        seedingData = {
+          points: seedingRecord.points,
+          seeding_hours: Math.round(seedingRecord.points / 60 * 10) / 10,
+          rewarded: seedingRecord.rewarded,
+          current_streak: seedingRecord.currentStreak,
+        }
+      }
+    }
+
+    // Calculate membership tenure (days since earliest role_gained_at or created_at)
+    const earliestJoin = memberships.reduce((earliest, m) => {
+      const d = m.roleGainedAt ?? m.createdAt
+      return d < earliest ? d : earliest
+    }, new Date())
+    const memberDays = Math.floor((Date.now() - earliestJoin.getTime()) / 86400000)
+
     return reply.send(toJSON({
       discord_id:         discordId.toString(),
       discord_name:       discordName,
@@ -244,6 +268,12 @@ export default async function playerRoutes(app: FastifyInstance) {
       memberships:        membershipData,
       audit_log:          auditData,
       squad_players:      squadData,
+      seeding:            seedingData,
+      stats: {
+        member_days:        memberDays,
+        active_whitelists:  memberships.filter(m => m.status === "active").length,
+        total_whitelists:   memberships.length,
+      },
     }))
   })
 
@@ -295,5 +325,85 @@ export default async function playerRoutes(app: FastifyInstance) {
     }))
 
     return reply.send(toJSON({ players: results, total, page, per_page: perPage }))
+  })
+
+  // ── GET /api/admin/player-leaderboard ─────────────────────────────────────
+  // Aggregated leaderboard: membership tenure, seeding, activity.
+  // Query: sort=tenure|seeding_hours|seeding_points (default: tenure)
+
+  app.get<{
+    Querystring: { sort?: string; limit?: string }
+  }>("/player-leaderboard", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const sortMode = req.query.sort ?? "tenure"
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit ?? "50", 10)))
+
+    if (sortMode === "seeding_hours" || sortMode === "seeding_points") {
+      // Seeding-based leaderboard
+      const orderBy = sortMode === "seeding_hours" ? { points: "desc" as const } : { points: "desc" as const }
+      const seeders = await prisma.seedingPoints.findMany({
+        where: { guildId, points: { gt: 0 } },
+        orderBy,
+        take: limit,
+      })
+
+      const entries = seeders.map((s, idx) => ({
+        rank: idx + 1,
+        steam_id: s.steamId,
+        player_name: s.playerName ?? `Seeder_${s.steamId.slice(-6)}`,
+        discord_id: null as string | null,
+        seeding_points: s.points,
+        seeding_hours: Math.round(s.points / 60 * 10) / 10,
+        rewarded: s.rewarded,
+        current_streak: s.currentStreak,
+        member_days: null as number | null,
+      }))
+
+      return reply.send({ entries, sort: sortMode, total: seeders.length })
+    }
+
+    // Tenure-based leaderboard (longest active members)
+    const users = await prisma.whitelistUser.findMany({
+      where: { guildId, status: "active" },
+      orderBy: { createdAt: "asc" },
+      take: limit,
+      select: {
+        discordId: true,
+        discordName: true,
+        createdAt: true,
+        roleGainedAt: true,
+        status: true,
+        whitelist: { select: { name: true } },
+      },
+    })
+
+    const now = Date.now()
+    // Dedupe by discord_id (take earliest join)
+    const seen = new Map<string, typeof users[number]>()
+    for (const u of users) {
+      const id = u.discordId.toString()
+      if (!seen.has(id)) seen.set(id, u)
+    }
+
+    const entries = [...seen.values()]
+      .map((u) => {
+        const joinDate = u.roleGainedAt ?? u.createdAt
+        return {
+          rank: 0,
+          discord_id: u.discordId.toString(),
+          player_name: u.discordName,
+          steam_id: null as string | null,
+          member_days: Math.floor((now - joinDate.getTime()) / 86400000),
+          whitelist_name: u.whitelist.name,
+          seeding_points: null as number | null,
+          seeding_hours: null as number | null,
+          rewarded: null as boolean | null,
+          current_streak: null as number | null,
+        }
+      })
+      .sort((a, b) => (b.member_days ?? 0) - (a.member_days ?? 0))
+      .map((e, idx) => ({ ...e, rank: idx + 1 }))
+
+    return reply.send({ entries, sort: sortMode, total: entries.length })
   })
 }
