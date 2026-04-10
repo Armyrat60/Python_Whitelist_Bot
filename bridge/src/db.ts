@@ -13,7 +13,7 @@ import { config } from "./config.js"
 
 export const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
-  max: 5,
+  max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
 })
@@ -65,8 +65,9 @@ export interface UpsertResult {
  * Upsert a batch of players into squad_players and attempt to link each
  * one to a Discord user via the whitelist_identifiers table.
  *
- * One round-trip per player (could be batched further, but player counts
- * are small enough that sequential queries are fine at 15-min intervals).
+ * Uses multi-row INSERT for bulk upserts (500 rows per statement) instead
+ * of sequential per-player queries. This reduces 266K×4 = 1M+ roundtrips
+ * to ~500 batch operations.
  */
 export async function upsertPlayers(
   guildId: bigint,
@@ -81,53 +82,77 @@ export async function upsertPlayers(
 
   const client = await pool.connect()
   try {
-    for (const p of players) {
-      // Upsert player — update name and timestamp on conflict
-      const result = await client.query<{ id: number }>(
+    // ── Step 1: Batch upsert all players ────────────────────────────────
+    const CHUNK = 500
+    for (let i = 0; i < players.length; i += CHUNK) {
+      const chunk = players.slice(i, i + CHUNK)
+      const values: unknown[] = []
+      const placeholders: string[] = []
+
+      for (let j = 0; j < chunk.length; j++) {
+        const offset = j * 4
+        placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 5})`)
+        values.push(guildId, chunk[j].steamId, chunk[j].lastName || null, serverName)
+      }
+      // Add the timestamp once — referenced by all rows
+      // Actually, we need the timestamp per placeholder, so embed it directly
+      const valuesWithTime: unknown[] = []
+      const phFinal: string[] = []
+      for (let j = 0; j < chunk.length; j++) {
+        const offset = j * 5
+        phFinal.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 5})`)
+        valuesWithTime.push(guildId, chunk[j].steamId, chunk[j].lastName || null, serverName, now)
+      }
+
+      const result = await client.query(
         `INSERT INTO squad_players
            (guild_id, steam_id, last_seen_name, server_name, first_seen_at, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $5)
+         VALUES ${phFinal.join(", ")}
          ON CONFLICT (guild_id, steam_id) DO UPDATE SET
            last_seen_name = EXCLUDED.last_seen_name,
            server_name    = EXCLUDED.server_name,
-           last_seen_at   = EXCLUDED.last_seen_at
-         RETURNING id`,
-        [guildId, p.steamId, p.lastName || null, serverName, now],
+           last_seen_at   = EXCLUDED.last_seen_at`,
+        valuesWithTime,
       )
-      if ((result.rowCount ?? 0) > 0) upserted++
+      upserted += result.rowCount ?? 0
 
-      // Attempt to resolve a Discord user for this Steam ID
-      const ident = await client.query<{ discord_id: bigint }>(
-        `SELECT DISTINCT discord_id
+      if ((i + CHUNK) % 5000 < CHUNK) {
+        console.log(`[bridge] Upserted ${Math.min(i + CHUNK, players.length)}/${players.length} players...`)
+      }
+    }
+
+    // ── Step 2: Batch link Discord IDs ──────────────────────────────────
+    // Single UPDATE ... FROM join instead of N individual lookups
+    const linkResult = await client.query(
+      `UPDATE squad_players sp
+       SET discord_id = wi.discord_id
+       FROM (
+         SELECT DISTINCT ON (id_value) id_value, discord_id
          FROM whitelist_identifiers
          WHERE guild_id = $1
            AND id_type IN ('steam64', 'steamid')
-           AND id_value = $2
-         LIMIT 1`,
-        [guildId, p.steamId],
-      )
-      if (ident.rows.length > 0) {
-        const linkedDiscordId = ident.rows[0].discord_id
-        await client.query(
-          `UPDATE squad_players
-           SET discord_id = $1
-           WHERE guild_id = $2 AND steam_id = $3`,
-          [linkedDiscordId, guildId, p.steamId],
-        )
-        // Mark the identifier as bridge-verified: we've seen this Steam ID in-game
-        await client.query(
-          `UPDATE whitelist_identifiers
-           SET is_verified = TRUE, verification_source = 'squadjs_bridge'
-           WHERE guild_id = $1
-             AND discord_id = $2
-             AND id_type IN ('steam64', 'steamid')
-             AND id_value = $3
-             AND is_verified = FALSE`,
-          [guildId, linkedDiscordId, p.steamId],
-        )
-        linked++
-      }
-    }
+           AND discord_id > 0
+         ORDER BY id_value, discord_id
+       ) wi
+       WHERE sp.guild_id = $1
+         AND sp.steam_id = wi.id_value
+         AND (sp.discord_id IS NULL OR sp.discord_id != wi.discord_id)`,
+      [guildId],
+    )
+    linked = linkResult.rowCount ?? 0
+
+    // ── Step 3: Batch verify identifiers ────────────────────────────────
+    await client.query(
+      `UPDATE whitelist_identifiers wi
+       SET is_verified = TRUE, verification_source = 'squadjs_bridge'
+       FROM squad_players sp
+       WHERE wi.guild_id = $1
+         AND wi.id_type IN ('steam64', 'steamid')
+         AND wi.id_value = sp.steam_id
+         AND sp.guild_id = $1
+         AND wi.is_verified = FALSE`,
+      [guildId],
+    )
   } finally {
     client.release()
   }

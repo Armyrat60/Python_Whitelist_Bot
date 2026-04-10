@@ -4,19 +4,19 @@ RUN apk add --no-cache openssl libc6-compat ca-certificates
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-# cache-bust: 2026-04-09-v17
+# cache-bust: 2026-04-10-v18
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Build TypeScript
 FROM base AS builder
 WORKDIR /app
-# cache-bust: 2026-04-09-v17
+# cache-bust: 2026-04-10-v18
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY prisma ./prisma
 COPY tsconfig.json ./
-# cache-bust: 2026-04-09-v17
+# cache-bust: 2026-04-10-v18
 COPY src ./src
 RUN npx prisma generate
 RUN npm run build

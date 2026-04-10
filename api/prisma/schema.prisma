@@ -144,6 +144,7 @@ model WhitelistIdentifier {
 
   @@unique([guildId, discordId, whitelistId, idType, idValue])
   @@index([guildId, whitelistId], map: "idx_wi_guild_wl")
+  @@index([guildId, idType, idValue], map: "idx_wi_guild_id_lookup")
   @@map("whitelist_identifiers")
 }
 
