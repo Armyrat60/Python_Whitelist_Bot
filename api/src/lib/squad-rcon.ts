@@ -182,8 +182,10 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
     const squads = parseSquads(squadsText)
     const info = parseServerInfo(infoText)
 
-    // Debug: log parsed counts and dump raw on parse failure
+    // Debug logging
     console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads, server: "${info.name}"`)
+    for (const s of squads) console.log(`[rcon] Squad: id=${s.id} team=${s.teamId} name="${s.name}" size=${s.size} locked=${s.locked}`)
+    for (const p of players) console.log(`[rcon] Player: id=${p.id} team=${p.teamId} squad=${p.squadId} name="${p.name}" leader=${p.isLeader}`)
     if (squads.length === 0 && squadsText.length > 50) {
       console.log(`[rcon] SQUAD PARSE FAIL — first 500 chars: ${squadsText.slice(0, 500)}`)
     }
