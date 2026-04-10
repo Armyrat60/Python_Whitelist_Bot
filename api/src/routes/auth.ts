@@ -113,8 +113,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     // ── Build mutual-guild list with permission level ─────────────────────────
 
-    type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer"
-    type SessionGuild = { id: string; name: string; icon: string | null; isAdmin: boolean; permissionLevel: PermissionLevel }
+    type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer" | "granular"
+    type SessionGuild = { id: string; name: string; icon: string | null; isAdmin: boolean; permissionLevel: PermissionLevel; granularPermissions?: import("../lib/permissions.js").GranularPermissions }
     const mutualGuilds: SessionGuild[] = []
 
     for (const ug of userGuilds) {
@@ -155,30 +155,35 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         where: { guildId_discordId: { guildId: BigInt(ug.id), discordId: discordUser.id } },
       })
 
-      // Check role-based grants — find highest level among matching roles
-      let roleGrant: { permissionLevel: string } | null = null
+      // Check role-based grants — find all matching roles
+      let allRoleGrants: Array<{ permissionLevel: string; permissions: unknown }> = []
       if (memberRoles.length > 0) {
-        const roleGrants = await app.prisma.dashboardRolePermission.findMany({
+        allRoleGrants = await app.prisma.dashboardRolePermission.findMany({
           where: { guildId: BigInt(ug.id), roleId: { in: memberRoles } },
+          select: { permissionLevel: true, permissions: true },
         })
-        if (roleGrants.length > 0) {
-          const LEVEL_RANK: Record<string, number> = { roster_manager: 1, viewer: 0 }
-          roleGrant = roleGrants.reduce((best, cur) =>
-            (LEVEL_RANK[cur.permissionLevel] ?? -1) > (LEVEL_RANK[best.permissionLevel] ?? -1) ? cur : best
-          )
-        }
       }
 
       // Resolve permission level (highest wins; user grant takes priority over role grant at same level)
-      const effectiveExplicit = explicitGrant?.permissionLevel
-      const effectiveRole     = roleGrant?.permissionLevel
-      const effectiveGrant    = effectiveExplicit ?? effectiveRole
+      const LEVEL_RANK: Record<string, number> = { granular: 2, roster_manager: 1, viewer: 0 }
+      const allGrants = [
+        ...(explicitGrant ? [{ permissionLevel: explicitGrant.permissionLevel, permissions: explicitGrant.permissions }] : []),
+        ...allRoleGrants,
+      ]
+      const highestGrant = allGrants.length > 0
+        ? allGrants.reduce((best, cur) =>
+            (LEVEL_RANK[cur.permissionLevel] ?? -1) > (LEVEL_RANK[best.permissionLevel] ?? -1) ? cur : best
+          )
+        : null
+      const effectiveGrant = highestGrant?.permissionLevel
 
       let permissionLevel: PermissionLevel
       if (isOwner) {
         permissionLevel = "owner"
       } else if (hasAdminPerm || hasModRole) {
         permissionLevel = "admin"
+      } else if (effectiveGrant === "granular") {
+        permissionLevel = "granular"
       } else if (effectiveGrant === "roster_manager") {
         permissionLevel = "roster_manager"
       } else if (effectiveGrant === "viewer") {
@@ -187,12 +192,23 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         continue  // no access — skip this guild
       }
 
+      // Resolve granular permissions
+      const { resolvePermissions } = await import("../lib/permissions.js")
+      const granularPermissions = resolvePermissions(
+        permissionLevel,
+        allGrants.map((g) => ({
+          permissionLevel: g.permissionLevel,
+          permissions: g.permissions as import("../lib/permissions.js").GranularPermissions | null,
+        })),
+      )
+
       mutualGuilds.push({
         id:              ug.id,
         name:            ug.name,
         icon:            ug.icon,
         isAdmin:         permissionLevel === "owner" || permissionLevel === "admin",
         permissionLevel,
+        granularPermissions,
       })
     }
 
@@ -289,6 +305,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       active_guild_id:  req.session.activeGuildId ?? null,
       is_mod:           activeGuild?.isAdmin ?? false,
       permission_level: activeGuild?.permissionLevel ?? null,
+      granular_permissions: activeGuild?.granularPermissions ?? null,
     })
   })
 

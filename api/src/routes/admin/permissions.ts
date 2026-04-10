@@ -18,11 +18,19 @@
  * with groups.ts which owns GET /api/admin/permissions for Squad permissions.
  */
 import type { FastifyPluginAsync } from "fastify"
+import { Prisma } from "@prisma/client"
+import { PERMISSION_FLAGS, validatePermissions, type GranularPermissions } from "../../lib/permissions.js"
 
-const VALID_LEVELS = ["roster_manager", "viewer"] as const
+const VALID_LEVELS = ["roster_manager", "viewer", "granular"] as const
 type GrantableLevel = typeof VALID_LEVELS[number]
 
 const permissionsRoutes: FastifyPluginAsync = async (app) => {
+
+  // ── GET /permission-flags ─────────────────────────────────────────────────
+
+  app.get("/permission-flags", { preValidation: app.requireAdmin }, async (_req, reply) => {
+    return reply.send({ flags: PERMISSION_FLAGS })
+  })
   // ── GET /dashboard-permissions ─────────────────────────────────────────────
 
   app.get("/dashboard-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
@@ -38,6 +46,7 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
       discord_id:       r.discordId,
       discord_name:     r.discordName,
       permission_level: r.permissionLevel,
+      permissions:      r.permissions ?? null,
       granted_by:       r.grantedBy,
       granted_at:       r.grantedAt,
     })))
@@ -46,16 +55,21 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /dashboard-permissions ────────────────────────────────────────────
 
   app.post<{
-    Body: { discord_id: string; discord_name?: string; permission_level: string }
+    Body: { discord_id: string; discord_name?: string; permission_level: string; permissions?: unknown }
   }>("/dashboard-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
-    const { discord_id, discord_name, permission_level } = req.body
+    const { discord_id, discord_name, permission_level, permissions } = req.body
 
     if (!discord_id) {
       return reply.code(400).send({ error: "discord_id is required" })
     }
     if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
       return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+    if (permission_level === "granular") {
+      if (!permissions || !validatePermissions(permissions)) {
+        return reply.code(400).send({ error: "permissions object is required for granular level and must contain only valid boolean flags" })
+      }
     }
 
     const row = await app.prisma.dashboardPermission.upsert({
@@ -65,11 +79,13 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
         discordId:       discord_id,
         discordName:     discord_name ?? null,
         permissionLevel: permission_level,
+        permissions:     permission_level === "granular" ? (permissions as GranularPermissions) : undefined,
         grantedBy:       req.session.userId ?? null,
       },
       update: {
         discordName:     discord_name ?? undefined,
         permissionLevel: permission_level,
+        permissions:     permission_level === "granular" ? (permissions as GranularPermissions) : Prisma.DbNull,
         grantedBy:       req.session.userId ?? null,
         grantedAt:       new Date(),
       },
@@ -80,6 +96,7 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
       discord_id:       row.discordId,
       discord_name:     row.discordName,
       permission_level: row.permissionLevel,
+      permissions:      row.permissions ?? null,
       granted_by:       row.grantedBy,
       granted_at:       row.grantedAt,
     })
@@ -89,14 +106,17 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
 
   app.put<{
     Params: { discordId: string }
-    Body:   { permission_level: string }
+    Body:   { permission_level: string; permissions?: unknown }
   }>("/dashboard-permissions/:discordId", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId   = BigInt(req.session.activeGuildId!)
     const discordId = req.params.discordId
-    const { permission_level } = req.body
+    const { permission_level, permissions } = req.body
 
     if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
       return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+    if (permission_level === "granular" && permissions && !validatePermissions(permissions)) {
+      return reply.code(400).send({ error: "Invalid permissions object" })
     }
 
     const existing = await app.prisma.dashboardPermission.findUnique({
@@ -106,10 +126,13 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
 
     const updated = await app.prisma.dashboardPermission.update({
       where: { guildId_discordId: { guildId, discordId } },
-      data:  { permissionLevel: permission_level },
+      data: {
+        permissionLevel: permission_level,
+        permissions: permission_level === "granular" ? ((permissions as GranularPermissions) ?? existing.permissions ?? {}) : Prisma.DbNull,
+      },
     })
 
-    return reply.send({ ok: true, permission_level: updated.permissionLevel })
+    return reply.send({ ok: true, permission_level: updated.permissionLevel, permissions: updated.permissions ?? null })
   })
 
   // ── DELETE /dashboard-permissions/:discordId ───────────────────────────────
@@ -146,6 +169,7 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
       role_id:          r.roleId,
       role_name:        r.roleName,
       permission_level: r.permissionLevel,
+      permissions:      r.permissions ?? null,
       granted_by:       r.grantedBy,
       granted_at:       r.grantedAt,
     })))
@@ -154,16 +178,21 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /dashboard-role-permissions ──────────────────────────────────────
 
   app.post<{
-    Body: { role_id: string; role_name?: string; permission_level: string }
+    Body: { role_id: string; role_name?: string; permission_level: string; permissions?: unknown }
   }>("/dashboard-role-permissions", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
-    const { role_id, role_name, permission_level } = req.body
+    const { role_id, role_name, permission_level, permissions } = req.body
 
     if (!role_id) {
       return reply.code(400).send({ error: "role_id is required" })
     }
     if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
       return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+    if (permission_level === "granular") {
+      if (!permissions || !validatePermissions(permissions)) {
+        return reply.code(400).send({ error: "permissions object is required for granular level and must contain only valid boolean flags" })
+      }
     }
 
     const row = await app.prisma.dashboardRolePermission.upsert({
@@ -173,11 +202,13 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
         roleId:          role_id,
         roleName:        role_name ?? null,
         permissionLevel: permission_level,
+        permissions:     permission_level === "granular" ? (permissions as GranularPermissions) : undefined,
         grantedBy:       req.session.userId ?? null,
       },
       update: {
         roleName:        role_name ?? undefined,
         permissionLevel: permission_level,
+        permissions:     permission_level === "granular" ? (permissions as GranularPermissions) : Prisma.DbNull,
         grantedBy:       req.session.userId ?? null,
         grantedAt:       new Date(),
       },
@@ -188,6 +219,7 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
       role_id:          row.roleId,
       role_name:        row.roleName,
       permission_level: row.permissionLevel,
+      permissions:      row.permissions ?? null,
       granted_by:       row.grantedBy,
       granted_at:       row.grantedAt,
     })
@@ -197,14 +229,17 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
 
   app.put<{
     Params: { roleId: string }
-    Body:   { permission_level: string }
+    Body:   { permission_level: string; permissions?: unknown }
   }>("/dashboard-role-permissions/:roleId", { preValidation: app.requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const { roleId } = req.params
-    const { permission_level } = req.body
+    const { permission_level, permissions } = req.body
 
     if (!VALID_LEVELS.includes(permission_level as GrantableLevel)) {
       return reply.code(400).send({ error: `permission_level must be one of: ${VALID_LEVELS.join(", ")}` })
+    }
+    if (permission_level === "granular" && permissions && !validatePermissions(permissions)) {
+      return reply.code(400).send({ error: "Invalid permissions object" })
     }
 
     const existing = await app.prisma.dashboardRolePermission.findUnique({
@@ -214,10 +249,13 @@ const permissionsRoutes: FastifyPluginAsync = async (app) => {
 
     const updated = await app.prisma.dashboardRolePermission.update({
       where: { guildId_roleId: { guildId, roleId } },
-      data:  { permissionLevel: permission_level },
+      data: {
+        permissionLevel: permission_level,
+        permissions: permission_level === "granular" ? ((permissions as GranularPermissions) ?? existing.permissions ?? {}) : Prisma.DbNull,
+      },
     })
 
-    return reply.send({ ok: true, permission_level: updated.permissionLevel })
+    return reply.send({ ok: true, permission_level: updated.permissionLevel, permissions: updated.permissions ?? null })
   })
 
   // ── DELETE /dashboard-role-permissions/:roleId ─────────────────────────────

@@ -24,7 +24,8 @@ declare module "@fastify/session" {
       name: string
       icon: string | null
       isAdmin: boolean
-      permissionLevel: "owner" | "admin" | "roster_manager" | "viewer"
+      permissionLevel: "owner" | "admin" | "roster_manager" | "viewer" | "granular"
+      granularPermissions?: Record<string, boolean>
     }>
   }
 }
@@ -34,6 +35,7 @@ declare module "fastify" {
     requireAuth:          (req: FastifyRequest, reply: FastifyReply) => Promise<void>
     requireAdmin:         (req: FastifyRequest, reply: FastifyReply) => Promise<void>
     requireRosterManager: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    requirePermission:    (flag: string) => (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 }
 
@@ -196,7 +198,7 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
     }
   })
 
-  // requireRosterManager — allows owner, admin, and roster_manager
+  // requireRosterManager — allows owner, admin, roster_manager, and granular with manage_users
   app.decorate("requireRosterManager", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.session.userId) {
       return reply.code(401).send({ error: "Not authenticated" })
@@ -206,8 +208,32 @@ const authPlugin: FastifyPluginAsync = fp(async (app: FastifyInstance) => {
     }
     const guild = req.session.guilds?.find((g) => g.id === req.session.activeGuildId)
     const level = guild?.permissionLevel
-    if (!level || !["owner", "admin", "roster_manager"].includes(level)) {
-      return reply.code(403).send({ error: "Insufficient permissions" })
+    if (!level) return reply.code(403).send({ error: "Insufficient permissions" })
+    if (["owner", "admin", "roster_manager"].includes(level)) return
+    if (level === "granular" && (guild as Record<string, unknown>).granularPermissions) {
+      const perms = (guild as Record<string, unknown>).granularPermissions as Record<string, boolean>
+      if (perms.manage_users) return
+    }
+    return reply.code(403).send({ error: "Insufficient permissions" })
+  })
+
+  // requirePermission — checks a specific granular permission flag
+  app.decorate("requirePermission", (flag: string) => {
+    return async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!req.session.userId) {
+        return reply.code(401).send({ error: "Not authenticated" })
+      }
+      if (!req.session.activeGuildId) {
+        return reply.code(400).send({ error: "No guild selected" })
+      }
+      const guild = req.session.guilds?.find((g) => g.id === req.session.activeGuildId)
+      if (!guild) return reply.code(403).send({ error: "No access" })
+      // Owner/admin bypass
+      if (guild.isAdmin) return
+      // Check granular permissions
+      const perms = (guild as Record<string, unknown>).granularPermissions as Record<string, boolean> | undefined
+      if (perms?.[flag]) return
+      return reply.code(403).send({ error: `Missing permission: ${flag}` })
     }
   })
 })

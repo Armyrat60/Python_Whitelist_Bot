@@ -1,4 +1,20 @@
-export type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer";
+export type PermissionLevel = "owner" | "admin" | "roster_manager" | "viewer" | "granular"
+
+export type GranularPermissions = {
+  view_stats?: boolean;
+  manage_users?: boolean;
+  manage_whitelists?: boolean;
+  manage_panels?: boolean;
+  manage_settings?: boolean;
+  manage_seeding?: boolean;
+  manage_permissions?: boolean;
+  view_logs?: boolean;
+  sftp_read?: boolean;
+  sftp_write?: boolean;
+  rcon_read?: boolean;
+  rcon_execute?: boolean;
+  push_config?: boolean;
+};
 
 export interface Guild {
   id: string;
@@ -18,6 +34,7 @@ export interface Session {
   active_guild_id: string;
   is_mod: boolean;
   permission_level: PermissionLevel | null;
+  granular_permissions: GranularPermissions | null;
 }
 
 export interface DashboardPermission {
@@ -25,6 +42,7 @@ export interface DashboardPermission {
   discord_id: string;
   discord_name: string | null;
   permission_level: PermissionLevel;
+  permissions: GranularPermissions | null;
   granted_by: string | null;
   granted_at: string;
 }
@@ -34,6 +52,7 @@ export interface DashboardRolePermission {
   role_id: string;
   role_name: string | null;
   permission_level: PermissionLevel;
+  permissions: GranularPermissions | null;
   granted_by: string | null;
   granted_at: string;
 }
