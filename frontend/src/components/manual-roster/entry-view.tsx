@@ -13,6 +13,10 @@ import {
   Upload,
   AlertCircle,
   CheckCircle2,
+  Pencil,
+  Check,
+  X,
+  Settings2,
 } from "lucide-react";
 import {
   useCategoryEntries,
@@ -180,6 +184,18 @@ export default function EntryView({
   const [entryExpiry, setEntryExpiry] = useState("");
   const [expiryFilter, setExpiryFilter] = useState<"all" | "active" | "expiring-soon" | "expired">("all");
 
+  // Category name editing
+  const [editingName, setEditingName] = useState(false);
+  const [editName, setEditName] = useState(category.name);
+
+  // Settings panel
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSlotLimit, setSettingsSlotLimit] = useState(category.slot_limit != null ? String(category.slot_limit) : "");
+  const [settingsSquadGroup, setSettingsSquadGroup] = useState(category.squad_group ?? "");
+  const [settingsWhitelistId, setSettingsWhitelistId] = useState(whitelist.id);
+  const [settingsTags, setSettingsTags] = useState(category.tags ?? "");
+  const [settingsDirty, setSettingsDirty] = useState(false);
+
   const now = new Date();
   const soonThreshold = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -221,98 +237,212 @@ export default function EntryView({
     );
   }
 
+  function handleSaveName() {
+    if (!editName.trim() || editName.trim() === category.name) {
+      setEditingName(false);
+      return;
+    }
+    updateCategory.mutate(
+      { id: category.id, name: editName.trim() },
+      {
+        onSuccess: () => { toast.success("Name updated"); setEditingName(false); },
+        onError: () => toast.error("Failed to update name"),
+      }
+    );
+  }
+
+  function handleSaveSettings() {
+    const newLimit = settingsSlotLimit.trim() ? parseInt(settingsSlotLimit, 10) : null;
+    const newGroup = settingsSquadGroup || null;
+    const newTags = settingsTags.trim() || null;
+    const newWlId = settingsWhitelistId !== whitelist.id ? settingsWhitelistId : undefined;
+
+    updateCategory.mutate(
+      {
+        id: category.id,
+        slot_limit: newLimit,
+        squad_group: newGroup,
+        tags: newTags,
+        ...(newWlId ? { whitelist_id: newWlId } : {}),
+      },
+      {
+        onSuccess: () => {
+          toast.success("Settings saved");
+          setSettingsDirty(false);
+          setSettingsOpen(false);
+        },
+        onError: () => toast.error("Failed to save settings"),
+      }
+    );
+  }
+
+  function markDirty() {
+    setSettingsDirty(true);
+  }
+
   return (
     <div className="space-y-4">
-      {/* Back + header */}
+      {/* Back + header with editable name */}
       <div className="flex items-center gap-3">
         <Button size="sm" variant="outline" className="h-9 shrink-0 gap-1.5 px-3 text-sm" onClick={onBack}>
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
-        <h2 className="text-lg font-semibold truncate">{category.name}</h2>
-      </div>
-
-      {/* ─── Stats + Config ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Entries</span>
-          <span className="text-lg font-semibold tabular-nums">{entriesData?.total ?? category.user_count}</span>
-        </div>
-        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Max Entries</span>
-          <Input
-            type="number"
-            min={1}
-            className="h-8 text-sm mt-0.5 w-full"
-            placeholder="No limit"
-            defaultValue={category.slot_limit ?? ""}
-            onBlur={(e) => {
-              const val = e.target.value.trim();
-              const newLimit = val ? parseInt(val, 10) : null;
-              if (newLimit !== category.slot_limit) {
-                updateCategory.mutate(
-                  { id: category.id, slot_limit: newLimit },
-                  { onSuccess: () => toast.success("Limit updated"), onError: () => toast.error("Failed to update") }
-                );
-              }
-            }}
-          />
-        </div>
-        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Squad Group</span>
-          <Select
-            value={category.squad_group ?? ""}
-            onValueChange={(val) => {
-              updateCategory.mutate(
-                { id: category.id, squad_group: val || null },
-                { onSuccess: () => toast.success("Group updated"), onError: () => toast.error("Failed to update") }
-              );
-            }}
-          >
-            <SelectTrigger className="h-8 text-sm mt-0.5">
-              <SelectValue placeholder="Default" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Default</SelectItem>
-              {(groups ?? []).map((g) => (
-                <SelectItem key={g.group_name} value={g.group_name}>
-                  {g.group_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {(allWhitelists?.length ?? 0) > 1 && (
-          <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Whitelist</span>
-            <Select
-              value={String(whitelist.id)}
-              onValueChange={(val) => {
-                const newId = Number(val);
-                if (newId !== whitelist.id) {
-                  updateCategory.mutate(
-                    { id: category.id, whitelist_id: newId },
-                    { onSuccess: () => toast.success("Whitelist changed"), onError: () => toast.error("Failed to update") }
-                  );
-                }
-              }}
-            >
-              <SelectTrigger className="h-8 text-sm mt-0.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {allWhitelists!.map((wl) => (
-                  <SelectItem key={wl.id} value={String(wl.id)}>
-                    {wl.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {editingName ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="h-9 text-lg font-semibold flex-1"
+              onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") { setEditingName(false); setEditName(category.name); } }}
+              autoFocus
+            />
+            <Button size="sm" variant="ghost" className="h-9 w-9 p-0" onClick={handleSaveName}>
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-9 w-9 p-0" onClick={() => { setEditingName(false); setEditName(category.name); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <h2 className="text-lg font-semibold truncate">{category.name}</h2>
+            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-white" onClick={() => setEditingName(true)} title="Rename category">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>
 
-      {/* ─── Actions bar (Add, Import, Managers) ─────────────────────── */}
+      {/* ─── Stats row (read-only) ───────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Entries</span>
+          <span className="text-lg font-semibold tabular-nums">{entriesData?.total ?? category.user_count}</span>
+        </div>
+        {category.slot_limit != null && (
+          <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Limit</span>
+            <span className="text-lg font-semibold tabular-nums">{category.slot_limit}</span>
+          </div>
+        )}
+        {category.squad_group && (
+          <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Group</span>
+            <span className="text-sm font-medium">{category.squad_group}</span>
+          </div>
+        )}
+        {category.tags && (
+          <div className="flex flex-wrap gap-1 items-center">
+            {category.tags.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
+              <span key={tag} className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs text-violet-400">{tag}</span>
+            ))}
+          </div>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className={cn("h-9 text-sm ml-auto", settingsOpen && "bg-white/[0.05]")}
+          onClick={() => setSettingsOpen(!settingsOpen)}
+        >
+          <Settings2 className="mr-1.5 h-4 w-4" />
+          Settings
+        </Button>
+      </div>
+
+      {/* ─── Settings panel (collapsible, requires explicit save) ───── */}
+      {settingsOpen && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Category Settings</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Max Entries</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settingsSlotLimit}
+                  onChange={(e) => { setSettingsSlotLimit(e.target.value); markDirty(); }}
+                  placeholder="No limit"
+                  className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Maximum entries allowed. Leave blank for unlimited.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Squad Group</Label>
+                <Select
+                  value={settingsSquadGroup}
+                  onValueChange={(val) => { setSettingsSquadGroup(val ?? ""); markDirty(); }}
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="Default (uses whitelist group)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Default</SelectItem>
+                    {(groups ?? []).map((g) => (
+                      <SelectItem key={g.group_name} value={g.group_name}>
+                        {g.group_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Override the Squad group for entries in this category.</p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Tags</Label>
+              <Input
+                value={settingsTags}
+                onChange={(e) => { setSettingsTags(e.target.value); markDirty(); }}
+                placeholder="e.g. clan, partner, VIP (comma-separated)"
+                className="text-sm"
+              />
+              <p className="text-xs text-muted-foreground">Custom tags for organizing categories. Separate with commas.</p>
+            </div>
+            {(allWhitelists?.length ?? 0) > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">Whitelist</Label>
+                <Select
+                  value={String(settingsWhitelistId)}
+                  onValueChange={(val) => { setSettingsWhitelistId(Number(val)); markDirty(); }}
+                >
+                  <SelectTrigger className="text-sm w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allWhitelists!.map((wl) => (
+                      <SelectItem key={wl.id} value={String(wl.id)}>
+                        {wl.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Move this category to a different whitelist.</p>
+              </div>
+            )}
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={handleSaveSettings} disabled={!settingsDirty || updateCategory.isPending}>
+                Save Settings
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => {
+                setSettingsOpen(false);
+                setSettingsSlotLimit(category.slot_limit != null ? String(category.slot_limit) : "");
+                setSettingsSquadGroup(category.squad_group ?? "");
+                setSettingsWhitelistId(whitelist.id);
+                setSettingsTags(category.tags ?? "");
+                setSettingsDirty(false);
+              }}>
+                Cancel
+              </Button>
+              {settingsDirty && <span className="text-xs text-amber-400">Unsaved changes</span>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ─── Actions bar (Add, Import) ───────────────────────────────── */}
       {!addEntryOpen && !importOpen && (
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => setAddEntryOpen(true)}>
@@ -335,57 +465,27 @@ export default function EntryView({
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-sm">Steam ID <span className="text-red-400">*</span></Label>
-              <Input
-                value={steamId}
-                onChange={(e) => setSteamId(e.target.value)}
-                placeholder="76561198..."
-                className="font-mono text-sm"
-                autoFocus
-              />
+              <Input value={steamId} onChange={(e) => setSteamId(e.target.value)} placeholder="76561198..." className="font-mono text-sm" autoFocus />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Discord ID <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
-                placeholder="123456789012345678"
-                className="font-mono text-sm"
-              />
+              <Input value={discordId} onChange={(e) => setDiscordId(e.target.value)} placeholder="123456789012345678" className="font-mono text-sm" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Discord Name <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={discordName}
-                onChange={(e) => setDiscordName(e.target.value)}
-                placeholder="Username"
-                className="text-sm"
-              />
+              <Input value={discordName} onChange={(e) => setDiscordName(e.target.value)} placeholder="Username" className="text-sm" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Notes <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={entryNotes}
-                onChange={(e) => setEntryNotes(e.target.value)}
-                placeholder="Internal note"
-                className="text-sm"
-              />
+              <Input value={entryNotes} onChange={(e) => setEntryNotes(e.target.value)} placeholder="Internal note" className="text-sm" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Expiry Date <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                type="date"
-                value={entryExpiry}
-                onChange={(e) => setEntryExpiry(e.target.value)}
-                className="text-sm"
-              />
+              <Input type="date" value={entryExpiry} onChange={(e) => setEntryExpiry(e.target.value)} className="text-sm" />
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleAddEntry} disabled={addEntry.isPending || !steamId.trim()}>
-                Add
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setAddEntryOpen(false); setSteamId(""); setDiscordId(""); setDiscordName(""); setEntryNotes(""); setEntryExpiry(""); }}>
-                Cancel
-              </Button>
+              <Button size="sm" onClick={handleAddEntry} disabled={addEntry.isPending || !steamId.trim()}>Add</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAddEntryOpen(false); setSteamId(""); setDiscordId(""); setDiscordName(""); setEntryNotes(""); setEntryExpiry(""); }}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -428,28 +528,19 @@ export default function EntryView({
               </div>
             )}
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={importEntries.isPending || !csvText.trim()}
-                onClick={() => {
-                  importEntries.mutate(csvText, {
-                    onSuccess: (res) => {
-                      setImportResult(res);
-                      if (res.added + res.updated > 0) {
-                        toast.success(`Imported ${res.added + res.updated} entries`);
-                        setCsvText("");
-                      }
-                      if (res.errors.length > 0) toast.warning(`${res.errors.length} row(s) had errors`);
-                    },
-                    onError: () => toast.error("Import failed"),
-                  });
-                }}
-              >
+              <Button size="sm" disabled={importEntries.isPending || !csvText.trim()} onClick={() => {
+                importEntries.mutate(csvText, {
+                  onSuccess: (res) => {
+                    setImportResult(res);
+                    if (res.added + res.updated > 0) { toast.success(`Imported ${res.added + res.updated} entries`); setCsvText(""); }
+                    if (res.errors.length > 0) toast.warning(`${res.errors.length} row(s) had errors`);
+                  },
+                  onError: () => toast.error("Import failed"),
+                });
+              }}>
                 {importEntries.isPending ? "Importing\u2026" : "Import"}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setImportOpen(false); setCsvText(""); setImportResult(null); }}>
-                Cancel
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setImportOpen(false); setCsvText(""); setImportResult(null); }}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -463,21 +554,21 @@ export default function EntryView({
       {/* Search + expiry filter */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search by name or Steam ID\u2026"
-            className="pl-8 h-8 text-xs"
+            className="pl-9 h-9 text-sm"
           />
         </div>
-        <div className="flex rounded-md border border-border text-xs">
+        <div className="flex rounded-md border border-border text-sm">
           {(["all", "active", "expiring-soon", "expired"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setExpiryFilter(f)}
               className={cn(
-                "px-2.5 h-8 first:rounded-l-md last:rounded-r-md capitalize transition-colors",
+                "px-3 h-9 first:rounded-l-md last:rounded-r-md capitalize transition-colors",
                 expiryFilter === f
                   ? "bg-white/[0.08] text-white"
                   : "text-muted-foreground hover:text-white/70"
@@ -497,8 +588,8 @@ export default function EntryView({
       ) : !entriesData || filteredEntries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-10 text-center">
           <p className="text-sm font-medium">{expiryFilter !== "all" ? `No ${expiryFilter} entries` : "No entries yet"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {expiryFilter !== "all" ? "Try changing the filter above." : "Add a member below to get started."}
+          <p className="mt-1 text-sm text-muted-foreground">
+            {expiryFilter !== "all" ? "Try changing the filter above." : "Add an entry above to get started."}
           </p>
         </div>
       ) : (
@@ -520,31 +611,16 @@ export default function EntryView({
 
       {/* Pagination */}
       {entryTotalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7"
-            onClick={() => setEntryPage(Math.max(1, entryPage - 1))}
-            disabled={entryPage <= 1}
-          >
-            <ChevronLeft className="mr-1 h-3.5 w-3.5" />
-            Prev
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <Button size="sm" variant="ghost" className="h-9" onClick={() => setEntryPage(Math.max(1, entryPage - 1))} disabled={entryPage <= 1}>
+            <ChevronLeft className="mr-1 h-4 w-4" />Prev
           </Button>
           <span>Page {entryPage} of {entryTotalPages}</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7"
-            onClick={() => setEntryPage(Math.min(entryTotalPages, entryPage + 1))}
-            disabled={entryPage >= entryTotalPages}
-          >
-            Next
-            <ChevronRight className="ml-1 h-3.5 w-3.5" />
+          <Button size="sm" variant="ghost" className="h-9" onClick={() => setEntryPage(Math.min(entryTotalPages, entryPage + 1))} disabled={entryPage >= entryTotalPages}>
+            Next<ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         </div>
       )}
-
     </div>
   );
 }

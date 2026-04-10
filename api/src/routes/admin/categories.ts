@@ -61,6 +61,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         slot_limit:     c.slotLimit,
         sort_order:     c.sortOrder,
         squad_group:    c.squadGroup ?? null,
+        tags:           c.tags ?? null,
         created_at:     c.createdAt,
         updated_at:     c.updatedAt,
         manager_count:  c._count.managers,
@@ -144,6 +145,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         slot_limit?:   number | null
         sort_order?:   number
         squad_group?:  string | null
+        tags?:         string | null
         whitelist_id?: number
       }
 
@@ -152,6 +154,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       if (body.slot_limit  !== undefined) data.slotLimit  = body.slot_limit ?? null
       if (body.sort_order  !== undefined) data.sortOrder  = body.sort_order
       if (body.squad_group !== undefined) data.squadGroup = body.squad_group ?? null
+      if (body.tags        !== undefined) data.tags       = body.tags ?? null
 
       // Support reassigning category to a different whitelist
       if (body.whitelist_id !== undefined && body.whitelist_id !== whitelistId) {

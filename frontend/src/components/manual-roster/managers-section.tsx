@@ -5,12 +5,14 @@ import { toast } from "sonner";
 import {
   Plus,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import {
   useCategoryManagers,
   useAddCategoryManager,
   useRemoveCategoryManager,
 } from "@/hooks/use-settings";
+import { api } from "@/lib/api";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +38,23 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
   const [addOpen, setAddOpen]         = useState(false);
   const [mgrDiscordId, setMgrDiscordId] = useState("");
   const [mgrName, setMgrName]         = useState("");
+  const [lookingUp, setLookingUp]     = useState(false);
+  const [lookupDone, setLookupDone]   = useState(false);
+
+  async function lookupDiscordName(id: string) {
+    if (!id.trim() || id.length < 17) return;
+    setLookingUp(true);
+    try {
+      const res = await api.get<{ name: string; username: string }>(`/api/admin/discord/member/${id.trim()}`);
+      setMgrName(res.name || res.username);
+      setLookupDone(true);
+    } catch {
+      // Not found — user can type manually
+      setLookupDone(false);
+    } finally {
+      setLookingUp(false);
+    }
+  }
 
   function handleAddManager() {
     if (!mgrDiscordId.trim()) return;
@@ -115,17 +134,21 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
           <p className="text-sm font-medium">Add Manager</p>
           <div className="space-y-1.5">
             <Label className="text-sm">Discord ID <span className="text-red-400">*</span></Label>
-            <Input
-              value={mgrDiscordId}
-              onChange={(e) => setMgrDiscordId(e.target.value)}
-              placeholder="123456789012345678"
-              className="font-mono text-sm"
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">Right-click the user in Discord &rarr; Copy User ID</p>
+            <div className="flex items-center gap-2">
+              <Input
+                value={mgrDiscordId}
+                onChange={(e) => { setMgrDiscordId(e.target.value); setLookupDone(false); }}
+                onBlur={(e) => lookupDiscordName(e.target.value)}
+                placeholder="123456789012345678"
+                className="font-mono text-sm flex-1"
+                autoFocus
+              />
+              {lookingUp && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />}
+            </div>
+            <p className="text-xs text-muted-foreground">Right-click the user in Discord &rarr; Copy User ID. Name auto-fills.</p>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm">Display Name <span className="text-muted-foreground">(optional)</span></Label>
+            <Label className="text-sm">Display Name {lookupDone ? <span className="text-emerald-400 text-xs">(auto-filled)</span> : <span className="text-muted-foreground">(optional)</span>}</Label>
             <Input
               value={mgrName}
               onChange={(e) => setMgrName(e.target.value)}

@@ -406,4 +406,28 @@ export default async function playerRoutes(app: FastifyInstance) {
 
     return reply.send({ entries, sort: sortMode, total: entries.length })
   })
+
+  // ── GET /api/admin/discord/member/:discordId — lookup Discord member name ──
+
+  app.get<{ Params: { discordId: string } }>(
+    "/discord/member/:discordId",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId = BigInt(req.session.activeGuildId!)
+      const discordId = (() => { try { return BigInt(req.params.discordId) } catch { return null } })()
+      if (!discordId) return reply.code(400).send({ error: "Invalid Discord ID" })
+
+      try {
+        const member = await app.discord.fetchMember(guildId, discordId)
+        if (!member) return reply.code(404).send({ error: "Member not found in this server" })
+        return reply.send({
+          discord_id: String(member.id),
+          name: member.name,
+          username: member.username,
+        })
+      } catch {
+        return reply.code(404).send({ error: "Member not found" })
+      }
+    }
+  )
 }
