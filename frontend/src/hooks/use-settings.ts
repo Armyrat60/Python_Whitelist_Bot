@@ -1173,6 +1173,7 @@ export interface RconServerState {
   teams: RconTeam[];
   totalPlayers: number;
   error?: string;
+  responseTime?: number;
 }
 
 export function useRconPlayers(serverId: number | null) {

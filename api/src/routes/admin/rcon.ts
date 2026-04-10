@@ -71,11 +71,16 @@ export default async function rconRoutes(app: FastifyInstance) {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
+    const start = Date.now()
     try {
       const state = await getFullServerState(result.config)
-      return reply.send(state)
+      const responseTime = Date.now() - start
+      app.log.info({ serverId: result.server.id, players: state.totalPlayers, teams: state.teams.length, responseTime }, "RCON players fetched")
+      return reply.send({ ...state, responseTime })
     } catch (err) {
-      return reply.send({ info: null, teams: [], totalPlayers: 0, error: (err as Error).message })
+      const responseTime = Date.now() - start
+      app.log.error({ err, serverId: result.server.id, responseTime }, "RCON players fetch failed")
+      return reply.send({ info: null, teams: [], totalPlayers: 0, error: (err as Error).message, responseTime })
     }
   })
 

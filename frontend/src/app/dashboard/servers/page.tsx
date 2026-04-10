@@ -381,7 +381,12 @@ export default function LiveServerPage() {
         </Card>
       )}
 
-      <p className="text-[10px] text-muted-foreground/50 text-center">Auto-refreshes every 15 seconds</p>
+      <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/50">
+        <span>Auto-refreshes every 15 seconds</span>
+        {serverState?.responseTime !== undefined && (
+          <span>Response: {serverState.responseTime}ms</span>
+        )}
+      </div>
     </div>
   );
 }

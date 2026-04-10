@@ -133,6 +133,12 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
     const squadsText = await client.execute("ListSquads")
     const infoText = await client.execute("ShowServerInfo")
 
+    // Debug: log raw response lengths
+    console.log(`[rcon] Raw response lengths — players: ${playersText.length}, squads: ${squadsText.length}, info: ${infoText.length}`)
+    if (playersText.length < 50) console.log(`[rcon] Players raw: ${JSON.stringify(playersText)}`)
+    if (squadsText.length < 50) console.log(`[rcon] Squads raw: ${JSON.stringify(squadsText)}`)
+    if (infoText.length < 200) console.log(`[rcon] Info raw: ${JSON.stringify(infoText)}`)
+
     const info = parseServerInfo(infoText)
     const players = parsePlayers(playersText)
     const squads = parseSquads(squadsText)
