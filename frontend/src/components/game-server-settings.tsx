@@ -68,6 +68,22 @@ function ServerForm({
   const [rconHost, setRconHost] = useState(initial?.rcon_host ?? "");
   const [rconPort, setRconPort] = useState(String(initial?.rcon_port ?? 21114));
   const [rconPassword, setRconPassword] = useState(initial?.rcon_password ?? "");
+  const [psgUrl, setPsgUrl] = useState("");
+
+  /** Parse PSG/Pterodactyl SFTP URL: sftp://UUID.daemon.panel.gg:2022 */
+  function parsePsgUrl(url: string) {
+    const cleaned = url.trim();
+    // Match sftp://host:port or just host:port
+    const match = cleaned.match(/^(?:sftp:\/\/)?([^:\/]+):?(\d+)?/);
+    if (match) {
+      setHost(match[1]);
+      if (match[2]) setPort(match[2]);
+      setPsgUrl("");
+      toast.success("SFTP connection parsed — fill in username and password");
+    } else {
+      toast.error("Could not parse URL. Expected format: sftp://host:port");
+    }
+  }
 
   return (
     <div className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
@@ -76,7 +92,28 @@ function ServerForm({
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. US Server 1" className="h-8 text-xs" />
       </div>
 
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground pt-1">SFTP</p>
+      <div className="flex items-center justify-between pt-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">SFTP</p>
+      </div>
+
+      {/* PSG/Pterodactyl quick paste */}
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Paste SFTP URL <span className="text-muted-foreground/50">(Pterodactyl/PSG)</span></Label>
+        <div className="flex gap-2">
+          <Input
+            value={psgUrl}
+            onChange={(e) => setPsgUrl(e.target.value)}
+            placeholder="sftp://uuid.daemon.panel.gg:2022"
+            className="h-8 text-xs flex-1"
+            onKeyDown={(e) => e.key === "Enter" && psgUrl.trim() && parsePsgUrl(psgUrl)}
+          />
+          <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={() => parsePsgUrl(psgUrl)} disabled={!psgUrl.trim()}>
+            Parse
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground/50">Or fill in host/port manually below</p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2 space-y-1.5">

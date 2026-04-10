@@ -32,13 +32,19 @@ export default async function battlemetricsRoutes(app: FastifyInstance) {
 
     if (!config) return reply.send({ config: null })
 
+    // Build servers array from new multi-server fields or legacy single field
+    const serverIds = (config.serverIds as string[]) ?? (config.serverId ? [config.serverId] : [])
+    const serverNames = (config.serverNames as string[]) ?? (config.serverName ? [config.serverName] : [])
+    const servers = serverIds.map((id, i) => ({ id, name: serverNames[i] ?? null }))
+
     return reply.send({
       config: {
-        server_id:   config.serverId,
-        server_name: config.serverName,
-        enabled:     config.enabled,
-        api_key:     MASKED,
-        has_api_key: !!config.apiKey,
+        server_id:    config.serverId,
+        server_name:  config.serverName,
+        servers,
+        enabled:      config.enabled,
+        api_key:      MASKED,
+        has_api_key:  !!config.apiKey,
       },
     })
   })
@@ -46,10 +52,10 @@ export default async function battlemetricsRoutes(app: FastifyInstance) {
   // ── PUT /battlemetrics-config ─────────────────────────────────────────────
 
   app.put<{
-    Body: { api_key?: string; server_id?: string; server_name?: string; enabled?: boolean }
+    Body: { api_key?: string; server_id?: string; server_name?: string; servers?: Array<{ id: string; name: string }>; enabled?: boolean }
   }>("/battlemetrics-config", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
-    const { api_key, server_id, server_name, enabled } = req.body
+    const { api_key, server_id, server_name, servers, enabled } = req.body
 
     const existing = await prisma.battleMetricsConfig.findUnique({ where: { guildId } })
 
@@ -59,27 +65,40 @@ export default async function battlemetricsRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "API key is required" })
     }
 
+    // Build server arrays (max 5)
+    const srvList = (servers ?? (server_id ? [{ id: server_id, name: server_name ?? "" }] : [])).slice(0, 5)
+    const srvIds = srvList.map(s => s.id)
+    const srvNames = srvList.map(s => s.name)
+
     const config = await prisma.battleMetricsConfig.upsert({
       where: { guildId },
       create: {
         guildId,
-        apiKey:     effectiveKey,
-        serverId:   server_id ?? null,
-        serverName: server_name ?? null,
+        apiKey:      effectiveKey,
+        serverId:    srvIds[0] ?? null,
+        serverName:  srvNames[0] ?? null,
+        serverIds:   srvIds,
+        serverNames: srvNames,
         enabled:    enabled ?? true,
       },
       update: {
-        apiKey:     effectiveKey,
-        serverId:   server_id !== undefined ? server_id : undefined,
-        serverName: server_name !== undefined ? server_name : undefined,
-        enabled:    enabled !== undefined ? enabled : undefined,
+        apiKey:      effectiveKey,
+        serverId:    srvIds[0] ?? existing?.serverId ?? null,
+        serverName:  srvNames[0] ?? existing?.serverName ?? null,
+        serverIds:   srvIds.length > 0 ? srvIds : undefined,
+        serverNames: srvNames.length > 0 ? srvNames : undefined,
+        enabled:     enabled !== undefined ? enabled : undefined,
       },
     })
+
+    const finalIds = (config.serverIds as string[]) ?? (config.serverId ? [config.serverId] : [])
+    const finalNames = (config.serverNames as string[]) ?? (config.serverName ? [config.serverName] : [])
 
     return reply.send({
       config: {
         server_id:   config.serverId,
         server_name: config.serverName,
+        servers:     finalIds.map((id, i) => ({ id, name: finalNames[i] ?? null })),
         enabled:     config.enabled,
         api_key:     MASKED,
         has_api_key: true,
@@ -174,26 +193,34 @@ export default async function battlemetricsRoutes(app: FastifyInstance) {
 
     const config = await prisma.battleMetricsConfig.findUnique({ where: { guildId } })
     if (!config || !config.enabled || !config.apiKey) {
-      return reply.send({ player: null, reason: "BattleMetrics not configured" })
+      return reply.send({ players: [], reason: "BattleMetrics not configured" })
     }
 
-    if (!config.serverId) {
-      return reply.send({ player: null, reason: "No server ID configured" })
+    const serverIds = (config.serverIds as string[]) ?? (config.serverId ? [config.serverId] : [])
+    const serverNames = (config.serverNames as string[]) ?? (config.serverName ? [config.serverName] : [])
+
+    if (serverIds.length === 0) {
+      return reply.send({ players: [], reason: "No servers configured" })
     }
 
     try {
       const bm = new BattleMetricsClient(config.apiKey)
-      const hours = await bm.getPlayerHours(steamId, config.serverId)
 
-      if (!hours) {
-        return reply.send({ player: null, reason: "Player not found on BattleMetrics" })
-      }
+      // Fetch hours from all tracked servers
+      const results = await Promise.all(
+        serverIds.map(async (srvId, i) => {
+          const hours = await bm.getPlayerHours(steamId, srvId)
+          if (!hours) return null
+          return { ...hours, serverName: serverNames[i] ?? null }
+        })
+      )
 
+      const players = results.filter(Boolean)
+
+      // Also return legacy single-player format for backwards compat
       return reply.send({
-        player: {
-          ...hours,
-          serverName: config.serverName ?? null,
-        },
+        player: players[0] ?? null,
+        players,
       })
     } catch (err) {
       app.log.error({ err, steamId, guildId }, "BattleMetrics player lookup failed")

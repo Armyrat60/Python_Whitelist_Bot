@@ -294,6 +294,8 @@ model BattleMetricsConfig {
   apiKey     String   @map("api_key")
   serverId   String?  @map("server_id") @db.VarChar(32)
   serverName String?  @map("server_name") @db.VarChar(255)
+  serverIds  Json?    @map("server_ids")    // string[] — multiple tracked servers
+  serverNames Json?   @map("server_names")  // string[] — matching names
   enabled    Boolean  @default(true)
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")

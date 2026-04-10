@@ -53,17 +53,24 @@ export function BattleMetricsSettings() {
   const discoveredServers = serversData?.servers ?? [];
 
   const [apiKey, setApiKey] = useState("");
-  const [serverId, setServerId] = useState("");
-  const [serverName, setServerName] = useState("");
+  const [selectedServers, setSelectedServers] = useState<Array<{ id: string; name: string }>>([]);
   const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
     if (!existing) return;
     setApiKey(MASKED);
-    setServerId(existing.server_id ?? "");
-    setServerName(existing.server_name ?? "");
+    setSelectedServers(existing.servers?.map(s => ({ id: s.id, name: s.name ?? "" })) ?? []);
     setEnabled(existing.enabled);
   }, [existing?.has_api_key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleServer(srv: { id: string; name: string }) {
+    setSelectedServers((prev) => {
+      const exists = prev.some((s) => s.id === srv.id);
+      if (exists) return prev.filter((s) => s.id !== srv.id);
+      if (prev.length >= 5) return prev; // max 5
+      return [...prev, srv];
+    });
+  }
 
   async function handleSave() {
     if (!existing && (!apiKey || apiKey === MASKED)) {
@@ -73,8 +80,7 @@ export function BattleMetricsSettings() {
     try {
       await save.mutateAsync({
         api_key: apiKey === MASKED ? MASKED : apiKey,
-        server_id: serverId.trim() || undefined,
-        server_name: serverName.trim() || undefined,
+        servers: selectedServers,
         enabled,
       });
       toast.success("BattleMetrics config saved");
@@ -87,11 +93,10 @@ export function BattleMetricsSettings() {
     try {
       const r = await test.mutateAsync({
         api_key: apiKey === MASKED ? MASKED : apiKey,
-        server_id: serverId.trim() || undefined,
+        server_id: selectedServers[0]?.id || undefined,
       });
       if (r.ok) {
         toast.success(r.message);
-        if (r.server_name && !serverName) setServerName(r.server_name);
       } else {
         toast.error(r.message);
       }
@@ -105,8 +110,7 @@ export function BattleMetricsSettings() {
       await remove.mutateAsync();
       toast.success("BattleMetrics config removed");
       setApiKey("");
-      setServerId("");
-      setServerName("");
+      setSelectedServers([]);
       setEnabled(true);
     } catch {
       toast.error("Failed to remove");
@@ -166,51 +170,44 @@ export function BattleMetricsSettings() {
           />
         </div>
 
-        {/* Server selection — auto-discovered from BM API or manual ID */}
+        {/* Server selection — multi-select from discovered servers */}
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Server</Label>
+          <Label className="text-xs text-muted-foreground">
+            Tracked Servers
+            <span className="text-muted-foreground/50 ml-1">({selectedServers.length}/5 max)</span>
+          </Label>
           {discoveredServers.length > 0 ? (
-            <div className="space-y-2">
-              <select
-                value={serverId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setServerId(id);
-                  const found = discoveredServers.find((s) => s.id === id);
-                  if (found) setServerName(found.name);
-                }}
-                className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
-                style={{ colorScheme: "dark" }}
-              >
-                <option value="">Select a server...</option>
-                {discoveredServers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.players}/{s.maxPlayers}) — {s.status}
-                  </option>
-                ))}
-              </select>
-              {serverName && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Selected:</span>
-                  <span className="font-medium text-white/80">{serverName}</span>
-                  <span className="text-muted-foreground/50">ID: {serverId}</span>
-                </div>
-              )}
+            <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-lg border border-white/[0.08] bg-white/[0.02] p-2">
+              {discoveredServers.map((s) => {
+                const isSelected = selectedServers.some((sel) => sel.id === s.id);
+                return (
+                  <label
+                    key={s.id}
+                    className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                      isSelected ? "bg-white/[0.06] ring-1 ring-white/[0.10]" : "hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleServer({ id: s.id, name: s.name })}
+                      disabled={!isSelected && selectedServers.length >= 5}
+                      className="rounded border-white/20 accent-[var(--accent-primary)]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-white/80 truncate block">{s.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{s.players}/{s.maxPlayers} — {s.status}</span>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           ) : (
-            <div className="space-y-1">
-              <Input
-                value={serverId}
-                onChange={(e) => setServerId(e.target.value)}
-                placeholder="Server ID (e.g. 27157414)"
-                className="h-8 text-xs"
-              />
-              <p className="text-[10px] text-muted-foreground/70">
-                {existing?.has_api_key
-                  ? "No servers found — save your API token first, then servers will auto-populate."
-                  : "Enter your API token and save to auto-discover servers, or paste the ID from your BattleMetrics URL."}
-              </p>
-            </div>
+            <p className="text-[10px] text-muted-foreground/70 py-2">
+              {existing?.has_api_key
+                ? "No servers found — check your API token permissions."
+                : "Save your API token first, then servers will auto-populate."}
+            </p>
           )}
         </div>
 

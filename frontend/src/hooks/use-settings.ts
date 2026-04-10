@@ -1004,6 +1004,7 @@ interface BMConfig {
   config: {
     server_id: string | null;
     server_name: string | null;
+    servers: Array<{ id: string; name: string | null }>;
     enabled: boolean;
     api_key: string;
     has_api_key: boolean;
@@ -1020,7 +1021,7 @@ export function useBattleMetricsConfig() {
 export function useSaveBattleMetricsConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { api_key?: string; server_id?: string; server_name?: string; enabled?: boolean }) =>
+    mutationFn: (data: { api_key?: string; server_id?: string; server_name?: string; servers?: Array<{ id: string; name: string }>; enabled?: boolean }) =>
       api.put("/api/admin/battlemetrics-config", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["bm-config"] }),
   });
