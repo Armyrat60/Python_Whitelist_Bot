@@ -4,7 +4,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci && npm i --no-save @tailwindcss/oxide-linux-x64-musl 2>/dev/null || true
 
 # Build the application
 FROM base AS builder
