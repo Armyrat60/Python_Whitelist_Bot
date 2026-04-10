@@ -45,7 +45,8 @@ export interface FullServerState {
 
 // ─── Response Parsers ────────────────────────────────────────────────────────
 
-const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*SteamID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)/g
+// Modern Squad format: ID: X | Online IDs: EOS: xxx steam: STEAMID | Name: X | Team ID: X | Squad ID: X | Is Leader: X | Role: X
+const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*Online IDs:\s*(?:EOS:\s*\S+\s*)?steam:\s*(\d{17})\s*\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)/g
 const SQUAD_REGEX = /ID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Size:\s*(\d+)\s*\|\s*Locked:\s*\w+\s*\|\s*Creator Name:\s*(.+?)(?:\s*\||$)/gm
 const TEAM_ID_REGEX = /Team ID:\s*(\d+)/
 
@@ -86,20 +87,32 @@ function parseSquads(text: string): SquadInfo[] {
 }
 
 function parseServerInfo(text: string): ServerInfo {
-  const lines = text.split("\n")
-  const info: Record<string, string> = {}
-  for (const line of lines) {
-    const colonIdx = line.indexOf(":")
-    if (colonIdx > 0) {
-      const key = line.slice(0, colonIdx).trim().toLowerCase()
-      info[key] = line.slice(colonIdx + 1).trim()
+  // Squad returns JSON from ShowServerInfo
+  try {
+    const json = JSON.parse(text.trim())
+    return {
+      name: json.ServerName_s || json.servername || "Unknown",
+      map: json.MapName_s || json.map || "Unknown",
+      playerCount: parseInt(json.PlayerCount_I || json.playercount || "0", 10),
+      maxPlayers: parseInt(json.MaxPlayers || json.maxplayers || "100", 10),
     }
-  }
-  return {
-    name: info["servername"] || info["server name"] || "Unknown",
-    map: info["mapname_s"] || info["currentmap"] || info["map"] || "Unknown",
-    playerCount: parseInt(info["playercount_i"] || info["players"] || "0", 10),
-    maxPlayers: parseInt(info["maxplayers"] || info["publicqueuemax_i"] || "100", 10),
+  } catch {
+    // Fallback: try key:value line parsing (older Squad versions)
+    const lines = text.split("\n")
+    const info: Record<string, string> = {}
+    for (const line of lines) {
+      const colonIdx = line.indexOf(":")
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim().toLowerCase()
+        info[key] = line.slice(colonIdx + 1).trim()
+      }
+    }
+    return {
+      name: info["servername"] || info["server name"] || "Unknown",
+      map: info["mapname_s"] || info["currentmap"] || info["map"] || "Unknown",
+      playerCount: parseInt(info["playercount_i"] || info["players"] || "0", 10),
+      maxPlayers: parseInt(info["maxplayers"] || "100", 10),
+    }
   }
 }
 
