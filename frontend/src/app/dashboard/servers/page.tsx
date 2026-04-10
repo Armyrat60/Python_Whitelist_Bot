@@ -142,21 +142,21 @@ function PlayerActionMenu({
         <MoreVertical className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="left" align="start">
-        <DropdownMenuItem onSelect={() => setMode("warn")}>
+        <DropdownMenuItem onClick={() => setMode("warn")}>
           <MessageSquareWarning className="h-3.5 w-3.5 mr-2 text-amber-400" /> Warn Player
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setMode("kick")} className="text-red-400">
+        <DropdownMenuItem onClick={() => setMode("kick")} className="text-red-400">
           <UserX className="h-3.5 w-3.5 mr-2" /> Kick Player
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={handleForceTeam}>
+        <DropdownMenuItem onClick={handleForceTeam}>
           <ArrowLeftRight className="h-3.5 w-3.5 mr-2" /> Force Team Change
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={handleRemoveSquad}>
+        <DropdownMenuItem onClick={handleRemoveSquad}>
           <UserMinus className="h-3.5 w-3.5 mr-2" /> Remove from Squad
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => window.open(`https://www.battlemetrics.com/rcon/players?filter[search]=${player.steamId}`, "_blank")}>
+        <DropdownMenuItem onClick={() => window.open(`https://www.battlemetrics.com/rcon/players?filter[search]=${player.steamId}`, "_blank")}>
           <ExternalLink className="h-3.5 w-3.5 mr-2" /> View on BattleMetrics
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -240,13 +240,17 @@ function TeamColumn({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Shield className="h-4 w-4 shrink-0" style={{ color: factionColor }} />
-        <h3 className="text-sm font-semibold text-white/80">{teamLabel}</h3>
-        {team.factionTag && (
-          <Badge variant="outline" className="text-[9px] px-1.5" style={{ borderColor: factionColor, color: factionColor }}>
-            {team.factionTag}
-          </Badge>
-        )}
-        <Badge variant="secondary" className="text-[9px]">{totalPlayers}</Badge>
+        <div className="flex items-baseline gap-1.5">
+          <h3 className="text-sm font-semibold text-white/80">
+            {team.factionName || `Team ${team.teamId}`}
+          </h3>
+          {team.factionTag && (
+            <span className="text-[10px] font-medium" style={{ color: factionColor }}>
+              ({team.factionTag})
+            </span>
+          )}
+        </div>
+        <Badge variant="secondary" className="text-[9px]">{totalPlayers} players</Badge>
       </div>
 
       {team.squads.map((squad) => (
