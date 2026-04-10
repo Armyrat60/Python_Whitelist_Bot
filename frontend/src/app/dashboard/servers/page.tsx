@@ -14,7 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Lock,
-  Star,
+  ChevronsUp,
   Crown,
   ArrowLeftRight,
   UserMinus,
@@ -83,12 +83,19 @@ function parseKit(role: string): string {
 
 // ─── Faction Colors ─────────────────────────────────────────────────────────
 
+// Team colors: based on typical Squad team assignments (Team 1 = blue-ish, Team 2 = red-ish)
+// Individual faction colors just for the team header badge
 const FACTION_COLORS: Record<string, string> = {
-  USA: "#3b82f6", USMC: "#2563eb", RUS: "#ef4444", RGF: "#ef4444", VDV: "#dc2626",
-  CAF: "#84cc16", GB: "#1e40af", BAF: "#1e40af", MEA: "#f59e0b",
+  USA: "#3b82f6", USMC: "#2563eb",
+  RUS: "#3b82f6", RGF: "#3b82f6", VDV: "#3b82f6",
+  CAF: "#84cc16",
+  GB: "#1e40af", BAF: "#1e40af",
+  MEA: "#f59e0b",
   INS: "#a16207", MIL: "#65a30d", IMF: "#65a30d",
-  AUS: "#16a34a", ADF: "#16a34a", TLF: "#dc2626",
-  PLA: "#dc2626", PLANMC: "#b91c1c", WPMC: "#8b5cf6",
+  AUS: "#16a34a", ADF: "#16a34a",
+  TLF: "#ef4444",
+  PLA: "#ef4444", PLANMC: "#b91c1c",
+  WPMC: "#8b5cf6",
 };
 
 // ─── Player Action Menu ─────────────────────────────────────────────────────
@@ -139,8 +146,8 @@ function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; 
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<button className="rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/50 hover:text-white/70 hover:bg-white/[0.06] transition-colors border border-transparent hover:border-white/[0.08]" />}>
-        <Settings2 className="h-3 w-3" />
+      <DropdownMenuTrigger render={<button className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-white hover:bg-white/[0.08] transition-colors border border-white/[0.08] bg-white/[0.03]" />}>
+        Actions <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="left" align="start">
         <DropdownMenuItem onClick={() => setMode("warn")}>
@@ -172,10 +179,10 @@ function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; 
 // ─── Squad Card ─────────────────────────────────────────────────────────────
 
 function SquadCard({
-  squad, serverId, canExecute, searchQuery, factionColor,
+  squad, serverId, canExecute, searchQuery,
 }: {
   squad: RconServerState["teams"][number]["squads"][number];
-  serverId: number; canExecute: boolean; searchQuery: string; factionColor: string;
+  serverId: number; canExecute: boolean; searchQuery: string;
 }) {
   const [expanded, setExpanded] = useState(true);
   const disband = useDisbandSquad();
@@ -192,7 +199,7 @@ function SquadCard({
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/[0.03]"
-        style={{ borderLeft: `3px solid ${factionColor}` }}
+        style={{ borderLeft: "3px solid rgba(255,255,255,0.15)" }}
       >
         <div className="flex items-center gap-2 min-w-0">
           {expanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
@@ -212,26 +219,25 @@ function SquadCard({
           {filteredPlayers.map((player) => {
             const kit = parseKit(player.role);
             return (
-              <div key={player.id} className="flex items-center justify-between py-1 px-3 border-t border-white/[0.03] hover:bg-white/[0.025]">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {/* Role icon */}
-                  {player.role.toUpperCase().includes("COMMANDER") || player.role.toUpperCase().includes("CMD") ? (
-                    <span title="Commander"><Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
-                  ) : player.isLeader ? (
-                    <span title="Squad Leader"><Star className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
-                  ) : (
-                    <span className="w-3.5 shrink-0" />
-                  )}
-                  <span className={`text-xs truncate ${player.isLeader ? "text-white font-medium" : "text-white/70"}`}>
-                    {player.name}
-                  </span>
-                  {kit && (
-                    <span className="text-[10px] text-muted-foreground/40 truncate hidden sm:inline">
-                      {kit}
-                    </span>
-                  )}
-                </div>
+              <div key={player.id} className="flex items-center gap-2 py-1 px-3 border-t border-white/[0.03] hover:bg-white/[0.025]">
+                {/* Action button — left side like BM */}
                 <PlayerActionMenu serverId={serverId} player={player} canExecute={canExecute} />
+                {/* Role icon */}
+                {player.role.toUpperCase().includes("COMMANDER") || player.role.toUpperCase().includes("CMD") ? (
+                  <span title="Commander"><Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
+                ) : player.isLeader ? (
+                  <span title="Squad Leader"><ChevronsUp className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
+                ) : (
+                  <span className="w-3.5 shrink-0" />
+                )}
+                <span className={`text-xs truncate ${player.isLeader ? "text-white font-medium" : "text-white/70"}`}>
+                  {player.name}
+                </span>
+                {kit && (
+                  <span className="text-[10px] text-muted-foreground/40 truncate hidden sm:inline ml-auto">
+                    {kit}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -275,7 +281,7 @@ function TeamColumn({
 
       {/* Squads */}
       {team.squads.map((squad) => (
-        <SquadCard key={`${squad.teamId}-${squad.id}`} squad={squad} serverId={serverId} canExecute={canExecute} searchQuery={searchQuery} factionColor={factionColor} />
+        <SquadCard key={`${squad.teamId}-${squad.id}`} squad={squad} serverId={serverId} canExecute={canExecute} searchQuery={searchQuery} />
       ))}
 
       {/* Unassigned */}
