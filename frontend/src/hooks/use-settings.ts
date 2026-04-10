@@ -1145,31 +1145,36 @@ interface RconServerInfo {
   error?: string;
 }
 
-interface RconPlayer {
+export interface RconPlayer {
   id: string;
   steamId: string;
   name: string;
   teamId: string;
   squadId: string;
+  isLeader: boolean;
+  role: string;
 }
 
-interface RconSquad {
+export interface RconSquad {
   id: string;
   name: string;
   teamId: string;
   size: number;
   leader: string;
+  locked: boolean;
   players: RconPlayer[];
 }
 
-interface RconTeam {
+export interface RconTeam {
   teamId: string;
+  factionTag: string;
+  factionName: string;
   squads: RconSquad[];
   unassigned: RconPlayer[];
 }
 
 export interface RconServerState {
-  info: { name: string; map: string; playerCount: number; maxPlayers: number } | null;
+  info: { name: string; map: string; gameMode: string; playerCount: number; maxPlayers: number } | null;
   teams: RconTeam[];
   totalPlayers: number;
   error?: string;
@@ -1181,7 +1186,7 @@ export function useRconPlayers(serverId: number | null) {
     queryKey: ["rcon-players", serverId],
     queryFn: () => api.get<RconServerState>(`/api/admin/game-servers/${serverId}/rcon/players`),
     enabled: serverId !== null,
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 }
 
@@ -1195,13 +1200,13 @@ export function useRconStatus(serverId: number | null) {
 }
 
 export function useKickPlayer() {
-  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; player_id: string; reason?: string }>({
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; player_id: string; player_name?: string; reason?: string }>({
     mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/kick`, data),
   });
 }
 
 export function useWarnPlayer() {
-  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; target: string; message: string }>({
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; target: string; player_name?: string; message: string }>({
     mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/warn`, data),
   });
 }
@@ -1209,6 +1214,18 @@ export function useWarnPlayer() {
 export function useBroadcast() {
   return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; message: string }>({
     mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/broadcast`, data),
+  });
+}
+
+export function useForceTeamChange() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; player_id: string; player_name?: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/force-team-change`, data),
+  });
+}
+
+export function useRemoveFromSquad() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; player_id: string; player_name?: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/remove-from-squad`, data),
   });
 }
 

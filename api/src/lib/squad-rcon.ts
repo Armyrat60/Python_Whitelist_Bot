@@ -14,6 +14,8 @@ export interface SquadPlayer {
   name: string
   teamId: string
   squadId: string
+  isLeader: boolean
+  role: string
 }
 
 export interface SquadInfo {
@@ -22,17 +24,21 @@ export interface SquadInfo {
   teamId: string
   size: number
   leader: string
+  locked: boolean
 }
 
 export interface ServerInfo {
   name: string
   map: string
+  gameMode: string
   playerCount: number
   maxPlayers: number
 }
 
 export interface TeamState {
   teamId: string
+  factionTag: string
+  factionName: string
   squads: Array<SquadInfo & { players: SquadPlayer[] }>
   unassigned: SquadPlayer[]
 }
@@ -43,12 +49,48 @@ export interface FullServerState {
   totalPlayers: number
 }
 
+// ─── Faction Lookup ─────────────────────────────────────────────────────────
+
+const FACTION_MAP: Record<string, string> = {
+  USA:    "United States Army",
+  USMC:   "US Marine Corps",
+  RUS:    "Russian Ground Forces",
+  CAF:    "Canadian Armed Forces",
+  GB:     "British Armed Forces",
+  BAF:    "British Armed Forces",
+  MEA:    "Middle Eastern Alliance",
+  INS:    "Insurgents",
+  MIL:    "Irregular Militia",
+  AUS:    "Australian Defence Force",
+  ADF:    "Australian Defence Force",
+  PLANMC: "PLA Navy Marine Corps",
+  PLA:    "People's Liberation Army",
+  TLF:    "Turkish Land Forces",
+  VDV:    "Russian Airborne",
+  IMF:    "Irregular Militia Forces",
+}
+
+function extractFactionTag(roles: string[]): string {
+  const prefixCounts = new Map<string, number>()
+  for (const role of roles) {
+    if (!role) continue
+    const prefix = role.split("_")[0].toUpperCase()
+    if (prefix && prefix.length >= 2) {
+      prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1)
+    }
+  }
+  let best = ""
+  let bestCount = 0
+  for (const [prefix, count] of prefixCounts) {
+    if (count > bestCount) { best = prefix; bestCount = count }
+  }
+  return best
+}
+
 // ─── Response Parsers ────────────────────────────────────────────────────────
 
-// Modern Squad format: ID: X | Online IDs: EOS: xxx steam: STEAMID | Name: X | Team ID: X | Squad ID: X | Is Leader: X | Role: X
-const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*Online IDs:\s*(?:EOS:\s*\S+\s*)?steam:\s*(\d{17})\s*\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)/g
-const SQUAD_REGEX = /ID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Size:\s*(\d+)\s*\|\s*Locked:\s*\w+\s*\|\s*Creator Name:\s*(.+?)(?:\s*\||$)/gm
-const TEAM_ID_REGEX = /Team ID:\s*(\d+)/
+// Modern Squad format: ID: X | Online IDs: EOS: xxx steam: STEAMID | Name: X | Team ID: X | Squad ID: X | Is Leader: True | Role: CAF_SL_05
+const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*Online IDs:\s*(?:EOS:\s*\S+\s*)?steam:\s*(\d{17})\s*\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)\s*\|\s*Is Leader:\s*(True|False)\s*\|\s*Role:\s*(.+?)$/gm
 
 function parsePlayers(text: string): SquadPlayer[] {
   const players: SquadPlayer[] = []
@@ -61,6 +103,8 @@ function parsePlayers(text: string): SquadPlayer[] {
       name: match[3].trim(),
       teamId: match[4],
       squadId: match[5] === "N/A" ? "0" : match[5],
+      isLeader: match[6] === "True",
+      role: match[7]?.trim() ?? "",
     })
   }
   return players
@@ -68,18 +112,18 @@ function parsePlayers(text: string): SquadPlayer[] {
 
 function parseSquads(text: string): SquadInfo[] {
   const squads: SquadInfo[] = []
-  // Split by lines and process each
   const lines = text.split("\n")
   for (const line of lines) {
-    const squadMatch = line.match(/ID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Size:\s*(\d+)\s*\|\s*Locked:\s*\w+\s*\|\s*Creator Name:\s*(.+?)(?:\s*\||$)/)
+    const squadMatch = line.match(/ID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Size:\s*(\d+)\s*\|\s*Locked:\s*(True|False|true|false)\s*\|\s*Creator Name:\s*(.+?)(?:\s*\||$)/)
     if (squadMatch) {
-      const teamMatch = line.match(TEAM_ID_REGEX)
+      const teamMatch = line.match(/Team ID:\s*(\d+)/)
       squads.push({
         id: squadMatch[1],
         name: squadMatch[2].trim(),
         teamId: teamMatch?.[1] ?? "0",
         size: parseInt(squadMatch[3], 10),
-        leader: squadMatch[4].trim(),
+        locked: squadMatch[4].toLowerCase() === "true",
+        leader: squadMatch[5].trim(),
       })
     }
   }
@@ -87,17 +131,16 @@ function parseSquads(text: string): SquadInfo[] {
 }
 
 function parseServerInfo(text: string): ServerInfo {
-  // Squad returns JSON from ShowServerInfo
   try {
     const json = JSON.parse(text.trim())
     return {
       name: json.ServerName_s || json.servername || "Unknown",
       map: json.MapName_s || json.map || "Unknown",
+      gameMode: json.GameMode_s || json.gamemode || "",
       playerCount: parseInt(json.PlayerCount_I || json.playercount || "0", 10),
       maxPlayers: parseInt(json.MaxPlayers || json.maxplayers || "100", 10),
     }
   } catch {
-    // Fallback: try key:value line parsing (older Squad versions)
     const lines = text.split("\n")
     const info: Record<string, string> = {}
     for (const line of lines) {
@@ -110,6 +153,7 @@ function parseServerInfo(text: string): ServerInfo {
     return {
       name: info["servername"] || info["server name"] || "Unknown",
       map: info["mapname_s"] || info["currentmap"] || info["map"] || "Unknown",
+      gameMode: info["gamemode_s"] || info["gamemode"] || "",
       playerCount: parseInt(info["playercount_i"] || info["players"] || "0", 10),
       maxPlayers: parseInt(info["maxplayers"] || "100", 10),
     }
@@ -125,100 +169,75 @@ export async function getServerInfo(config: RconConfig): Promise<ServerInfo> {
   })
 }
 
-export async function getPlayers(config: RconConfig): Promise<SquadPlayer[]> {
-  return withRcon(config, async (client) => {
-    const response = await client.execute("ListPlayers")
-    return parsePlayers(response)
-  })
-}
-
-export async function getSquads(config: RconConfig): Promise<SquadInfo[]> {
-  return withRcon(config, async (client) => {
-    const response = await client.execute("ListSquads")
-    return parseSquads(response)
-  })
-}
-
 export async function getFullServerState(config: RconConfig): Promise<FullServerState> {
   return withRcon(config, async (client) => {
-    // Execute sequentially — parallel RCON commands can cause packet interleaving
     const playersText = await client.execute("ListPlayers")
     const squadsText = await client.execute("ListSquads")
     const infoText = await client.execute("ShowServerInfo")
 
-    // Debug: log raw response lengths and parsed counts
     const players = parsePlayers(playersText)
     const squads = parseSquads(squadsText)
     const info = parseServerInfo(infoText)
-    console.log(`[rcon] Raw lengths — players: ${playersText.length}, squads: ${squadsText.length}, info: ${infoText.length}`)
-    console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads, server: "${info.name}", map: "${info.map}", ${info.playerCount}/${info.maxPlayers}`)
-    if (players.length === 0 && playersText.length > 0) {
-      console.log(`[rcon] PARSE FAIL — first 500 chars of players: ${playersText.slice(0, 500)}`)
-    }
-    if (info.name === "Unknown" && infoText.length > 0) {
-      console.log(`[rcon] INFO PARSE FAIL — first 500 chars: ${infoText.slice(0, 500)}`)
-    }
 
-    // Group into teams
+    // Group into teams with faction detection
     const teamIds = [...new Set([...players.map((p) => p.teamId), ...squads.map((s) => s.teamId)])]
       .filter((id) => id !== "0")
       .sort()
 
     const teams: TeamState[] = teamIds.map((teamId) => {
+      const teamPlayers = players.filter((p) => p.teamId === teamId)
       const teamSquads = squads
         .filter((s) => s.teamId === teamId)
         .map((squad) => ({
           ...squad,
-          players: players.filter((p) => p.teamId === teamId && p.squadId === squad.id),
+          players: teamPlayers.filter((p) => p.squadId === squad.id),
         }))
 
-      const unassigned = players.filter(
-        (p) => p.teamId === teamId && (p.squadId === "0" || !squads.some((s) => s.id === p.squadId && s.teamId === teamId)),
+      const unassigned = teamPlayers.filter(
+        (p) => p.squadId === "0" || !squads.some((s) => s.id === p.squadId && s.teamId === teamId),
       )
 
-      return { teamId, squads: teamSquads, unassigned }
+      // Extract faction from player roles
+      const teamRoles = teamPlayers.map((p) => p.role)
+      const factionTag = extractFactionTag(teamRoles)
+      const factionName = FACTION_MAP[factionTag] ?? ""
+
+      return { teamId, factionTag, factionName, squads: teamSquads, unassigned }
     })
 
-    return {
-      info,
-      teams,
-      totalPlayers: players.length,
-    }
+    return { info, teams, totalPlayers: players.length }
   })
 }
 
+// ─── Admin Commands ─────────────────────────────────────────────────────────
+
 export async function kickPlayer(config: RconConfig, playerId: string, reason: string): Promise<string> {
-  return withRcon(config, async (client) => {
-    // Use AdminKickById for numeric player IDs (from ListPlayers)
-    return client.execute(`AdminKickById ${playerId} ${reason}`)
-  })
+  return withRcon(config, (client) => client.execute(`AdminKickById ${playerId} ${reason}`))
 }
 
 export async function warnPlayer(config: RconConfig, target: string, message: string): Promise<string> {
-  return withRcon(config, async (client) => {
-    // AdminWarn accepts name, Steam ID, or player ID
-    return client.execute(`AdminWarn ${target} ${message}`)
-  })
+  return withRcon(config, (client) => client.execute(`AdminWarn ${target} ${message}`))
 }
 
 export async function broadcast(config: RconConfig, message: string): Promise<string> {
-  return withRcon(config, async (client) => {
-    return client.execute(`AdminBroadcast ${message}`)
-  })
+  return withRcon(config, (client) => client.execute(`AdminBroadcast ${message}`))
 }
 
-/**
- * Build an RconConfig from a GameServer record.
- */
+export async function forceTeamChange(config: RconConfig, playerId: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminForceTeamChange ${playerId}`))
+}
+
+export async function removeFromSquad(config: RconConfig, playerId: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminRemovePlayerFromSquad ${playerId}`))
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 export function toRconConfig(server: {
   rconHost: string | null
   rconPort: number
   rconPassword: string | null
 }): RconConfig | null {
   if (!server.rconHost || !server.rconPassword) return null
-  return {
-    host: server.rconHost,
-    port: server.rconPort,
-    password: server.rconPassword,
-  }
+  return { host: server.rconHost, port: server.rconPort, password: server.rconPassword }
 }
