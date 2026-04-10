@@ -133,15 +133,18 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
     const squadsText = await client.execute("ListSquads")
     const infoText = await client.execute("ShowServerInfo")
 
-    // Debug: log raw response lengths
-    console.log(`[rcon] Raw response lengths — players: ${playersText.length}, squads: ${squadsText.length}, info: ${infoText.length}`)
-    if (playersText.length < 50) console.log(`[rcon] Players raw: ${JSON.stringify(playersText)}`)
-    if (squadsText.length < 50) console.log(`[rcon] Squads raw: ${JSON.stringify(squadsText)}`)
-    if (infoText.length < 200) console.log(`[rcon] Info raw: ${JSON.stringify(infoText)}`)
-
-    const info = parseServerInfo(infoText)
+    // Debug: log raw response lengths and parsed counts
     const players = parsePlayers(playersText)
     const squads = parseSquads(squadsText)
+    const info = parseServerInfo(infoText)
+    console.log(`[rcon] Raw lengths — players: ${playersText.length}, squads: ${squadsText.length}, info: ${infoText.length}`)
+    console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads, server: "${info.name}", map: "${info.map}", ${info.playerCount}/${info.maxPlayers}`)
+    if (players.length === 0 && playersText.length > 0) {
+      console.log(`[rcon] PARSE FAIL — first 500 chars of players: ${playersText.slice(0, 500)}`)
+    }
+    if (info.name === "Unknown" && infoText.length > 0) {
+      console.log(`[rcon] INFO PARSE FAIL — first 500 chars: ${infoText.slice(0, 500)}`)
+    }
 
     // Group into teams
     const teamIds = [...new Set([...players.map((p) => p.teamId), ...squads.map((s) => s.teamId)])]
