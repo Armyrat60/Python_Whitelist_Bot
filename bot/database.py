@@ -789,13 +789,19 @@ class Database:
             (guild_id, discord_id, whitelist_id),
         )
 
-    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None, discord_username: Optional[str] = None, discord_nick: Optional[str] = None, clan_tag: Optional[str] = None):
+    async def upsert_user_record(self, guild_id: int, discord_id: int, whitelist_id: int, discord_name: str, status: str, effective_slot_limit: int, last_plan_name: str, slot_limit_override: Optional[int] = None, expires_at=None, created_via: Optional[str] = None, discord_username: Optional[str] = None, discord_nick: Optional[str] = None, clan_tag: Optional[str] = None, role_gained_at=None, role_lost_at="__unset__"):
         now = utcnow()
+        # role_lost_at sentinel: "__unset__" means don't touch the column,
+        # None means explicitly clear it, a datetime means set it.
+        role_lost_at_sql = "whitelist_users.role_lost_at"  # preserve existing
+        params_extra = []
+        if role_lost_at != "__unset__":
+            role_lost_at_sql = "EXCLUDED.role_lost_at"
         await self.execute(
-            """
+            f"""
             INSERT INTO whitelist_users
-            (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via, discord_username, discord_nick, clan_tag)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (guild_id, discord_id, whitelist_type, whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, updated_at, created_at, created_via, discord_username, discord_nick, clan_tag, role_gained_at, role_lost_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT ON CONSTRAINT uq_wu_guild_discord_wl DO UPDATE SET
                 discord_name=EXCLUDED.discord_name,
                 status=EXCLUDED.status,
@@ -807,16 +813,25 @@ class Database:
                 created_via=COALESCE(whitelist_users.created_via, EXCLUDED.created_via),
                 discord_username=COALESCE(EXCLUDED.discord_username, whitelist_users.discord_username),
                 discord_nick=COALESCE(EXCLUDED.discord_nick, whitelist_users.discord_nick),
-                clan_tag=COALESCE(EXCLUDED.clan_tag, whitelist_users.clan_tag)
+                clan_tag=COALESCE(EXCLUDED.clan_tag, whitelist_users.clan_tag),
+                role_gained_at=COALESCE(whitelist_users.role_gained_at, EXCLUDED.role_gained_at),
+                role_lost_at={role_lost_at_sql}
             """,
-            (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via, discord_username, discord_nick, clan_tag),
+            (guild_id, discord_id, '', whitelist_id, discord_name, status, slot_limit_override, effective_slot_limit, last_plan_name, expires_at, now, now, created_via, discord_username, discord_nick, clan_tag, role_gained_at or now, role_lost_at if role_lost_at != "__unset__" else None),
         )
 
-    async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str):
-        await self.execute(
-            "UPDATE whitelist_users SET status=%s, updated_at=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
-            (status, utcnow(), guild_id, discord_id, whitelist_id),
-        )
+    async def set_user_status(self, guild_id: int, discord_id: int, whitelist_id: int, status: str, role_lost_at="__unset__"):
+        now = utcnow()
+        if role_lost_at != "__unset__":
+            await self.execute(
+                "UPDATE whitelist_users SET status=%s, role_lost_at=%s, updated_at=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (status, role_lost_at, now, guild_id, discord_id, whitelist_id),
+            )
+        else:
+            await self.execute(
+                "UPDATE whitelist_users SET status=%s, updated_at=%s WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s",
+                (status, now, guild_id, discord_id, whitelist_id),
+            )
 
     async def set_override(self, guild_id: int, discord_id: int, whitelist_id: int, override_slots: Optional[int]):
         await self.execute(

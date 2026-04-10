@@ -27,6 +27,7 @@ export interface DiscordChannel {
 export interface DiscordRole {
   id:   string
   name: string
+  tags?: { premium_subscriber?: null | boolean }
 }
 
 export interface DiscordMember {
@@ -112,8 +113,20 @@ export class DiscordRESTClient {
   // ── Roles ──────────────────────────────────────────────────────────────────
 
   async fetchRoles(guildId: bigint): Promise<DiscordRole[]> {
-    const data = await this._get<DiscordRole[]>(`/guilds/${guildId}/roles`)
-    return data.filter((r) => r.name !== "@everyone")
+    const data = await this._get<Array<{ id: string; name: string; tags?: Record<string, unknown> }>>(`/guilds/${guildId}/roles`)
+    return data
+      .filter((r) => r.name !== "@everyone")
+      .map((r) => ({
+        id:   r.id,
+        name: r.name,
+        tags: r.tags as DiscordRole["tags"],
+      }))
+  }
+
+  /** Find the guild's built-in Server Booster role. */
+  async fetchBoosterRole(guildId: bigint): Promise<DiscordRole | null> {
+    const roles = await this.fetchRoles(guildId)
+    return roles.find((r) => r.tags && "premium_subscriber" in r.tags) ?? null
   }
 
   // ── Members ────────────────────────────────────────────────────────────────

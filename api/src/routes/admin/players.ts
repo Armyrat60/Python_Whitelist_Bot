@@ -193,6 +193,8 @@ export default async function playerRoutes(app: FastifyInstance) {
       effective_slot_limit: m.effectiveSlotLimit,
       slot_limit_override:  m.slotLimitOverride ?? null,
       created_via:          m.createdVia ?? null,
+      role_gained_at:       m.roleGainedAt?.toISOString() ?? null,
+      role_lost_at:         m.roleLostAt?.toISOString() ?? null,
     }))
 
     // Deduplicate identifiers across whitelists, tracking per-ID verification

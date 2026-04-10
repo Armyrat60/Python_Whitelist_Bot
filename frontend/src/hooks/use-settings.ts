@@ -263,6 +263,24 @@ export function useGuildInfo() {
   });
 }
 
+interface BoosterRoleInfo {
+  booster_role: { id: string; name: string } | null;
+  linked_panel: {
+    panel_id: number;
+    panel_name: string;
+    whitelist_id: number | null;
+    slot_limit: number;
+  } | null;
+}
+
+export function useBoosterRole() {
+  return useQuery<BoosterRoleInfo>({
+    queryKey: ["booster-role"],
+    queryFn: () => api.get<BoosterRoleInfo>("/api/admin/guild-info/booster-role"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 interface PaginatedAudit {
   entries: AuditEntry[];
   total: number;
@@ -715,6 +733,8 @@ export interface PlayerProfile {
     effective_slot_limit: number;
     slot_limit_override: number | null;
     created_via: string | null;
+    role_gained_at: string | null;
+    role_lost_at: string | null;
   }>;
   audit_log: Array<{
     id: number;

@@ -115,6 +115,8 @@ model WhitelistUser {
   discordUsername    String?            @map("discord_username") @db.VarChar(255)
   discordNick        String?            @map("discord_nick") @db.VarChar(255)
   clanTag            String?            @map("clan_tag") @db.VarChar(50)
+  roleGainedAt       DateTime?          @map("role_gained_at")
+  roleLostAt         DateTime?          @map("role_lost_at")
   category           WhitelistCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   whitelist Whitelist @relation(fields: [whitelistId], references: [id])

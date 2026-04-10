@@ -234,6 +234,11 @@ export default function PlayerProfilePage() {
                   Added {new Date(m.created_at).toLocaleDateString()}
                   {m.created_via ? ` via ${m.created_via.replace(/_/g, " ")}` : ""}
                 </span>
+                {m.role_gained_at && (
+                  <span className="flex items-center gap-1 text-xs" style={{ color: "var(--accent-primary)" }}>
+                    Member for {Math.floor((Date.now() - new Date(m.role_gained_at).getTime()) / 86400000)}d
+                  </span>
+                )}
               </div>
             </div>
           ))}

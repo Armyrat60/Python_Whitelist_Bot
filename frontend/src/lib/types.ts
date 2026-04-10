@@ -159,6 +159,8 @@ export interface WhitelistUser {
   category_id?: number | null;
   category_name?: string | null;
   created_via?: string | null;
+  role_gained_at?: string | null;
+  role_lost_at?: string | null;
 }
 
 export type CategoryEntry = WhitelistUser;

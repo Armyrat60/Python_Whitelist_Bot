@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   Save, Settings2, Bell, Palette,
   Shield, User, Globe, Clock,
-  Send, Link2, Sprout,
+  Send, Link2, Sprout, Sparkles,
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
 import {
@@ -16,6 +16,8 @@ import {
   useNotifications,
   useSaveNotifications,
   useTriggerReport,
+  useBoosterRole,
+  useWhitelists,
 } from "@/hooks/use-settings";
 import { useSession } from "@/hooks/use-session";
 import type { Settings } from "@/lib/types";
@@ -138,6 +140,56 @@ function LiveClock({ timezone }: { timezone: string }) {
   if (!time) return null;
   return (
     <span className="font-mono text-sm text-foreground">{time}</span>
+  );
+}
+
+/* ─── Booster Auto-Whitelist ─── */
+function BoosterAutoWhitelist() {
+  const { data: boosterData, isLoading } = useBoosterRole();
+  const { data: whitelists } = useWhitelists();
+
+  if (isLoading) return null;
+  if (!boosterData?.booster_role) return null;
+
+  const isLinked = !!boosterData.linked_panel;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Sparkles className="h-4 w-4 text-pink-400" />
+          Server Booster Auto-Whitelist
+        </CardTitle>
+        <CardDescription>
+          Automatically whitelist Discord server boosters via the panel role system.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLinked ? (
+          <div className="flex items-center gap-2 rounded-lg border border-pink-500/20 bg-pink-500/5 px-4 py-3">
+            <Sparkles className="h-4 w-4 text-pink-400 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-pink-300">Boosters are auto-whitelisted</p>
+              <p className="text-xs text-muted-foreground">
+                Role &ldquo;{boosterData.booster_role.name}&rdquo; is linked to panel &ldquo;{boosterData.linked_panel!.panel_name}&rdquo; with {boosterData.linked_panel!.slot_limit} slot(s).
+              </p>
+            </div>
+            <Badge className="bg-pink-500/15 text-pink-400 border-pink-500/20">Active</Badge>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+            <Sparkles className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm text-white/70">Booster auto-whitelist is not configured</p>
+              <p className="text-xs text-muted-foreground">
+                Add the &ldquo;{boosterData.booster_role.name}&rdquo; role (ID: {boosterData.booster_role.id}) to any panel in{" "}
+                <a href="/dashboard/config?tab=panels" className="underline hover:text-white/80">Configuration → Panels</a> to enable.
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -489,6 +541,8 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          <BoosterAutoWhitelist />
 
           <SaveBar onSave={saveGeneral} isPending={saveSettings.isPending} />
         </div>

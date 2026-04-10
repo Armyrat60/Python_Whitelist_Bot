@@ -51,4 +51,39 @@ export default async function guildInfoRoutes(app: FastifyInstance) {
       return reply.code(502).send({ error: "Failed to fetch guild info from Discord" })
     }
   })
+
+  // ── GET /api/admin/guild-info/booster-role ──────────────────────────────
+
+  app.get("/guild-info/booster-role", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    try {
+      const boosterRole = await app.discord.fetchBoosterRole(guildId)
+      if (!boosterRole) {
+        return reply.send({ booster_role: null })
+      }
+
+      // Check if this role is already linked to any panel
+      const existingPanelRole = await app.prisma.panelRole.findFirst({
+        where: { guildId, roleId: BigInt(boosterRole.id), isActive: true },
+        include: { panel: { select: { id: true, name: true, whitelistId: true } } },
+      })
+
+      return reply.send({
+        booster_role: {
+          id: boosterRole.id,
+          name: boosterRole.name,
+        },
+        linked_panel: existingPanelRole ? {
+          panel_id: existingPanelRole.panel.id,
+          panel_name: existingPanelRole.panel.name,
+          whitelist_id: existingPanelRole.panel.whitelistId,
+          slot_limit: existingPanelRole.slotLimit,
+        } : null,
+      })
+    } catch (err) {
+      app.log.error({ err, guildId }, "Failed to fetch booster role")
+      return reply.code(502).send({ error: "Failed to fetch booster role from Discord" })
+    }
+  })
 }

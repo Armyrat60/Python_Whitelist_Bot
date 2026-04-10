@@ -801,7 +801,7 @@ class WhitelistBot(commands.Bot):
             status_before = user_record[1]
             if slots <= 0:
                 if status_before == "active":
-                    await self.db.set_user_status(guild_id, member.id, whitelist_id, "disabled_role_lost")
+                    await self.db.set_user_status(guild_id, member.id, whitelist_id, "disabled_role_lost", role_lost_at=utcnow())
                     await self.db.audit(guild_id, "auto_disable_role_lost", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
                     await self.send_notification_event(guild_id, "role_lost", "⚠️ Role Lost — Whitelist Disabled", f"<@{member.id}> lost their required role and was auto-disabled from `{wl['name']}`.", discord.Color.orange())
@@ -809,7 +809,7 @@ class WhitelistBot(commands.Bot):
                 _m_name = member.nick or member.display_name or str(member)
                 _m_tag, _ = parse_clan_tag(_m_name)
                 if status_before != "active" and to_bool(await self.db.get_setting(guild_id, "auto_reactivate_on_role_return", "true")):
-                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, _m_name, "active", slots, plan, user_record[2], discord_username=member.name, discord_nick=member.nick, clan_tag=_m_tag)
+                    await self.db.upsert_user_record(guild_id, member.id, whitelist_id, _m_name, "active", slots, plan, user_record[2], discord_username=member.name, discord_nick=member.nick, clan_tag=_m_tag, role_lost_at=None)
                     await self.db.audit(guild_id, "auto_reactivate_role_return", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Re-enabled", f"User <@{member.id}> regained eligible role(s).", discord.Color.green())
                     await self.send_notification_event(guild_id, "role_returned", "✅ Role Returned — Re-enabled", f"<@{member.id}> regained their role and was re-enabled in `{wl['name']}`.", discord.Color.green())
@@ -949,7 +949,7 @@ class WhitelistBot(commands.Bot):
             # Disable active members who no longer hold any mapped role
             for member_id, status in existing.items():
                 if member_id > 0 and member_id not in role_member_ids and status == "active":
-                    await self.db.set_user_status(guild_id, member_id, wl_id, "disabled_role_lost")
+                    await self.db.set_user_status(guild_id, member_id, wl_id, "disabled_role_lost", role_lost_at=utcnow())
                     await self.db.audit(guild_id, "daily_role_sync_remove", None, member_id,
                                         f"type={wl['slug']}", wl_id)
                     removed += 1
