@@ -128,11 +128,10 @@ export async function getSquads(config: RconConfig): Promise<SquadInfo[]> {
 
 export async function getFullServerState(config: RconConfig): Promise<FullServerState> {
   return withRcon(config, async (client) => {
-    const [infoText, playersText, squadsText] = await Promise.all([
-      client.execute("ShowServerInfo"),
-      client.execute("ListPlayers"),
-      client.execute("ListSquads"),
-    ])
+    // Execute sequentially — parallel RCON commands can cause packet interleaving
+    const playersText = await client.execute("ListPlayers")
+    const squadsText = await client.execute("ListSquads")
+    const infoText = await client.execute("ShowServerInfo")
 
     const info = parseServerInfo(infoText)
     const players = parsePlayers(playersText)

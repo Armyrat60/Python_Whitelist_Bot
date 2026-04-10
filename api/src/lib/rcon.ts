@@ -1,13 +1,10 @@
 /**
- * Source Engine RCON client.
+ * Source Engine RCON client for Squad servers.
  *
- * Native implementation using Node.js `net` module.
- * Implements the Source RCON protocol with multi-packet response support:
- *   [size:int32LE][id:int32LE][type:int32LE][body:utf8\0][padding:\0]
- *
- * Multi-packet handling: After sending a command, we send a follow-up
- * empty SERVERDATA_RESPONSE packet. All response packets before the
- * follow-up's response are concatenated as the command output.
+ * Uses timer-based multi-packet response collection:
+ * After receiving a response packet, waits for more packets.
+ * If no more arrive within COLLECT_WINDOW_MS, the response is complete.
+ * This handles Squad's large ListPlayers responses (60+ players).
  */
 import { Socket } from "net"
 
@@ -18,8 +15,9 @@ const SERVERDATA_AUTH_RESPONSE = 2
 const SERVERDATA_EXECCOMMAND = 2
 const SERVERDATA_RESPONSE = 0
 
-const AUTH_TIMEOUT = 5_000   // 5 seconds
-const CMD_TIMEOUT = 15_000   // 15 seconds
+const AUTH_TIMEOUT = 5_000       // 5s for auth
+const CMD_TIMEOUT = 20_000       // 20s max wait for any response
+const COLLECT_WINDOW_MS = 300    // 300ms silence = response complete
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -42,16 +40,21 @@ function encodePacket(id: number, type: number, body: string): Buffer {
   return buf
 }
 
-function decodePacket(buf: Buffer): { size: number; id: number; type: number; body: string } | null {
-  if (buf.length < 4) return null
-  const size = buf.readInt32LE(0)
-  if (buf.length < 4 + size) return null
-  return {
-    size,
-    id: buf.readInt32LE(4),
-    type: buf.readInt32LE(8),
-    body: buf.toString("utf8", 12, 4 + size - 2),
+function decodePackets(buf: Buffer): Array<{ size: number; id: number; type: number; body: string }> {
+  const packets: Array<{ size: number; id: number; type: number; body: string }> = []
+  let offset = 0
+  while (offset + 4 <= buf.length) {
+    const size = buf.readInt32LE(offset)
+    if (offset + 4 + size > buf.length) break // incomplete packet
+    packets.push({
+      size,
+      id: buf.readInt32LE(offset + 4),
+      type: buf.readInt32LE(offset + 8),
+      body: buf.toString("utf8", offset + 12, offset + 4 + size - 2),
+    })
+    offset += 4 + size
   }
+  return packets
 }
 
 // ─── RCON Client ─────────────────────────────────────────────────────────────
@@ -61,22 +64,7 @@ class RconClient {
   private requestId = 0
   private responseBuffer = Buffer.alloc(0)
   private authenticated = false
-
-  // Multi-packet response accumulator
-  private commandResponses = new Map<number, string[]>()
-  private commandCallbacks = new Map<number, {
-    resolve: (body: string) => void
-    reject: (err: Error) => void
-    timer: ReturnType<typeof setTimeout>
-    sentinelId: number
-  }>()
-  // Auth callback
-  private authCallback: {
-    resolve: () => void
-    reject: (err: Error) => void
-    timer: ReturnType<typeof setTimeout>
-    authId: number
-  } | null = null
+  private packetListeners: Array<(packet: { id: number; type: number; body: string }) => void> = []
 
   async connect(config: RconConfig): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -95,61 +83,94 @@ class RconClient {
 
       socket.on("data", (data) => {
         this.responseBuffer = Buffer.concat([this.responseBuffer, data])
-        this._processBuffer()
+        const packets = decodePackets(this.responseBuffer)
+
+        // Calculate consumed bytes
+        let consumed = 0
+        for (const p of packets) consumed += 4 + p.size
+        if (consumed > 0) {
+          this.responseBuffer = this.responseBuffer.subarray(consumed)
+        }
+
+        for (const p of packets) {
+          for (const listener of this.packetListeners) {
+            listener(p)
+          }
+        }
       })
 
       socket.on("close", () => {
-        for (const [, cb] of this.commandCallbacks) {
-          clearTimeout(cb.timer)
-          cb.reject(new Error("Connection closed"))
-        }
-        this.commandCallbacks.clear()
-        if (this.authCallback) {
-          clearTimeout(this.authCallback.timer)
-          this.authCallback.reject(new Error("Connection closed"))
-          this.authCallback = null
-        }
+        this.packetListeners = []
       })
 
+      // Connect and authenticate
       socket.connect(config.port, config.host, () => {
         const authId = this._nextId()
-        this.authCallback = {
-          resolve: () => { clearTimeout(timeout); this.authenticated = true; resolve() },
-          reject: (err) => { clearTimeout(timeout); reject(err) },
-          timer: timeout,
-          authId,
+
+        const onPacket = (p: { id: number; type: number; body: string }) => {
+          // Skip the empty pre-auth response
+          if (p.type === SERVERDATA_RESPONSE && p.id === authId) return
+
+          if (p.type === SERVERDATA_AUTH_RESPONSE) {
+            this.packetListeners = this.packetListeners.filter(l => l !== onPacket)
+            clearTimeout(timeout)
+            if (p.id === -1) {
+              reject(new Error("RCON authentication failed — check password"))
+            } else {
+              this.authenticated = true
+              resolve()
+            }
+          }
         }
+
+        this.packetListeners.push(onPacket)
         socket.write(encodePacket(authId, SERVERDATA_AUTH, config.password))
       })
     })
   }
 
+  /**
+   * Execute an RCON command and collect the full multi-packet response.
+   * Uses timer-based collection: after each packet, waits COLLECT_WINDOW_MS
+   * for more. If no more arrive, returns the accumulated response.
+   */
   async execute(command: string): Promise<string> {
     if (!this.socket || !this.authenticated) throw new Error("Not connected")
 
     return new Promise((resolve, reject) => {
-      const cmdId = this._nextId()
-      const sentinelId = this._nextId()
+      const id = this._nextId()
+      const parts: string[] = []
+      let collectTimer: ReturnType<typeof setTimeout> | null = null
 
-      const timer = setTimeout(() => {
-        // On timeout, return whatever we've accumulated so far
-        const parts = this.commandResponses.get(cmdId) ?? []
-        this.commandResponses.delete(cmdId)
-        this.commandCallbacks.delete(cmdId)
-        if (parts.length > 0) {
-          resolve(parts.join(""))
-        } else {
-          reject(new Error(`RCON command timed out: ${command}`))
-        }
+      const maxTimer = setTimeout(() => {
+        cleanup()
+        // Return whatever we have on timeout
+        resolve(parts.join(""))
       }, CMD_TIMEOUT)
 
-      this.commandResponses.set(cmdId, [])
-      this.commandCallbacks.set(cmdId, { resolve, reject, timer, sentinelId })
+      const finalize = () => {
+        clearTimeout(maxTimer)
+        cleanup()
+        resolve(parts.join(""))
+      }
 
-      // Send the actual command
-      this.socket!.write(encodePacket(cmdId, SERVERDATA_EXECCOMMAND, command))
-      // Send a follow-up empty packet — its response marks the end of the command output
-      this.socket!.write(encodePacket(sentinelId, SERVERDATA_EXECCOMMAND, ""))
+      const onPacket = (p: { id: number; type: number; body: string }) => {
+        if (p.id !== id) return
+
+        parts.push(p.body)
+
+        // Reset the collection timer — wait for more packets
+        if (collectTimer) clearTimeout(collectTimer)
+        collectTimer = setTimeout(finalize, COLLECT_WINDOW_MS)
+      }
+
+      const cleanup = () => {
+        this.packetListeners = this.packetListeners.filter(l => l !== onPacket)
+        if (collectTimer) clearTimeout(collectTimer)
+      }
+
+      this.packetListeners.push(onPacket)
+      this.socket!.write(encodePacket(id, SERVERDATA_EXECCOMMAND, command))
     })
   }
 
@@ -158,71 +179,13 @@ class RconClient {
       this.socket.destroy()
       this.socket = null
     }
-    for (const [, cb] of this.commandCallbacks) {
-      clearTimeout(cb.timer)
-    }
-    this.commandCallbacks.clear()
-    this.commandResponses.clear()
-    if (this.authCallback) {
-      clearTimeout(this.authCallback.timer)
-      this.authCallback = null
-    }
+    this.packetListeners = []
     this.responseBuffer = Buffer.alloc(0)
+    this.authenticated = false
   }
 
   private _nextId(): number {
     return ++this.requestId
-  }
-
-  private _processBuffer(): void {
-    while (true) {
-      const packet = decodePacket(this.responseBuffer)
-      if (!packet) break
-
-      this.responseBuffer = this.responseBuffer.subarray(4 + packet.size)
-
-      // ── Auth response handling ──
-      if (this.authCallback) {
-        // Skip the empty pre-auth SERVERDATA_RESPONSE packet
-        if (packet.type === SERVERDATA_RESPONSE && packet.id === this.authCallback.authId) {
-          continue
-        }
-        // Auth success
-        if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id >= 0) {
-          const cb = this.authCallback
-          this.authCallback = null
-          cb.resolve()
-          continue
-        }
-        // Auth failure (id = -1)
-        if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id === -1) {
-          const cb = this.authCallback
-          this.authCallback = null
-          cb.reject(new Error("RCON authentication failed — check password"))
-          continue
-        }
-      }
-
-      // ── Command response handling ──
-      // Check if this packet is a sentinel response (marks end of multi-packet output)
-      for (const [cmdId, cb] of this.commandCallbacks) {
-        if (packet.id === cb.sentinelId) {
-          // Sentinel received — finalize the command response
-          clearTimeout(cb.timer)
-          const parts = this.commandResponses.get(cmdId) ?? []
-          this.commandResponses.delete(cmdId)
-          this.commandCallbacks.delete(cmdId)
-          cb.resolve(parts.join(""))
-          break
-        }
-        if (packet.id === cmdId) {
-          // Accumulate response part
-          const parts = this.commandResponses.get(cmdId)
-          if (parts) parts.push(packet.body)
-          break
-        }
-      }
-    }
   }
 }
 
