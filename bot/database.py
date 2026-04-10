@@ -1059,3 +1059,43 @@ class Database:
             "DELETE FROM panel_roles WHERE guild_id=%s AND panel_id=%s AND role_id=%s",
             (guild_id, panel_id, role_id),
         )
+
+    # ── Role Sync Rules ──────────────────────────────────────────────────────
+
+    async def get_role_sync_rules(self, guild_id: int) -> list:
+        """Fetch enabled role sync rules with their source role IDs."""
+        rows = await self.fetchall(
+            "SELECT id, target_role_id FROM role_sync_rules "
+            "WHERE guild_id=%s AND enabled=TRUE",
+            (guild_id,),
+        )
+        rules = []
+        for r in rows:
+            source_rows = await self.fetchall(
+                "SELECT role_id FROM role_sync_source_roles WHERE rule_id=%s",
+                (r[0],),
+            )
+            rules.append({
+                "id": r[0],
+                "target_role_id": int(r[1]),
+                "source_role_ids": {int(s[0]) for s in source_rows},
+            })
+        return rules
+
+    async def get_watched_role_ids(self, guild_id: int) -> dict:
+        """Return dict of role_id → role_name for watched roles."""
+        rows = await self.fetchall(
+            "SELECT role_id, role_name FROM role_watch_configs WHERE guild_id=%s",
+            (guild_id,),
+        )
+        return {int(r[0]): r[1] for r in rows}
+
+    async def insert_role_change_log(self, guild_id: int, discord_id: int,
+                                     discord_name: str, role_id: int,
+                                     role_name: str, action: str):
+        await self.execute(
+            "INSERT INTO role_change_logs "
+            "(guild_id, discord_id, discord_name, role_id, role_name, action, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
+            (guild_id, discord_id, discord_name, role_id, role_name, action),
+        )

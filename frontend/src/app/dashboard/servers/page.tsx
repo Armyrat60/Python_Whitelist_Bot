@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Radio,
@@ -22,8 +22,16 @@ import {
   Search,
   RefreshCw,
   Gamepad2,
-  Settings2,
+  Copy,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  ShieldMinus,
   Trash2,
+  Settings2,
+  Map,
+  SkipForward,
+  Square,
+  RotateCcw,
 } from "lucide-react";
 import {
   useGameServers,
@@ -35,6 +43,12 @@ import {
   useRemoveFromSquad,
   useDisbandSquad,
   useDemoteCommander,
+  useChangeLayer,
+  useSetNextLayer,
+  useEndMatch,
+  useRestartMatch,
+  useRconLayers,
+  useRefreshLayers,
   type RconServerState,
   type RconPlayer,
 } from "@/hooks/use-settings";
@@ -73,18 +87,50 @@ const KIT_MAP: Record<string, string> = {
 
 function parseKit(role: string): string {
   if (!role) return ""
-  // Role format: FACTION_KIT_NUMBER e.g. CAF_SL_05, PLA_Rifleman_01
   const parts = role.split("_")
   if (parts.length < 2) return role
-  // Try the second part (kit name)
   const kitRaw = parts[1].toUpperCase()
   return KIT_MAP[kitRaw] ?? (parts.slice(1, -1).join(" ").replace(/^\w/, c => c.toUpperCase()) || role)
 }
 
-// ─── Faction Colors ─────────────────────────────────────────────────────────
+function isCommanderRole(role: string): boolean {
+  const upper = role.toUpperCase()
+  return upper.includes("COMMANDER") || upper.includes("CMD")
+}
 
-// Team colors: based on typical Squad team assignments (Team 1 = blue-ish, Team 2 = red-ish)
-// Individual faction colors just for the team header badge
+function isCommandSquad(squad: RconServerState["teams"][number]["squads"][number]): boolean {
+  return squad.name.toLowerCase() === "command" || squad.name.toLowerCase() === "cmd" ||
+    squad.players.some(p => isCommanderRole(p.role))
+}
+
+/** Parse layer name like "Yehorivka_RAAS_v1" into { map, mode, version } */
+function parseLayerName(layer: string): { map: string; mode: string; version: string; factions: string } {
+  const parts = layer.split("_")
+  if (parts.length < 2) return { map: layer, mode: "", version: "", factions: "" }
+
+  // Known factions that appear in layer names
+  const FACTION_TAGS = new Set(["CAF", "USA", "USMC", "RUS", "GB", "BAF", "MEA", "INS", "MIL", "AUS", "ADF", "PLA", "PLANMC", "TLF", "IMF", "WPMC"])
+  const MODES = new Set(["RAAS", "AAS", "Invasion", "Insurgency", "TC", "Skirmish", "Seed", "Training", "Destruction"])
+
+  let map = parts[0]
+  let mode = ""
+  let version = ""
+  const factions: string[] = []
+
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i]
+    if (p.match(/^v\d+$/i)) { version = p; continue }
+    if (MODES.has(p)) { mode = p; continue }
+    if (FACTION_TAGS.has(p.toUpperCase())) { factions.push(p); continue }
+    // Could be part of map name or mode
+    if (!mode) mode = p
+  }
+
+  return { map, mode, version, factions: factions.join(" vs ") }
+}
+
+// ─── Faction Colors (for badge text) ────────────────────────────────────────
+
 const FACTION_COLORS: Record<string, string> = {
   USA: "#3b82f6", USMC: "#2563eb",
   RUS: "#3b82f6", RGF: "#3b82f6", VDV: "#3b82f6",
@@ -98,13 +144,213 @@ const FACTION_COLORS: Record<string, string> = {
   WPMC: "#8b5cf6",
 };
 
+// Team badge always: Team 1 = blue, Team 2 = red
+const TEAM_COLORS: Record<string, string> = {
+  "1": "#3b82f6",
+  "2": "#ef4444",
+};
+
+// ─── Layer Search Picker ────────────────────────────────────────────────────
+
+function LayerPicker({
+  serverId, onSelect, onCancel,
+}: {
+  serverId: number;
+  onSelect: (layer: string) => void;
+  onCancel: () => void;
+}) {
+  const { data: layersData, isLoading } = useRconLayers(serverId);
+  const refreshLayers = useRefreshLayers();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus() }, []);
+
+  const filtered = useMemo(() => {
+    if (!layersData?.layers) return [];
+    const q = search.toLowerCase();
+    return layersData.layers.filter(l => l.toLowerCase().includes(q));
+  }, [layersData?.layers, search]);
+
+  // Group by map name
+  const grouped = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    for (const layer of filtered) {
+      const { map } = parseLayerName(layer);
+      if (!groups[map]) groups[map] = [];
+      groups[map].push(layer);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
+
+  return (
+    <div className="rounded-lg border border-white/[0.1] bg-[var(--bg-primary)] shadow-xl w-80 max-h-80 flex flex-col">
+      <div className="flex items-center gap-2 p-2 border-b border-white/[0.06]">
+        <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search layers..."
+          className="flex-1 bg-transparent text-xs text-white/90 outline-none placeholder:text-muted-foreground/40"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onCancel();
+            if (e.key === "Enter" && filtered.length === 1) onSelect(filtered[0]);
+          }}
+        />
+        <button
+          onClick={async () => {
+            try {
+              await refreshLayers.mutateAsync(serverId);
+              queryClient.invalidateQueries({ queryKey: ["rcon-layers", serverId] });
+              toast.success("Layers refreshed");
+            } catch { toast.error("Failed to refresh layers"); }
+          }}
+          className="text-muted-foreground/50 hover:text-white/70 p-0.5"
+          title="Refresh layers from server"
+        >
+          <RefreshCw className={`h-3 w-3 ${refreshLayers.isPending ? "animate-spin" : ""}`} />
+        </button>
+        <button onClick={onCancel} className="text-muted-foreground/50 hover:text-white/70 text-xs px-1">x</button>
+      </div>
+      <div className="overflow-y-auto flex-1 p-1">
+        {isLoading && <p className="text-[10px] text-muted-foreground/40 p-2">Loading layers...</p>}
+        {!isLoading && filtered.length === 0 && (
+          <p className="text-[10px] text-muted-foreground/40 p-2">
+            {layersData?.layers?.length === 0 ? "No layers cached. Click refresh to fetch from server." : "No matching layers."}
+          </p>
+        )}
+        {grouped.map(([mapName, layers]) => (
+          <div key={mapName}>
+            <p className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-wider px-2 pt-1.5 pb-0.5">{mapName}</p>
+            {layers.map((layer) => {
+              const { mode, version, factions } = parseLayerName(layer);
+              return (
+                <button
+                  key={layer}
+                  onClick={() => onSelect(layer)}
+                  className="w-full text-left px-2 py-1 rounded text-xs text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-2"
+                >
+                  <span className="truncate flex-1">{mode}{version ? ` ${version}` : ""}</span>
+                  {factions && <span className="text-[9px] text-muted-foreground/40 shrink-0">{factions}</span>}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+        {layersData?.fromCache && layersData.cachedAt && (
+          <p className="text-[9px] text-muted-foreground/30 px-2 py-1 border-t border-white/[0.04]">
+            Cached {new Date(layersData.cachedAt).toLocaleDateString()}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Server Commands Dropdown ───────────────────────────────────────────────
+
+function ServerCommandsMenu({ serverId }: { serverId: number }) {
+  const changeLayerMut = useChangeLayer();
+  const setNextLayerMut = useSetNextLayer();
+  const endMatchMut = useEndMatch();
+  const restartMatchMut = useRestartMatch();
+
+  const [mode, setMode] = useState<"idle" | "change-map" | "set-next-map" | "confirm-end" | "confirm-restart">("idle");
+
+  if (mode === "change-map" || mode === "set-next-map") {
+    return (
+      <LayerPicker
+        serverId={serverId}
+        onCancel={() => setMode("idle")}
+        onSelect={async (layer) => {
+          try {
+            if (mode === "change-map") {
+              await changeLayerMut.mutateAsync({ serverId, layer });
+              toast.success(`Changing map to ${layer}`);
+            } else {
+              await setNextLayerMut.mutateAsync({ serverId, layer });
+              toast.success(`Next map set to ${layer}`);
+            }
+            setMode("idle");
+          } catch { toast.error("Command failed"); }
+        }}
+      />
+    );
+  }
+
+  if (mode === "confirm-end" || mode === "confirm-restart") {
+    const isEnd = mode === "confirm-end";
+    const mut = isEnd ? endMatchMut : restartMatchMut;
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">{isEnd ? "End match?" : "Restart match?"}</span>
+        <Button
+          size="sm" variant="outline"
+          className={`h-7 text-[11px] ${isEnd ? "text-red-400 border-red-500/30" : "text-amber-400 border-amber-500/30"}`}
+          disabled={mut.isPending}
+          onClick={async () => {
+            try {
+              await mut.mutateAsync({ serverId });
+              toast.success(isEnd ? "Match ended" : "Match restarting");
+              setMode("idle");
+            } catch { toast.error("Command failed"); }
+          }}
+        >
+          {mut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
+        </Button>
+        <button onClick={() => setMode("idle")} className="text-muted-foreground/50 text-xs px-1">x</button>
+      </div>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={
+        <button className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-white hover:bg-white/[0.06] transition-colors border border-white/[0.08] bg-white/[0.02]">
+          <Settings2 className="h-3.5 w-3.5" /> Server <ChevronDown className="h-3 w-3" />
+        </button>
+      } />
+      <DropdownMenuContent side="bottom" align="end">
+        <DropdownMenuItem onClick={() => setMode("change-map")}>
+          <Map className="h-3.5 w-3.5 mr-2" /> Change Map
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setMode("set-next-map")}>
+          <SkipForward className="h-3.5 w-3.5 mr-2" /> Set Next Map
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setMode("confirm-end")} className="text-red-400">
+          <Square className="h-3.5 w-3.5 mr-2" /> End Match
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setMode("confirm-restart")} className="text-amber-400">
+          <RotateCcw className="h-3.5 w-3.5 mr-2" /> Restart Match
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // ─── Player Action Menu ─────────────────────────────────────────────────────
 
-function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; player: RconPlayer; canExecute: boolean }) {
+interface PlayerPerms {
+  canWarn: boolean;
+  canKick: boolean;
+  canTeamChange: boolean;
+  canDemote: boolean;
+  hasAny: boolean;
+}
+
+function PlayerActionMenu({
+  serverId, player, perms, teamId,
+}: {
+  serverId: number; player: RconPlayer; perms: PlayerPerms; teamId?: string;
+}) {
   const kick = useKickPlayer();
   const warn = useWarnPlayer();
   const forceTeam = useForceTeamChange();
   const removeSquad = useRemoveFromSquad();
+  const demoteCmd = useDemoteCommander();
   const [mode, setMode] = useState<"idle" | "kick" | "warn">("idle");
   const [inputVal, setInputVal] = useState("");
 
@@ -142,7 +388,9 @@ function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; 
     );
   }
 
-  if (!canExecute) return null;
+  if (!perms.hasAny) return null;
+
+  const showDemote = isCommanderRole(player.role) && teamId && perms.canDemote;
 
   return (
     <DropdownMenu>
@@ -150,24 +398,42 @@ function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; 
         Actions <ChevronDown className="h-3 w-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="left" align="start">
-        <DropdownMenuItem onClick={() => setMode("warn")}>
-          <MessageSquareWarning className="h-3.5 w-3.5 mr-2 text-amber-400" /> Warn
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setMode("kick")} className="text-red-400">
-          <UserX className="h-3.5 w-3.5 mr-2" /> Kick
-        </DropdownMenuItem>
+        {perms.canWarn && (
+          <DropdownMenuItem onClick={() => setMode("warn")}>
+            <MessageSquareWarning className="h-3.5 w-3.5 mr-2 text-amber-400" /> Warn
+          </DropdownMenuItem>
+        )}
+        {perms.canKick && (
+          <DropdownMenuItem onClick={() => setMode("kick")} className="text-red-400">
+            <UserX className="h-3.5 w-3.5 mr-2" /> Kick
+          </DropdownMenuItem>
+        )}
+        {(perms.canWarn || perms.canKick) && perms.canTeamChange && <DropdownMenuSeparator />}
+        {perms.canTeamChange && (
+          <>
+            <DropdownMenuItem onClick={async () => {
+              try { await forceTeam.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Moved ${player.name}`); } catch { toast.error("Failed"); }
+            }}>
+              <ArrowLeftRight className="h-3.5 w-3.5 mr-2" /> Force Team Change
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={async () => {
+              try { await removeSquad.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Removed ${player.name} from squad`); } catch { toast.error("Failed"); }
+            }}>
+              <UserMinus className="h-3.5 w-3.5 mr-2" /> Remove from Squad
+            </DropdownMenuItem>
+          </>
+        )}
+        {showDemote && (
+          <DropdownMenuItem onClick={async () => {
+            try { await demoteCmd.mutateAsync({ serverId, team_id: teamId }); toast.success("Commander demoted"); } catch { toast.error("Demote failed"); }
+          }} className="text-amber-400">
+            <ShieldMinus className="h-3.5 w-3.5 mr-2" /> Demote Commander
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={async () => {
-          try { await forceTeam.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Moved ${player.name}`); } catch { toast.error("Failed"); }
-        }}>
-          <ArrowLeftRight className="h-3.5 w-3.5 mr-2" /> Force Team Change
+        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(player.steamId); toast.success("Steam ID copied"); }}>
+          <Copy className="h-3.5 w-3.5 mr-2" /> Copy Steam ID
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={async () => {
-          try { await removeSquad.mutateAsync({ serverId, player_id: player.id, player_name: player.name }); toast.success(`Removed ${player.name} from squad`); } catch { toast.error("Failed"); }
-        }}>
-          <UserMinus className="h-3.5 w-3.5 mr-2" /> Remove from Squad
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => window.open(`https://www.battlemetrics.com/rcon/players?filter[search]=${player.steamId}`, "_blank")}>
           <ExternalLink className="h-3.5 w-3.5 mr-2" /> BattleMetrics
         </DropdownMenuItem>
@@ -179,12 +445,14 @@ function PlayerActionMenu({ serverId, player, canExecute }: { serverId: number; 
 // ─── Squad Card ─────────────────────────────────────────────────────────────
 
 function SquadCard({
-  squad, serverId, canExecute, searchQuery,
+  squad, serverId, playerPerms, canTeamChange, searchQuery, teamId, forceExpanded,
 }: {
   squad: RconServerState["teams"][number]["squads"][number];
-  serverId: number; canExecute: boolean; searchQuery: string;
+  serverId: number; playerPerms: PlayerPerms; canTeamChange: boolean; searchQuery: string;
+  teamId: string; forceExpanded?: boolean | null;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [localExpanded, setLocalExpanded] = useState(true);
+  const expanded = forceExpanded ?? localExpanded;
   const disband = useDisbandSquad();
 
   const filteredPlayers = searchQuery
@@ -193,55 +461,103 @@ function SquadCard({
 
   if (searchQuery && filteredPlayers.length === 0) return null;
 
+  // Sort: squad leader first, then FTL, then rest
+  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
+    if (a.isLeader && !b.isLeader) return -1;
+    if (!a.isLeader && b.isLeader) return 1;
+    const aFTL = a.role.toUpperCase().includes("FTL");
+    const bFTL = b.role.toUpperCase().includes("FTL");
+    if (aFTL && !bFTL) return -1;
+    if (!aFTL && bFTL) return 1;
+    return 0;
+  });
+
+  const isCmdSquad = isCommandSquad(squad);
+  const teamColor = TEAM_COLORS[teamId] ?? "#60a5fa";
+
   return (
-    <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-      {/* Squad header — colored accent bar */}
+    <div className={`rounded-lg border overflow-hidden ${isCmdSquad ? "border-amber-500/30 bg-amber-500/[0.02]" : "border-white/[0.06]"}`}>
+      {/* Squad header */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setLocalExpanded(!localExpanded)}
         className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/[0.03]"
-        style={{ borderLeft: "3px solid rgba(255,255,255,0.15)" }}
+        style={{ borderLeft: `3px solid ${isCmdSquad ? "#f59e0b" : teamColor}` }}
       >
         <div className="flex items-center gap-2 min-w-0">
           {expanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
-          <span className="text-sm font-semibold text-white/90">
-            {squad.id}. {squad.name}
+          {/* Squad number badge */}
+          <span className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: `${teamColor}40`, color: teamColor }}>
+            {squad.id}
           </span>
-          {squad.locked && <span title="Locked"><Lock className="h-3.5 w-3.5 text-amber-400/80 shrink-0" /></span>}
+          <span className="text-sm font-semibold text-white/90">
+            {squad.name}
+          </span>
+          {isCmdSquad && <span title="Command Squad"><Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>}
+          {squad.locked && <span title="Locked"><Lock className="h-3.5 w-3.5 text-red-500 fill-red-500/30 shrink-0" /></span>}
           <span className="text-[10px] text-muted-foreground/50">{filteredPlayers.length}/{squad.size}</span>
         </div>
-        <span className="text-[11px] text-muted-foreground/60 truncate ml-2">
-          {squad.leader}
-        </span>
+        <div className="flex items-center gap-2 ml-2">
+          <span className="text-[11px] text-white/50 truncate">
+            {squad.leader}
+          </span>
+          {canTeamChange && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={
+                <button
+                  className="rounded p-0.5 text-muted-foreground/40 hover:text-red-400 hover:bg-white/[0.05] transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              } />
+              <DropdownMenuContent side="left" align="start">
+                <DropdownMenuItem
+                  className="text-red-400"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await disband.mutateAsync({ serverId, team_id: squad.teamId, squad_id: squad.id, squad_name: squad.name });
+                      toast.success(`Disbanded ${squad.name}`);
+                    } catch { toast.error("Disband failed"); }
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" /> Confirm Disband
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </button>
 
       {expanded && (
         <div className="bg-white/[0.01]">
-          {filteredPlayers.map((player) => {
+          {sortedPlayers.map((player) => {
             const kit = parseKit(player.role);
+            const isCmd = isCommanderRole(player.role);
             return (
               <div key={player.id} className="flex items-center gap-2 py-1 px-3 border-t border-white/[0.03] hover:bg-white/[0.025]">
-                {/* Action button — left side like BM */}
-                <PlayerActionMenu serverId={serverId} player={player} canExecute={canExecute} />
+                {/* Action button — left side */}
+                <PlayerActionMenu serverId={serverId} player={player} perms={playerPerms} teamId={teamId} />
                 {/* Role icon */}
-                {player.role.toUpperCase().includes("COMMANDER") || player.role.toUpperCase().includes("CMD") ? (
+                {isCmd ? (
                   <span title="Commander"><Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
                 ) : player.isLeader ? (
                   <span title="Squad Leader"><ChevronsUp className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>
                 ) : (
                   <span className="w-3.5 shrink-0" />
                 )}
-                <span className={`text-xs truncate ${player.isLeader ? "text-white font-medium" : "text-white/70"}`}>
+                <span className={`text-xs truncate ${player.isLeader || isCmd ? "text-white font-medium" : "text-white/70"}`}>
                   {player.name}
                 </span>
                 {kit && (
-                  <span className="text-[10px] text-muted-foreground/40 truncate hidden sm:inline ml-auto">
+                  <span className="text-[10px] text-muted-foreground/60 truncate hidden sm:inline ml-auto">
                     {kit}
                   </span>
                 )}
               </div>
             );
           })}
-          {filteredPlayers.length === 0 && (
+          {sortedPlayers.length === 0 && (
             <p className="text-[10px] text-muted-foreground/30 py-2 px-3">Empty</p>
           )}
         </div>
@@ -253,35 +569,73 @@ function SquadCard({
 // ─── Team Column ────────────────────────────────────────────────────────────
 
 function TeamColumn({
-  team, serverId, canExecute, searchQuery,
+  team, serverId, playerPerms, canTeamChange, searchQuery,
 }: {
   team: RconServerState["teams"][number];
-  serverId: number; canExecute: boolean; searchQuery: string;
+  serverId: number; playerPerms: PlayerPerms; canTeamChange: boolean; searchQuery: string;
 }) {
+  const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const totalPlayers = team.squads.reduce((sum, s) => sum + s.players.length, 0) + team.unassigned.length;
-  const factionColor = FACTION_COLORS[team.factionTag] ?? (team.teamId === "1" ? "#60a5fa" : "#f87171");
+  const teamColor = TEAM_COLORS[team.teamId] ?? (team.teamId === "1" ? "#60a5fa" : "#f87171");
+  const factionColor = FACTION_COLORS[team.factionTag] ?? teamColor;
   const teamLabel = team.factionName || `Team ${team.teamId}`;
+
+  const toggleAll = useCallback(() => {
+    setAllExpanded(prev => prev === false ? true : prev === true ? null : false);
+  }, []);
+
+  const forceExpanded = allExpanded;
 
   const filteredUnassigned = searchQuery
     ? team.unassigned.filter((p) => p.name.toLowerCase().includes(searchQuery))
     : team.unassigned;
 
+  // Check if team has a commander
+  const hasCommander = team.squads.some(s => s.players.some(p => isCommanderRole(p.role)));
+
   return (
     <div className="space-y-2">
       {/* Team header */}
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0 font-bold text-sm text-white" style={{ backgroundColor: factionColor }}>
-          {team.teamId}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0 font-bold text-sm text-white" style={{ backgroundColor: teamColor }}>
+            {team.teamId}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-white/90 truncate">{teamLabel}</h3>
+              {hasCommander && <span title="Has Commander"><Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" /></span>}
+              {team.factionTag && (
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ color: factionColor, backgroundColor: `${factionColor}15` }}>
+                  {team.factionTag}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground/50">{totalPlayers} players · {team.squads.length} squads</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-white/90 truncate">{teamLabel}</h3>
-          <p className="text-[10px] text-muted-foreground/50">{totalPlayers} players · {team.squads.length} squads</p>
-        </div>
+        <button
+          onClick={toggleAll}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground/50 hover:text-white/70 hover:bg-white/[0.05] transition-colors"
+          title={allExpanded === false ? "Expand All" : "Collapse All"}
+        >
+          {allExpanded === false ? (
+            <><ChevronsUpDown className="h-3 w-3" /> Expand</>
+          ) : (
+            <><ChevronsDownUp className="h-3 w-3" /> Collapse</>
+          )}
+        </button>
       </div>
 
       {/* Squads */}
       {team.squads.map((squad) => (
-        <SquadCard key={`${squad.teamId}-${squad.id}`} squad={squad} serverId={serverId} canExecute={canExecute} searchQuery={searchQuery} />
+        <SquadCard
+          key={`${squad.teamId}-${squad.id}`}
+          squad={squad} serverId={serverId} playerPerms={playerPerms}
+          canTeamChange={canTeamChange}
+          searchQuery={searchQuery} teamId={team.teamId}
+          forceExpanded={forceExpanded}
+        />
       ))}
 
       {/* Unassigned */}
@@ -289,12 +643,11 @@ function TeamColumn({
         <div className="rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2">
           <p className="text-[10px] font-medium text-muted-foreground/40 mb-1">Unassigned</p>
           {filteredUnassigned.map((player) => (
-            <div key={player.id} className="flex items-center justify-between py-0.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-3.5 shrink-0" />
-                <span className="text-xs text-white/60 truncate">{player.name}</span>
-              </div>
-              <PlayerActionMenu serverId={serverId} player={player} canExecute={canExecute} />
+            <div key={player.id} className="flex items-center gap-2 py-0.5">
+              {/* Action button on LEFT — same as squad players */}
+              <PlayerActionMenu serverId={serverId} player={player} perms={playerPerms} teamId={team.teamId} />
+              <span className="w-3.5 shrink-0" />
+              <span className="text-xs text-white/60 truncate">{player.name}</span>
             </div>
           ))}
         </div>
@@ -307,9 +660,25 @@ function TeamColumn({
 
 export default function LiveServerPage() {
   const { data: serversData, isLoading: serversLoading } = useGameServers();
-  const canExecute = useHasPermission("rcon_execute");
-  const bcast = useBroadcast();
   const queryClient = useQueryClient();
+
+  // Granular permissions
+  const canWarn = useHasPermission("rcon_warn");
+  const canKick = useHasPermission("rcon_kick");
+  const canBroadcast = useHasPermission("rcon_broadcast");
+  const canTeamChange = useHasPermission("rcon_team_change");
+  const canDemote = useHasPermission("rcon_demote");
+  const canMapChange = useHasPermission("rcon_map_change");
+
+  const playerPerms: PlayerPerms = {
+    canWarn,
+    canKick,
+    canTeamChange,
+    canDemote,
+    hasAny: canWarn || canKick || canTeamChange || canDemote,
+  };
+
+  const bcast = useBroadcast();
 
   const servers = serversData?.servers?.filter((s) => s.enabled && s.rcon_host) ?? [];
   const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
@@ -358,6 +727,7 @@ export default function LiveServerPage() {
         <div className="flex items-center gap-3">
           <Radio className="h-5 w-5" style={{ color: "var(--accent-primary)" }} />
           <h1 className="text-xl font-bold text-white/90">Live Server</h1>
+          <span className="text-[10px] text-muted-foreground/30">Auto-refreshes every 5s</span>
         </div>
         <div className="flex items-center gap-2">
           {servers.length > 1 && (
@@ -366,6 +736,7 @@ export default function LiveServerPage() {
               {servers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
+          {canMapChange && activeServerId && <ServerCommandsMenu serverId={activeServerId} />}
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
             onClick={() => queryClient.invalidateQueries({ queryKey: ["rcon-players", activeServerId] })}>
             <RefreshCw className="h-3.5 w-3.5" />
@@ -404,7 +775,7 @@ export default function LiveServerPage() {
           <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search players..." className="h-8 text-xs pl-8" />
           {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-white/70 text-xs">x</button>}
         </div>
-        {canExecute && (
+        {canBroadcast && (
           <>
             <Input value={broadcastMsg} onChange={(e) => setBroadcastMsg(e.target.value)} placeholder="Broadcast..."
               className="h-8 text-xs flex-1 max-w-xs" onKeyDown={(e) => e.key === "Enter" && handleBroadcast()} />
@@ -432,7 +803,7 @@ export default function LiveServerPage() {
       {serverState && !serverState.error && serverState.teams.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {serverState.teams.map((team) => (
-            <TeamColumn key={team.teamId} team={team} serverId={activeServerId!} canExecute={canExecute} searchQuery={normalizedSearch} />
+            <TeamColumn key={team.teamId} team={team} serverId={activeServerId!} playerPerms={playerPerms} canTeamChange={canTeamChange} searchQuery={normalizedSearch} />
           ))}
         </div>
       )}
@@ -444,8 +815,6 @@ export default function LiveServerPage() {
           <p className="text-sm text-muted-foreground">No players online</p>
         </CardContent></Card>
       )}
-
-      <p className="text-[10px] text-muted-foreground/30 text-center">Auto-refreshes every 5 seconds</p>
     </div>
   );
 }

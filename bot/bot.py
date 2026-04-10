@@ -820,6 +820,145 @@ class WhitelistBot(commands.Bot):
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         if before.roles != after.roles:
             await self.enforce_member_roles(after)
+            await self._apply_role_sync_rules(before, after)
+            await self._log_role_changes(before, after)
+
+    # ── Role Sync Rules (source roles → target role) ─────────────────────────
+
+    _role_sync_cache: dict = {}   # guild_id → (rules, expiry)
+    _role_watch_cache: dict = {}  # guild_id → (watched, expiry)
+
+    async def _get_role_sync_rules_cached(self, guild_id: int) -> list:
+        now = utcnow()
+        cached = self._role_sync_cache.get(guild_id)
+        if cached and cached[1] > now:
+            return cached[0]
+        rules = await self.db.get_role_sync_rules(guild_id)
+        self._role_sync_cache[guild_id] = (rules, now + timedelta(minutes=5))
+        return rules
+
+    async def _get_watched_roles_cached(self, guild_id: int) -> dict:
+        now = utcnow()
+        cached = self._role_watch_cache.get(guild_id)
+        if cached and cached[1] > now:
+            return cached[0]
+        watched = await self.db.get_watched_role_ids(guild_id)
+        self._role_watch_cache[guild_id] = (watched, now + timedelta(minutes=5))
+        return watched
+
+    async def _apply_role_sync_rules(self, before: discord.Member, after: discord.Member):
+        """If member gained/lost a source role, add/remove the target role."""
+        guild_id = after.guild.id
+        try:
+            rules = await self._get_role_sync_rules_cached(guild_id)
+        except Exception as e:
+            log.error("Guild %s: failed to fetch role sync rules: %s", guild_id, e)
+            return
+
+        member_role_ids = {r.id for r in after.roles}
+        before_role_ids = {r.id for r in before.roles}
+        changed_role_ids = (member_role_ids - before_role_ids) | (before_role_ids - member_role_ids)
+
+        for rule in rules:
+            target_id = rule["target_role_id"]
+            source_ids = rule["source_role_ids"]
+
+            # Skip if the change was the target role itself (prevents loops)
+            if target_id in changed_role_ids:
+                continue
+
+            has_any_source = bool(source_ids & member_role_ids)
+            has_target = target_id in member_role_ids
+
+            if has_any_source and not has_target:
+                target_role = after.guild.get_role(target_id)
+                if target_role:
+                    try:
+                        await after.add_roles(target_role, reason=f"Role Sync Rule #{rule['id']}")
+                        log.info("Guild %s: role sync added %s to %s (rule %s)", guild_id, target_role.name, after, rule["id"])
+                    except discord.Forbidden:
+                        log.warning("Guild %s: missing permissions to add role %s", guild_id, target_role.name)
+
+            elif not has_any_source and has_target:
+                target_role = after.guild.get_role(target_id)
+                if target_role:
+                    try:
+                        await after.remove_roles(target_role, reason=f"Role Sync Rule #{rule['id']}")
+                        log.info("Guild %s: role sync removed %s from %s (rule %s)", guild_id, target_role.name, after, rule["id"])
+                    except discord.Forbidden:
+                        log.warning("Guild %s: missing permissions to remove role %s", guild_id, target_role.name)
+
+    async def _log_role_changes(self, before: discord.Member, after: discord.Member):
+        """Log watched role changes to the database."""
+        guild_id = after.guild.id
+        try:
+            watched = await self._get_watched_roles_cached(guild_id)
+        except Exception as e:
+            log.error("Guild %s: failed to fetch watched roles: %s", guild_id, e)
+            return
+        if not watched:
+            return
+
+        before_ids = {r.id for r in before.roles}
+        after_ids = {r.id for r in after.roles}
+        gained = after_ids - before_ids
+        lost = before_ids - after_ids
+        name = after.nick or after.display_name or str(after)
+
+        for role_id in gained:
+            if role_id in watched:
+                try:
+                    await self.db.insert_role_change_log(
+                        guild_id, after.id, name, role_id, watched[role_id], "gained"
+                    )
+                except Exception as e:
+                    log.error("Guild %s: role change log insert failed: %s", guild_id, e)
+
+        for role_id in lost:
+            if role_id in watched:
+                try:
+                    await self.db.insert_role_change_log(
+                        guild_id, after.id, name, role_id, watched[role_id], "lost"
+                    )
+                except Exception as e:
+                    log.error("Guild %s: role change log insert failed: %s", guild_id, e)
+
+    async def _periodic_role_sync_rules(self, guild: discord.Guild):
+        """Hourly backup: ensure target roles match source role presence for all members."""
+        guild_id = guild.id
+        rules = await self.db.get_role_sync_rules(guild_id)
+        if not rules:
+            return
+
+        added = 0
+        removed = 0
+        for rule in rules:
+            target_role = guild.get_role(rule["target_role_id"])
+            if not target_role:
+                continue
+            source_ids = rule["source_role_ids"]
+
+            for member in guild.members:
+                if member.bot:
+                    continue
+                member_role_ids = {r.id for r in member.roles}
+                has_any_source = bool(source_ids & member_role_ids)
+                has_target = target_role.id in member_role_ids
+
+                try:
+                    if has_any_source and not has_target:
+                        await member.add_roles(target_role, reason=f"Role Sync Rule #{rule['id']} (periodic)")
+                        added += 1
+                        await asyncio.sleep(0.5)
+                    elif not has_any_source and has_target:
+                        await member.remove_roles(target_role, reason=f"Role Sync Rule #{rule['id']} (periodic)")
+                        removed += 1
+                        await asyncio.sleep(0.5)
+                except discord.Forbidden:
+                    pass
+
+        if added or removed:
+            log.info("Guild %s role sync rules periodic: +%d -%d", guild_id, added, removed)
 
     async def on_member_remove(self, member: discord.Member):
         guild_id = member.guild.id
@@ -871,6 +1010,11 @@ class WhitelistBot(commands.Bot):
                     await self.db.set_setting(guild_id, "last_role_sync_at", utcnow().isoformat())
             except Exception as e:
                 log.error("Guild %s: daily role sync failed: %s", guild_id, e)
+            # Role sync rules — periodic backup sync (every hour)
+            try:
+                await self._periodic_role_sync_rules(guild)
+            except Exception as e:
+                log.error("Guild %s: periodic role sync rules failed: %s", guild_id, e)
 
     async def _daily_role_sync(self, guild: "discord.Guild") -> None:
         """Ensure whitelist membership matches Discord role membership for all mapped roles."""

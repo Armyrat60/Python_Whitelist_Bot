@@ -1,17 +1,36 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Plus,
   Trash2,
   Search,
+  GripVertical,
+  Copy,
 } from "lucide-react";
 import {
-  useGroups,
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   useCategories,
   useCreateCategory,
   useDeleteCategory,
+  useUpdateCategory,
+  useCloneCategory,
 } from "@/hooks/use-settings";
 import type { Whitelist, WhitelistCategory } from "@/lib/types";
 
@@ -43,6 +62,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +80,6 @@ export default function CategoryListView({
   whitelists: Whitelist[];
   onManage: (cat: WhitelistCategory, wl: Whitelist) => void;
 }) {
-  // Fetch categories for all manual whitelists
   const categoryQueries = whitelists.map((wl) => ({
     wl,
     query: useCategories(wl.id),
@@ -68,34 +87,126 @@ export default function CategoryListView({
 
   const isLoading = categoryQueries.some((q) => q.query.isLoading);
 
-  // Merge all categories into one flat list with whitelist info
   const allCategories: CategoryWithWhitelist[] = useMemo(() => {
     const cats: CategoryWithWhitelist[] = [];
     for (const { wl, query } of categoryQueries) {
       if (!query.data) continue;
       for (const cat of query.data) {
-        cats.push({
-          ...cat,
-          whitelist_name: wl.name,
-          whitelist_slug: wl.slug,
-        });
+        cats.push({ ...cat, whitelist_name: wl.name, whitelist_slug: wl.slug });
       }
     }
-    cats.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    // Sort by sort_order first, then alphabetically as fallback
+    cats.sort((a, b) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
     return cats;
   }, [categoryQueries.map((q) => q.query.data)]);
 
-  // Search
+  // All unique tags across categories
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const cat of allCategories) {
+      if (cat.tags) {
+        for (const tag of cat.tags.split(",").map(t => t.trim()).filter(Boolean)) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return [...tagSet].sort();
+  }, [allCategories]);
+
+  // Search + tag filter
   const [searchInput, setSearchInput] = useState("");
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+
   const filteredCategories = useMemo(() => {
-    if (!searchInput.trim()) return allCategories;
-    const q = searchInput.toLowerCase();
-    return allCategories.filter((c) => c.name.toLowerCase().includes(q));
-  }, [allCategories, searchInput]);
+    let cats = allCategories;
+    if (searchInput.trim()) {
+      const q = searchInput.toLowerCase();
+      cats = cats.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    if (activeTags.size > 0) {
+      cats = cats.filter((c) => {
+        if (!c.tags) return false;
+        const catTags = new Set(c.tags.split(",").map(t => t.trim()));
+        for (const tag of activeTags) {
+          if (!catTags.has(tag)) return false;
+        }
+        return true;
+      });
+    }
+    return cats;
+  }, [allCategories, searchInput, activeTags]);
+
+  const toggleTag = useCallback((tag: string) => {
+    setActiveTags(prev => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  }, []);
 
   // Add state
   const [addOpen, setAddOpen] = useState(false);
-  const [addToWhitelistId, setAddToWhitelistId] = useState<number | null>(whitelists[0]?.id ?? null);
+
+  // DnD
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // We need an update mutation for reorder — use the first whitelist
+  const defaultWlId = whitelists[0]?.id ?? 0;
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = filteredCategories.findIndex(c => c.id === active.id);
+    const newIndex = filteredCategories.findIndex(c => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Update sort_order for moved category
+    const movedCat = filteredCategories[oldIndex];
+    const targetCat = filteredCategories[newIndex];
+    const newSortOrder = targetCat.sort_order;
+
+    // Find the right whitelist's update mutation
+    const wl = whitelists.find(w => w.id === movedCat.whitelist_id);
+    if (!wl) return;
+
+    // Simple approach: set moved cat to target's sort_order, shift others
+    const updates: { id: number; sort_order: number; whitelist_id: number }[] = [];
+    const reordered = [...filteredCategories];
+    const [removed] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, removed);
+
+    reordered.forEach((cat, idx) => {
+      if (cat.sort_order !== idx) {
+        updates.push({ id: cat.id, sort_order: idx, whitelist_id: cat.whitelist_id });
+      }
+    });
+
+    // Fire updates (fire and forget, queries will refresh)
+    for (const upd of updates) {
+      const wlId = upd.whitelist_id;
+      fetch(`/api/admin/whitelists/${wlId}/categories/${upd.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: upd.sort_order }),
+      });
+    }
+
+    // Optimistically reorder in the UI by invalidating queries after a short delay
+    setTimeout(() => {
+      for (const { wl } of categoryQueries) {
+        if (wl) categoryQueries.find(q => q.wl.id === wl.id)?.query.refetch();
+      }
+    }, 300);
+  }
 
   // Stats
   const totalEntries = allCategories.reduce((s, c) => s + c.user_count, 0);
@@ -140,34 +251,67 @@ export default function CategoryListView({
         )}
       </div>
 
-      {/* Category list */}
+      {/* Tag filter pills */}
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              onClick={() => toggleTag(tag)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs transition-colors",
+                activeTags.has(tag)
+                  ? "bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/40"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-white"
+              )}
+            >
+              {tag}
+            </button>
+          ))}
+          {activeTags.size > 0 && (
+            <button
+              className="text-xs text-muted-foreground hover:text-white px-2"
+              onClick={() => setActiveTags(new Set())}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Category list with drag-and-drop */}
       {filteredCategories.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-12 text-center">
-          <p className="text-sm font-medium">{searchInput ? "No matching categories" : "No categories yet"}</p>
+          <p className="text-sm font-medium">{searchInput || activeTags.size > 0 ? "No matching categories" : "No categories yet"}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {searchInput ? "Try a different search term." : "Add a category to start building your roster."}
+            {searchInput || activeTags.size > 0 ? "Try a different search or filter." : "Add a category to start building your roster."}
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredCategories.map((cat) => (
-            <CategoryCard
-              key={cat.id}
-              cat={cat}
-              onManage={() => {
-                const wl = whitelists.find((w) => w.id === cat.whitelist_id);
-                if (wl) onManage(cat, wl);
-              }}
-            />
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={filteredCategories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {filteredCategories.map((cat) => (
+                <SortableCategoryCard
+                  key={cat.id}
+                  cat={cat}
+                  whitelists={whitelists}
+                  onManage={() => {
+                    const wl = whitelists.find((w) => w.id === cat.whitelist_id);
+                    if (wl) onManage(cat, wl);
+                  }}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Add category form */}
       {addOpen && (
         <AddCategoryForm
           whitelists={whitelists}
-          defaultWhitelistId={addToWhitelistId ?? whitelists[0]?.id ?? 0}
+          defaultWhitelistId={whitelists[0]?.id ?? 0}
           onCreated={() => setAddOpen(false)}
           onCancel={() => setAddOpen(false)}
         />
@@ -176,60 +320,107 @@ export default function CategoryListView({
   );
 }
 
-// ─── Category Card (simplified) ──────────────────────────────────────────────
+// ─── Sortable Category Card ──────────────────────────────────────────────────
 
-function CategoryCard({
+function SortableCategoryCard({
   cat,
+  whitelists,
   onManage,
 }: {
   cat: CategoryWithWhitelist;
+  whitelists: Whitelist[];
   onManage: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   const deleteCategory = useDeleteCategory(cat.whitelist_id);
+  const cloneCategory = useCloneCategory(cat.whitelist_id);
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="flex items-center gap-4 px-5 py-4">
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={onManage}>
-          <p className="text-base font-medium truncate">{cat.name}</p>
-          <p className="text-sm text-muted-foreground mt-0.5">{cat.user_count} entries</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <AlertDialog>
-            <AlertDialogTrigger render={
-              <Button size="sm" variant="outline" className="h-9 text-destructive hover:text-destructive hover:border-destructive/30" title="Delete category" />
-            }>
-              <Trash2 className="h-4 w-4" />
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Deleting this category removes all managers. Existing members will be unassigned (not deleted).
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={() =>
-                  deleteCategory.mutate(cat.id, {
-                    onSuccess: () => toast.success("Category deleted"),
-                    onError:   () => toast.error("Failed to delete category"),
-                  })
-                }>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 px-4 text-sm"
-            onClick={onManage}
+    <div ref={setNodeRef} style={style}>
+      <Card className="overflow-hidden">
+        <CardContent className="flex items-center gap-3 px-4 py-4">
+          {/* Drag handle */}
+          <button
+            className="shrink-0 cursor-grab text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
           >
-            Manage
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            <GripVertical className="h-5 w-5" />
+          </button>
+
+          {/* Name + count */}
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={onManage}>
+            <div className="flex items-center gap-2">
+              <p className="text-base font-medium truncate">{cat.name}</p>
+              {cat.tags && (
+                <div className="flex gap-1 shrink-0">
+                  {cat.tags.split(",").slice(0, 3).map(t => t.trim()).filter(Boolean).map(tag => (
+                    <span key={tag} className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mt-0.5">{cat.user_count} entries</p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 w-9 p-0"
+              title="Clone category"
+              onClick={() => {
+                cloneCategory.mutate(cat.id, {
+                  onSuccess: (res) => toast.success(`Cloned as "${res.name}"`),
+                  onError: () => toast.error("Failed to clone"),
+                });
+              }}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger render={
+                <Button size="sm" variant="outline" className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:border-destructive/30" title="Delete category" />
+              }>
+                <Trash2 className="h-4 w-4" />
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Deleting this category removes all managers. Existing members will be unassigned (not deleted).
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={() =>
+                    deleteCategory.mutate(cat.id, {
+                      onSuccess: () => toast.success("Category deleted"),
+                      onError:   () => toast.error("Failed to delete category"),
+                    })
+                  }>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 px-4 text-sm"
+              onClick={onManage}
+            >
+              Manage
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

@@ -11,12 +11,14 @@ import {
   Search,
   ExternalLink,
   Upload,
+  Download,
   AlertCircle,
   CheckCircle2,
   Pencil,
   Check,
   X,
   Settings2,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   useCategoryEntries,
@@ -25,6 +27,9 @@ import {
   useImportCategoryEntries,
   useUpdateCategory,
   useGroups,
+  useBulkDeleteEntries,
+  useBulkMoveEntries,
+  useCategories,
 } from "@/hooks/use-settings";
 import type { Whitelist, WhitelistCategory, CategoryEntry } from "@/lib/types";
 
@@ -51,6 +56,7 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectTrigger,
@@ -78,13 +84,16 @@ function isExpiredOrSoon(dateStr: string | null | undefined): boolean {
 
 // ─── EntryRow ─────────────────────────────────────────────────────────────────
 
-function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => void }) {
+function EntryRow({ entry, onRemove, selected, onToggle }: { entry: CategoryEntry; onRemove: () => void; selected?: boolean; onToggle?: () => void }) {
   const steamId    = entry.steam_ids?.[0] ?? "\u2014";
   const noDiscord  = entry.discord_name === "[No Discord]" || entry.created_via === "manual_steam_only";
   const expiredSoon = isExpiredOrSoon(entry.expires_at);
 
   return (
-    <div className="flex items-center gap-4 px-5 py-3 bg-white/[0.01] hover:bg-white/[0.03] text-sm">
+    <div className={cn("flex items-center gap-4 px-5 py-3 hover:bg-white/[0.03] text-sm", selected ? "bg-sky-500/5" : "bg-white/[0.01]")}>
+      {onToggle && (
+        <Checkbox checked={selected} onCheckedChange={onToggle} className="h-4 w-4 shrink-0" />
+      )}
       <div className="flex-1 min-w-0 space-y-0.5">
         <div>
           {noDiscord ? (
@@ -170,8 +179,11 @@ export default function EntryView({
   const addEntry    = useAddCategoryEntry(whitelist.id, category.id);
   const removeEntry = useRemoveCategoryEntry(whitelist.id, category.id);
   const importEntries = useImportCategoryEntries(whitelist.id, category.id);
+  const bulkDelete  = useBulkDeleteEntries(whitelist.id, category.id);
+  const bulkMove    = useBulkMoveEntries(whitelist.id, category.id);
   const updateCategory = useUpdateCategory(whitelist.id);
   const { data: groups } = useGroups();
+  const { data: allCats } = useCategories(whitelist.id);
 
   const [addEntryOpen, setAddEntryOpen] = useState(false);
   const [importOpen, setImportOpen]     = useState(false);
@@ -183,6 +195,12 @@ export default function EntryView({
   const [entryNotes, setEntryNotes]   = useState("");
   const [entryExpiry, setEntryExpiry] = useState("");
   const [expiryFilter, setExpiryFilter] = useState<"all" | "active" | "expiring-soon" | "expired">("all");
+
+  // Selection for bulk actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [moveTargetCatId, setMoveTargetCatId] = useState<number | null>(null);
+  const otherCategories = (allCats ?? []).filter(c => c.id !== category.id);
 
   // Category name editing
   const [editingName, setEditingName] = useState(false);
@@ -442,7 +460,7 @@ export default function EntryView({
         </Card>
       )}
 
-      {/* ─── Actions bar (Add, Import) ───────────────────────────────── */}
+      {/* ─── Actions bar (Add, Import, Export) ─────────────────────────── */}
       {!addEntryOpen && !importOpen && (
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => setAddEntryOpen(true)}>
@@ -452,6 +470,17 @@ export default function EntryView({
           <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => setImportOpen(true)}>
             <Upload className="mr-1.5 h-4 w-4" />
             Import CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 text-sm"
+            onClick={() => {
+              window.open(`/api/admin/whitelists/${whitelist.id}/categories/${category.id}/entries/export`, "_blank");
+            }}
+          >
+            <Download className="mr-1.5 h-4 w-4" />
+            Export CSV
           </Button>
         </div>
       )}
@@ -580,6 +609,78 @@ export default function EntryView({
         </div>
       </div>
 
+      {/* ─── Bulk action bar ──────────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <div className="h-4 w-px bg-white/10" />
+          <AlertDialog>
+            <AlertDialogTrigger render={
+              <Button size="sm" variant="outline" className="h-8 text-sm text-red-400 hover:text-red-300" />
+            }>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Delete
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {selectedIds.size} entries?</AlertDialogTitle>
+                <AlertDialogDescription>This will permanently remove the selected entries. This cannot be undone.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={() => {
+                  bulkDelete.mutate([...selectedIds], {
+                    onSuccess: (res) => {
+                      toast.success(`Deleted ${res.deleted} entries${res.unassigned > 0 ? `, unassigned ${res.unassigned}` : ""}`);
+                      setSelectedIds(new Set());
+                    },
+                    onError: () => toast.error("Failed to delete entries"),
+                  });
+                }}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          {otherCategories.length > 0 && (
+            <>
+              <Button size="sm" variant="outline" className="h-8 text-sm" onClick={() => setShowMoveDialog(true)}>
+                <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                Move to...
+              </Button>
+              {showMoveDialog && (
+                <div className="flex items-center gap-2">
+                  <Select value={moveTargetCatId != null ? String(moveTargetCatId) : ""} onValueChange={(v) => setMoveTargetCatId(Number(v))}>
+                    <SelectTrigger className="h-8 w-40 text-sm">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {otherCategories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" className="h-8" disabled={!moveTargetCatId} onClick={() => {
+                    if (!moveTargetCatId) return;
+                    bulkMove.mutate({ discord_ids: [...selectedIds], target_category_id: moveTargetCatId }, {
+                      onSuccess: (res) => {
+                        toast.success(`Moved ${res.moved} entries`);
+                        setSelectedIds(new Set());
+                        setShowMoveDialog(false);
+                        setMoveTargetCatId(null);
+                      },
+                      onError: () => toast.error("Failed to move entries"),
+                    });
+                  }}>Move</Button>
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowMoveDialog(false); setMoveTargetCatId(null); }}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+          <button className="ml-auto text-xs text-muted-foreground hover:text-white" onClick={() => setSelectedIds(new Set())}>Clear</button>
+        </div>
+      )}
+
       {/* Entry list */}
       {entriesLoading ? (
         <div className="space-y-2">
@@ -593,20 +694,46 @@ export default function EntryView({
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/[0.10] overflow-hidden divide-y divide-white/[0.04]">
-          {filteredEntries.map((entry) => (
-            <EntryRow
-              key={`${entry.discord_id}::${entry.steam_ids?.[0] ?? ""}`}
-              entry={entry}
-              onRemove={() =>
-                removeEntry.mutate(entry.discord_id, {
-                  onSuccess: () => toast.success("Entry removed"),
-                  onError:   () => toast.error("Failed to remove entry"),
-                })
-              }
+        <>
+          {/* Select all */}
+          <div className="flex items-center gap-2 px-5 py-1.5 text-xs text-muted-foreground">
+            <Checkbox
+              checked={selectedIds.size > 0 && selectedIds.size === filteredEntries.length}
+              onCheckedChange={() => {
+                if (selectedIds.size === filteredEntries.length) {
+                  setSelectedIds(new Set());
+                } else {
+                  setSelectedIds(new Set(filteredEntries.map(e => e.discord_id)));
+                }
+              }}
+              className="h-4 w-4"
             />
-          ))}
-        </div>
+            <span>{selectedIds.size > 0 ? `${selectedIds.size} of ${filteredEntries.length}` : "Select all"}</span>
+          </div>
+          <div className="rounded-xl border border-white/[0.10] overflow-hidden divide-y divide-white/[0.04]">
+            {filteredEntries.map((entry) => (
+              <EntryRow
+                key={`${entry.discord_id}::${entry.steam_ids?.[0] ?? ""}`}
+                entry={entry}
+                selected={selectedIds.has(entry.discord_id)}
+                onToggle={() => {
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(entry.discord_id)) next.delete(entry.discord_id);
+                    else next.add(entry.discord_id);
+                    return next;
+                  });
+                }}
+                onRemove={() =>
+                  removeEntry.mutate(entry.discord_id, {
+                    onSuccess: () => toast.success("Entry removed"),
+                    onError:   () => toast.error("Failed to remove entry"),
+                  })
+                }
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {/* Pagination */}

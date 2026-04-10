@@ -263,6 +263,57 @@ export async function demoteCommander(config: RconConfig, teamId: string): Promi
   return withRcon(config, (client) => client.execute(`AdminDemoteCommander ${teamId}`))
 }
 
+// ─── Server-Level Commands ─────────────────────────────────────────────────
+
+export async function changeLayer(config: RconConfig, layerName: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminChangeLayer ${layerName}`))
+}
+
+export async function setNextLayer(config: RconConfig, layerName: string): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminSetNextLayer ${layerName}`))
+}
+
+export async function endMatch(config: RconConfig): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminEndMatch`))
+}
+
+export async function restartMatch(config: RconConfig): Promise<string> {
+  return withRcon(config, (client) => client.execute(`AdminRestartMatch`))
+}
+
+export async function listLayers(config: RconConfig): Promise<string[]> {
+  return withRcon(config, async (client) => {
+    const response = await client.execute("ListLayers")
+    if (!response || !response.trim()) return []
+    return response
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("-") && !line.toLowerCase().startsWith("layer"))
+  })
+}
+
+export async function showCurrentMap(config: RconConfig): Promise<{ level: string; layer: string }> {
+  return withRcon(config, async (client) => {
+    const response = await client.execute("ShowCurrentMap")
+    const match = response.match(/level is (.+?),\s*layer is (.+)/)
+    return {
+      level: match?.[1]?.trim() ?? "Unknown",
+      layer: match?.[2]?.trim() ?? "Unknown",
+    }
+  })
+}
+
+export async function showNextMap(config: RconConfig): Promise<{ level: string; layer: string }> {
+  return withRcon(config, async (client) => {
+    const response = await client.execute("ShowNextMap")
+    const match = response.match(/level is (.+?),\s*layer is (.+)/)
+    return {
+      level: match?.[1]?.trim() ?? "Unknown",
+      layer: match?.[2]?.trim() ?? "Unknown",
+    }
+  })
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function toRconConfig(server: {

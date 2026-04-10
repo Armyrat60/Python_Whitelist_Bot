@@ -15,8 +15,17 @@ import {
   removeFromSquad,
   disbandSquad,
   demoteCommander,
+  changeLayer,
+  setNextLayer,
+  endMatch,
+  restartMatch,
+  listLayers,
+  showCurrentMap,
+  showNextMap,
   toRconConfig,
 } from "../../lib/squad-rcon.js"
+
+// ─── Per-Action Permission Middleware ───────────────────────────────────────
 
 const requireRconRead = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
@@ -27,13 +36,16 @@ const requireRconRead = async (req: FastifyRequest, reply: FastifyReply) => {
   if (!perms?.rcon_read) return reply.code(403).send({ error: "Missing permission: rcon_read" })
 }
 
-const requireRconExecute = async (req: FastifyRequest, reply: FastifyReply) => {
-  if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
-  if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
-  const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
-  if (guild?.isAdmin) return
-  const perms = (guild as Record<string, unknown>)?.granularPermissions as Record<string, boolean> | undefined
-  if (!perms?.rcon_execute) return reply.code(403).send({ error: "Missing permission: rcon_execute" })
+function requireRconPerm(flag: string) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!req.session.userId) return reply.code(401).send({ error: "Not authenticated" })
+    if (!req.session.activeGuildId) return reply.code(400).send({ error: "No guild selected" })
+    const guild = req.session.guilds?.find(g => g.id === req.session.activeGuildId)
+    if (guild?.isAdmin) return
+    const perms = (guild as Record<string, unknown>)?.granularPermissions as Record<string, boolean> | undefined
+    // Check specific flag OR legacy rcon_execute (which expands to all flags via resolvePermissions)
+    if (!perms?.[flag]) return reply.code(403).send({ error: `Missing permission: ${flag}` })
+  }
 }
 
 export default async function rconRoutes(app: FastifyInstance) {
@@ -99,7 +111,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { player_id: string; player_name?: string; reason?: string }
-  }>("/game-servers/:id/rcon/kick", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/kick", { preHandler: requireRconPerm("rcon_kick") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -122,7 +134,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { target: string; player_name?: string; message: string }
-  }>("/game-servers/:id/rcon/warn", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/warn", { preHandler: requireRconPerm("rcon_warn") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -145,7 +157,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { message: string }
-  }>("/game-servers/:id/rcon/broadcast", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/broadcast", { preHandler: requireRconPerm("rcon_broadcast") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -168,7 +180,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { player_id: string; player_name?: string }
-  }>("/game-servers/:id/rcon/force-team-change", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/force-team-change", { preHandler: requireRconPerm("rcon_team_change") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -191,7 +203,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { player_id: string; player_name?: string }
-  }>("/game-servers/:id/rcon/remove-from-squad", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/remove-from-squad", { preHandler: requireRconPerm("rcon_team_change") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -214,7 +226,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { team_id: string; squad_id: string; squad_name?: string }
-  }>("/game-servers/:id/rcon/disband-squad", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/disband-squad", { preHandler: requireRconPerm("rcon_team_change") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -237,7 +249,7 @@ export default async function rconRoutes(app: FastifyInstance) {
   app.post<{
     Params: { id: string }
     Body: { team_id: string }
-  }>("/game-servers/:id/rcon/demote-commander", { preHandler: requireRconExecute }, async (req, reply) => {
+  }>("/game-servers/:id/rcon/demote-commander", { preHandler: requireRconPerm("rcon_demote") }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
 
@@ -252,6 +264,149 @@ export default async function rconRoutes(app: FastifyInstance) {
       return reply.send({ ok: true, response })
     } catch (err) {
       return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/change-layer ──────────────────────────────
+
+  app.post<{
+    Params: { id: string }
+    Body: { layer: string }
+  }>("/game-servers/:id/rcon/change-layer", { preHandler: requireRconPerm("rcon_map_change") }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    const { layer } = req.body
+    if (!layer) return reply.code(400).send({ error: "layer is required" })
+
+    try {
+      const response = await changeLayer(result.config, layer)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_change_layer", {
+        server: result.server.name, layer,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/set-next-layer ────────────────────────────
+
+  app.post<{
+    Params: { id: string }
+    Body: { layer: string }
+  }>("/game-servers/:id/rcon/set-next-layer", { preHandler: requireRconPerm("rcon_map_change") }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    const { layer } = req.body
+    if (!layer) return reply.code(400).send({ error: "layer is required" })
+
+    try {
+      const response = await setNextLayer(result.config, layer)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_set_next_layer", {
+        server: result.server.name, layer,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/end-match ─────────────────────────────────
+
+  app.post<{
+    Params: { id: string }
+  }>("/game-servers/:id/rcon/end-match", { preHandler: requireRconPerm("rcon_map_change") }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    try {
+      const response = await endMatch(result.config)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_end_match", {
+        server: result.server.name,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── POST /game-servers/:id/rcon/restart-match ─────────────────────────────
+
+  app.post<{
+    Params: { id: string }
+  }>("/game-servers/:id/rcon/restart-match", { preHandler: requireRconPerm("rcon_map_change") }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    try {
+      const response = await restartMatch(result.config)
+      await auditRcon(result.guildId, req.session.userId!, "rcon_restart_match", {
+        server: result.server.name,
+      })
+      return reply.send({ ok: true, response })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: (err as Error).message })
+    }
+  })
+
+  // ── GET /game-servers/:id/rcon/layers ─────────────────────────────────────
+
+  app.get<{
+    Params: { id: string }
+    Querystring: { refresh?: string }
+  }>("/game-servers/:id/rcon/layers", { preHandler: requireRconRead }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    const forceRefresh = req.query.refresh === "1"
+
+    // Check cached layers
+    const cached = result.server.layers as { items: string[]; cachedAt: string } | null
+    if (cached?.items && !forceRefresh) {
+      const cacheAge = Date.now() - new Date(cached.cachedAt).getTime()
+      if (cacheAge < 24 * 60 * 60 * 1000) {
+        return reply.send({ layers: cached.items, cachedAt: cached.cachedAt, fromCache: true })
+      }
+    }
+
+    // Fetch from server
+    try {
+      const layers = await listLayers(result.config)
+      const now = new Date().toISOString()
+
+      if (layers.length > 0) {
+        await prisma.gameServer.update({
+          where: { id: result.server.id },
+          data: { layers: { items: layers, cachedAt: now } },
+        })
+      }
+
+      return reply.send({ layers, cachedAt: now, fromCache: false })
+    } catch (err) {
+      // Fall back to stale cache if available
+      if (cached?.items) {
+        return reply.send({ layers: cached.items, cachedAt: cached.cachedAt, fromCache: true, warning: "Failed to refresh, showing cached data" })
+      }
+      return reply.code(500).send({ layers: [], error: (err as Error).message })
+    }
+  })
+
+  // ── GET /game-servers/:id/rcon/current-map ────────────────────────────────
+
+  app.get<{ Params: { id: string } }>("/game-servers/:id/rcon/current-map", { preHandler: requireRconRead }, async (req, reply) => {
+    const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
+    if (!result) return
+
+    try {
+      const [current, next] = await Promise.all([
+        showCurrentMap(result.config),
+        showNextMap(result.config),
+      ])
+      return reply.send({ current, next })
+    } catch (err) {
+      return reply.code(500).send({ error: (err as Error).message })
     }
   })
 

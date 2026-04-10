@@ -694,4 +694,208 @@ export default async function categoryRoutes(app: FastifyInstance) {
       return reply.send(toJSON({ ok: true, ...results }))
     }
   )
+
+  // ── POST /api/admin/whitelists/:whitelistId/categories/:categoryId/entries/bulk-delete
+
+  app.post<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries/bulk-delete",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const category = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+      })
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+
+      const body = req.body as { discord_ids?: string[] }
+      if (!body.discord_ids?.length) return reply.code(400).send({ error: "discord_ids array is required" })
+
+      const discordIds = body.discord_ids.map(id => { try { return BigInt(id) } catch { return null } }).filter(Boolean) as bigint[]
+      if (discordIds.length === 0) return reply.code(400).send({ error: "No valid discord_ids" })
+
+      // Only delete entries that belong to this category and are manually created
+      const users = await prisma.whitelistUser.findMany({
+        where: { guildId, whitelistId, categoryId, discordId: { in: discordIds } },
+        select: { discordId: true, createdVia: true },
+      })
+
+      let deleted = 0
+      let unassigned = 0
+
+      for (const user of users) {
+        if (user.createdVia === "admin" || user.createdVia === "manual_steam_only" || user.createdVia === "import") {
+          await prisma.$transaction([
+            prisma.whitelistIdentifier.deleteMany({ where: { guildId, discordId: user.discordId, whitelistId } }),
+            prisma.whitelistUser.delete({
+              where: { guildId_discordId_whitelistId: { guildId, discordId: user.discordId, whitelistId } },
+            }),
+          ])
+          deleted++
+        } else {
+          // Role-based: just unassign from category
+          await prisma.whitelistUser.update({
+            where: { guildId_discordId_whitelistId: { guildId, discordId: user.discordId, whitelistId } },
+            data: { categoryId: null, updatedAt: new Date() },
+          })
+          unassigned++
+        }
+      }
+
+      return reply.send({ ok: true, deleted, unassigned })
+    }
+  )
+
+  // ── POST /api/admin/whitelists/:whitelistId/categories/:categoryId/entries/bulk-move
+
+  app.post<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries/bulk-move",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const body = req.body as { discord_ids?: string[]; target_category_id?: number }
+      if (!body.discord_ids?.length) return reply.code(400).send({ error: "discord_ids array is required" })
+      if (body.target_category_id == null) return reply.code(400).send({ error: "target_category_id is required" })
+
+      const [sourceCategory, targetCategory] = await Promise.all([
+        prisma.whitelistCategory.findFirst({ where: { id: categoryId, whitelistId, guildId } }),
+        prisma.whitelistCategory.findFirst({ where: { id: body.target_category_id, guildId } }),
+      ])
+      if (!sourceCategory) return reply.code(404).send({ error: "Source category not found" })
+      if (!targetCategory) return reply.code(404).send({ error: "Target category not found" })
+
+      const discordIds = body.discord_ids.map(id => { try { return BigInt(id) } catch { return null } }).filter(Boolean) as bigint[]
+
+      const result = await prisma.whitelistUser.updateMany({
+        where: { guildId, whitelistId, categoryId, discordId: { in: discordIds } },
+        data: { categoryId: body.target_category_id, updatedAt: new Date() },
+      })
+
+      return reply.send({ ok: true, moved: result.count })
+    }
+  )
+
+  // ── GET /api/admin/whitelists/:whitelistId/categories/:categoryId/entries/export
+
+  app.get<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/entries/export",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const category = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+      })
+      if (!category) return reply.code(404).send({ error: "Category not found" })
+
+      const users = await prisma.whitelistUser.findMany({
+        where: { guildId, whitelistId, categoryId },
+        orderBy: { discordName: "asc" },
+      })
+
+      const discordIds = users.map(u => u.discordId)
+      const identifiers = discordIds.length > 0
+        ? await prisma.whitelistIdentifier.findMany({
+            where: { guildId, discordId: { in: discordIds }, whitelistId },
+            select: { discordId: true, idType: true, idValue: true },
+          })
+        : []
+
+      const identMap = new Map<string, string>()
+      for (const ident of identifiers) {
+        if (ident.idType === "steam64" || ident.idType === "steamid") {
+          identMap.set(String(ident.discordId), ident.idValue)
+        }
+      }
+
+      const csvLines = ["steam_id,discord_id,discord_name,notes,expires_at,created_at"]
+      for (const u of users) {
+        const steamId = identMap.get(String(u.discordId)) ?? ""
+        const row = [
+          steamId,
+          String(u.discordId),
+          `"${(u.discordName ?? "").replace(/"/g, '""')}"`,
+          `"${(u.notes ?? "").replace(/"/g, '""')}"`,
+          u.expiresAt ? u.expiresAt.toISOString().split("T")[0] : "",
+          u.createdAt.toISOString().split("T")[0],
+        ]
+        csvLines.push(row.join(","))
+      }
+
+      reply.header("Content-Type", "text/csv")
+      reply.header("Content-Disposition", `attachment; filename="${category.name}_entries.csv"`)
+      return reply.send(csvLines.join("\n"))
+    }
+  )
+
+  // ── POST /api/admin/whitelists/:whitelistId/categories/:categoryId/clone
+
+  app.post<{ Params: { whitelistId: string; categoryId: string } }>(
+    "/whitelists/:whitelistId/categories/:categoryId/clone",
+    { preHandler: adminHook },
+    async (req, reply) => {
+      const guildId     = BigInt(req.session.activeGuildId!)
+      const whitelistId = parseInt(req.params.whitelistId, 10)
+      const categoryId  = parseInt(req.params.categoryId, 10)
+
+      if (isNaN(whitelistId)) return reply.code(400).send({ error: "Invalid whitelistId" })
+      if (isNaN(categoryId))  return reply.code(400).send({ error: "Invalid categoryId" })
+
+      const source = await prisma.whitelistCategory.findFirst({
+        where: { id: categoryId, whitelistId, guildId },
+        include: { managers: true },
+      })
+      if (!source) return reply.code(404).send({ error: "Category not found" })
+
+      const now = new Date()
+      const maxSort = await prisma.whitelistCategory.count({ where: { whitelistId, guildId } })
+
+      const cloned = await prisma.whitelistCategory.create({
+        data: {
+          guildId,
+          whitelistId,
+          name:       `${source.name} (Copy)`,
+          slotLimit:  source.slotLimit,
+          sortOrder:  maxSort,
+          squadGroup: source.squadGroup,
+          tags:       source.tags,
+          createdAt:  now,
+          updatedAt:  now,
+        },
+      })
+
+      // Copy managers
+      if (source.managers.length > 0) {
+        await prisma.categoryManager.createMany({
+          data: source.managers.map(m => ({
+            categoryId:  cloned.id,
+            discordId:   m.discordId,
+            discordName: m.discordName,
+          })),
+        })
+      }
+
+      return reply.code(201).send(toJSON({
+        ok:   true,
+        id:   cloned.id,
+        name: cloned.name,
+      }))
+    }
+  )
 }

@@ -23,6 +23,7 @@ import {
   LogOut,
   History,
   Radio,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -62,6 +63,11 @@ const seedingLinks = [
   { href: "/dashboard/seeding", label: "Dashboard", icon: Sprout },
   { href: "/dashboard/seeding/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/dashboard/seeding/settings", label: "Configuration", icon: Settings2 },
+];
+
+const roleSyncLinks = [
+  { href: "/dashboard/role-sync", label: "Configuration", icon: ShieldCheck },
+  { href: "/dashboard/role-sync/logs", label: "Role Logs", icon: History },
 ];
 
 const serverLinks = [
@@ -303,7 +309,9 @@ export function Sidebar() {
     if (href === "/dashboard/seeding" && pathname === "/dashboard/seeding") return true;
     if (href === "/dashboard/seeding/leaderboard" && pathname === "/dashboard/seeding/leaderboard") return true;
     if (href === "/dashboard/seeding/settings" && pathname === "/dashboard/seeding/settings") return true;
-    if (href !== "/dashboard" && !href.startsWith("/dashboard/seeding") && pathname.startsWith(href)) return true;
+    if (href === "/dashboard/role-sync" && pathname === "/dashboard/role-sync") return true;
+    if (href === "/dashboard/role-sync/logs" && pathname === "/dashboard/role-sync/logs") return true;
+    if (href !== "/dashboard" && !href.startsWith("/dashboard/seeding") && !href.startsWith("/dashboard/role-sync") && pathname.startsWith(href)) return true;
     return false;
   };
 
@@ -364,6 +372,14 @@ export function Sidebar() {
         {!isRosterManager && (
           <CollapsibleSection label="Servers" sectionKey="servers" collapsed={collapsed} onToggle={toggleSection}>
             {serverLinks.map((link) => (
+              <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
+            ))}
+          </CollapsibleSection>
+        )}
+
+        {!isRosterManager && (
+          <CollapsibleSection label="Role Sync" sectionKey="role-sync" collapsed={collapsed} onToggle={toggleSection}>
+            {roleSyncLinks.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} icon={link.icon} active={isActive(link.href)} />
             ))}
           </CollapsibleSection>
@@ -456,7 +472,7 @@ export function MobileSidebar({ onClose }: { onClose: () => void }) {
         ...whitelistLinks.filter((l) => l.href !== "/dashboard/config" && l.href !== "/dashboard/conflicts"),
         ...publicLinks,
       ]
-    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...serverLinks, ...toolLinks, ...publicLinks];
+    : [...dashboardLinks, ...whitelistLinks, ...seedingLinks, ...serverLinks, ...roleSyncLinks, ...toolLinks, ...publicLinks];
 
   return (
     <>

@@ -317,6 +317,7 @@ model GameServer {
   rconPort     Int      @default(21114) @map("rcon_port")
   rconPassword String?  @map("rcon_password")
   enabled      Boolean  @default(true)
+  layers       Json?    @map("layers") // cached layer list: { items: string[], cachedAt: string }
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -512,4 +513,60 @@ model SeedingSession {
   @@index([guildId, startedAt(sort: Desc)])
   @@index([guildId, steamId])
   @@map("seeding_sessions")
+}
+
+// ─── Role Sync Module ──────────────────────────────────────────────────────
+
+model RoleSyncRule {
+  id             Int      @id @default(autoincrement())
+  guildId        BigInt   @map("guild_id")
+  name           String   @db.VarChar(100)
+  targetRoleId   BigInt   @map("target_role_id")
+  targetRoleName String   @map("target_role_name") @db.VarChar(100)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  sourceRoles RoleSyncSourceRole[]
+
+  @@index([guildId])
+  @@map("role_sync_rules")
+}
+
+model RoleSyncSourceRole {
+  id       Int    @id @default(autoincrement())
+  ruleId   Int    @map("rule_id")
+  roleId   BigInt @map("role_id")
+  roleName String @map("role_name") @db.VarChar(100)
+
+  rule RoleSyncRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, roleId])
+  @@map("role_sync_source_roles")
+}
+
+model RoleWatchConfig {
+  id       Int    @id @default(autoincrement())
+  guildId  BigInt @map("guild_id")
+  roleId   BigInt @map("role_id")
+  roleName String @map("role_name") @db.VarChar(100)
+
+  @@unique([guildId, roleId])
+  @@map("role_watch_configs")
+}
+
+model RoleChangeLog {
+  id          Int      @id @default(autoincrement())
+  guildId     BigInt   @map("guild_id")
+  discordId   BigInt   @map("discord_id")
+  discordName String   @map("discord_name") @db.VarChar(255)
+  roleId      BigInt   @map("role_id")
+  roleName    String   @map("role_name") @db.VarChar(100)
+  action      String   @db.VarChar(10)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([guildId, createdAt(sort: Desc)])
+  @@index([guildId, roleId])
+  @@index([guildId, discordId])
+  @@map("role_change_logs")
 }

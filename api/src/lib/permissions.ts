@@ -19,7 +19,13 @@ export const PERMISSION_FLAGS = [
   { key: "sftp_read",           label: "SFTP Read",           group: "Server",     description: "Read files from game servers via SFTP" },
   { key: "sftp_write",          label: "SFTP Write",          group: "Server",     description: "Write and push files to game servers via SFTP" },
   { key: "rcon_read",           label: "RCON Read",           group: "Server",     description: "View RCON output and server status" },
-  { key: "rcon_execute",        label: "RCON Execute",        group: "Server",     description: "Execute RCON commands (kick, ban, warn, etc.)" },
+  { key: "rcon_warn",           label: "RCON Warn",           group: "Server",     description: "Warn players via RCON" },
+  { key: "rcon_kick",           label: "RCON Kick",           group: "Server",     description: "Kick players via RCON" },
+  { key: "rcon_broadcast",      label: "RCON Broadcast",      group: "Server",     description: "Send server-wide broadcast messages" },
+  { key: "rcon_team_change",    label: "RCON Team/Squad",     group: "Server",     description: "Force team change, remove from squad, disband squad" },
+  { key: "rcon_demote",         label: "RCON Demote",         group: "Server",     description: "Demote commander via RCON" },
+  { key: "rcon_map_change",     label: "RCON Map/Match",      group: "Server",     description: "Change map, set next map, end/restart match" },
+  { key: "rcon_execute",        label: "RCON All Commands",   group: "Server",     description: "Legacy: grants all RCON action permissions (warn, kick, broadcast, team, demote, map)" },
   { key: "push_config",         label: "Push Config",         group: "Server",     description: "Push configuration files to game servers" },
 ] as const
 
@@ -83,6 +89,16 @@ export function resolvePermissions(
       // Viewer gets view_stats at minimum
       if (!result.view_stats) result.view_stats = true
     }
+  }
+
+  // Legacy: rcon_execute expands into all granular RCON action flags
+  if (result.rcon_execute) {
+    result.rcon_warn = true
+    result.rcon_kick = true
+    result.rcon_broadcast = true
+    result.rcon_team_change = true
+    result.rcon_demote = true
+    result.rcon_map_change = true
   }
 
   return result

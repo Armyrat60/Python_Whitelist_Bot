@@ -544,6 +544,47 @@ export function useImportCategoryEntries(whitelistId: number, categoryId: number
   });
 }
 
+export function useBulkDeleteEntries(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (discord_ids: string[]) =>
+      api.post<{ ok: boolean; deleted: number; unassigned: number }>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries/bulk-delete`,
+        { discord_ids }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-entries"] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useBulkMoveEntries(whitelistId: number, categoryId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { discord_ids: string[]; target_category_id: number }) =>
+      api.post<{ ok: boolean; moved: number }>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/entries/bulk-move`,
+        data
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-entries"] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useCloneCategory(whitelistId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (categoryId: number) =>
+      api.post<{ ok: boolean; id: number; name: string }>(
+        `/api/admin/whitelists/${whitelistId}/categories/${categoryId}/clone`
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+  });
+}
+
 export function useCreatePanel() {
   const qc = useQueryClient();
   return useMutation({
@@ -1247,6 +1288,54 @@ export function useDemoteCommander() {
 export function useTestRcon() {
   return useMutation<{ ok: boolean; message: string }, Error, number>({
     mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/rcon/test`),
+  });
+}
+
+// ── Server-level RCON commands ──────────────────────────────────────────────
+
+export function useChangeLayer() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; layer: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/change-layer`, data),
+  });
+}
+
+export function useSetNextLayer() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number; layer: string }>({
+    mutationFn: ({ serverId, ...data }) => api.post(`/api/admin/game-servers/${serverId}/rcon/set-next-layer`, data),
+  });
+}
+
+export function useEndMatch() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number }>({
+    mutationFn: ({ serverId }) => api.post(`/api/admin/game-servers/${serverId}/rcon/end-match`),
+  });
+}
+
+export function useRestartMatch() {
+  return useMutation<{ ok: boolean; response?: string }, Error, { serverId: number }>({
+    mutationFn: ({ serverId }) => api.post(`/api/admin/game-servers/${serverId}/rcon/restart-match`),
+  });
+}
+
+export interface RconLayersResponse {
+  layers: string[];
+  cachedAt: string;
+  fromCache: boolean;
+  warning?: string;
+}
+
+export function useRconLayers(serverId: number | null) {
+  return useQuery<RconLayersResponse>({
+    queryKey: ["rcon-layers", serverId],
+    queryFn: () => api.get<RconLayersResponse>(`/api/admin/game-servers/${serverId}/rcon/layers`),
+    enabled: serverId !== null,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useRefreshLayers() {
+  return useMutation<RconLayersResponse, Error, number>({
+    mutationFn: (serverId) => api.get<RconLayersResponse>(`/api/admin/game-servers/${serverId}/rcon/layers?refresh=1`),
   });
 }
 

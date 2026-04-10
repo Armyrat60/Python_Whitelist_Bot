@@ -163,7 +163,13 @@ const PERMISSION_FLAGS = [
   { key: "sftp_read",           label: "SFTP Read",           group: "Server" },
   { key: "sftp_write",          label: "SFTP Write",          group: "Server" },
   { key: "rcon_read",           label: "RCON Read",           group: "Server" },
-  { key: "rcon_execute",        label: "RCON Execute",        group: "Server" },
+  { key: "rcon_warn",           label: "RCON Warn",           group: "Server" },
+  { key: "rcon_kick",           label: "RCON Kick",           group: "Server" },
+  { key: "rcon_broadcast",      label: "RCON Broadcast",      group: "Server" },
+  { key: "rcon_team_change",    label: "RCON Team/Squad",     group: "Server" },
+  { key: "rcon_demote",         label: "RCON Demote",         group: "Server" },
+  { key: "rcon_map_change",     label: "RCON Map/Match",      group: "Server" },
+  { key: "rcon_execute",        label: "RCON All Commands",   group: "Server" },
   { key: "push_config",         label: "Push Config",         group: "Server" },
 ] as const;
 

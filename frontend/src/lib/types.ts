@@ -12,6 +12,12 @@ export type GranularPermissions = {
   sftp_read?: boolean;
   sftp_write?: boolean;
   rcon_read?: boolean;
+  rcon_warn?: boolean;
+  rcon_kick?: boolean;
+  rcon_broadcast?: boolean;
+  rcon_team_change?: boolean;
+  rcon_demote?: boolean;
+  rcon_map_change?: boolean;
   rcon_execute?: boolean;
   push_config?: boolean;
 };
@@ -325,4 +331,39 @@ export interface SeedingPublicPlayer {
   points: number;
   progress_pct: number;
   rewarded: boolean;
+}
+
+// ── Role Sync Module ────────────────────────────────────────────────────────
+
+export interface RoleSyncSourceRole {
+  id: number;
+  role_id: string;
+  role_name: string;
+}
+
+export interface RoleSyncRule {
+  id: number;
+  name: string;
+  target_role_id: string;
+  target_role_name: string;
+  enabled: boolean;
+  source_roles: RoleSyncSourceRole[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleWatchConfig {
+  id: number;
+  role_id: string;
+  role_name: string;
+}
+
+export interface RoleChangeLogEntry {
+  id: number;
+  discord_id: string;
+  discord_name: string;
+  role_id: string;
+  role_name: string;
+  action: "gained" | "lost";
+  created_at: string;
 }

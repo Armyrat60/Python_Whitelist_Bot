@@ -145,6 +145,15 @@ export function makeMockPrisma() {
       update:     mockFn(),
       delete:     mockFn(),
     },
+    gameServer: {
+      findMany:   mockList(),
+      findFirst:  mockFn(),
+      findUnique: mockFn(),
+      create:     mockFn(),
+      update:     mockFn(),
+      delete:     mockFn(),
+      count:      mockCount(),
+    },
     $transaction: vi.fn(),  // wired up below (needs self-reference)
     $queryRaw: vi.fn().mockResolvedValue([]),
   }
