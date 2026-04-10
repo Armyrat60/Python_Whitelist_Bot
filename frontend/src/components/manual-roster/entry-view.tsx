@@ -596,7 +596,7 @@ export default function EntryView({
         <div className="rounded-xl border border-white/[0.10] overflow-hidden divide-y divide-white/[0.04]">
           {filteredEntries.map((entry) => (
             <EntryRow
-              key={entry.discord_id}
+              key={`${entry.discord_id}::${entry.steam_ids?.[0] ?? ""}`}
               entry={entry}
               onRemove={() =>
                 removeEntry.mutate(entry.discord_id, {

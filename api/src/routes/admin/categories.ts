@@ -161,14 +161,23 @@ export default async function categoryRoutes(app: FastifyInstance) {
         const targetWl = await prisma.whitelist.findFirst({ where: { id: body.whitelist_id, guildId } })
         if (!targetWl) return reply.code(404).send({ error: "Target whitelist not found" })
         data.whitelistId = body.whitelist_id
-        // Also move all users in this category to the new whitelist
+        // Get user IDs BEFORE moving them
+        const usersToMove = await prisma.whitelistUser.findMany({
+          where: { guildId, whitelistId, categoryId },
+          select: { discordId: true },
+        })
+        const discordIds = usersToMove.map(u => u.discordId)
+        // Move identifiers first (while they still reference old whitelistId)
+        if (discordIds.length > 0) {
+          await prisma.whitelistIdentifier.updateMany({
+            where: { guildId, whitelistId, discordId: { in: discordIds } },
+            data: { whitelistId: body.whitelist_id },
+          })
+        }
+        // Then move users
         await prisma.whitelistUser.updateMany({
           where: { guildId, whitelistId, categoryId },
           data: { whitelistId: body.whitelist_id, updatedAt: new Date() },
-        })
-        await prisma.whitelistIdentifier.updateMany({
-          where: { guildId, whitelistId, discordId: { in: (await prisma.whitelistUser.findMany({ where: { guildId, whitelistId: body.whitelist_id, categoryId }, select: { discordId: true } })).map(u => u.discordId) } },
-          data: { whitelistId: body.whitelist_id },
         })
       }
 
@@ -343,9 +352,22 @@ export default async function categoryRoutes(app: FastifyInstance) {
       })
       if (!category) return reply.code(404).send({ error: "Category not found" })
 
-      const where: Record<string, unknown> = { guildId, whitelistId, categoryId }
+      let where: Record<string, unknown> = { guildId, whitelistId, categoryId }
       if (search) {
-        where.discordName = { contains: search, mode: "insensitive" }
+        // Search by name or Steam ID
+        const isSteamId = /^\d{10,17}$/.test(search)
+        if (isSteamId) {
+          // Find users whose identifiers match this Steam ID
+          const matchingIdents = await prisma.whitelistIdentifier.findMany({
+            where: { guildId, whitelistId, idValue: { contains: search } },
+            select: { discordId: true },
+            take: 200,
+          })
+          const matchingDiscordIds = matchingIdents.map(i => i.discordId)
+          where = { ...where, discordId: { in: matchingDiscordIds } }
+        } else {
+          where.discordName = { contains: search, mode: "insensitive" }
+        }
       }
 
       const [total, users] = await Promise.all([

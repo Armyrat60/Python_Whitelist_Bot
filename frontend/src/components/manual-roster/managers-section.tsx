@@ -49,8 +49,8 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
       setMgrName(res.name || res.username);
       setLookupDone(true);
     } catch {
-      // Not found — user can type manually
       setLookupDone(false);
+      toast.info("Member not found in server — enter name manually");
     } finally {
       setLookingUp(false);
     }
