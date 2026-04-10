@@ -8,7 +8,6 @@ import {
   Pencil,
   Check,
   X,
-  AlertTriangle,
 } from "lucide-react";
 import {
   useGroups,
@@ -48,11 +47,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -256,8 +250,6 @@ function CategoryCard({
     );
   }
 
-  const isOverLimit = cat.slot_limit != null && cat.user_count > cat.slot_limit;
-
   return (
     <Card className="overflow-hidden">
       <CardContent className="flex items-center gap-4 px-5 py-4">
@@ -317,47 +309,8 @@ function CategoryCard({
         ) : (
           <>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-base font-medium truncate">{cat.name}</p>
-                {whitelists.length > 1 && (
-                  <Badge variant="outline" className="text-[11px] px-2 py-0 shrink-0">
-                    {cat.whitelist_name}
-                  </Badge>
-                )}
-              </div>
-              {/* Entry count + slot limit */}
-              {cat.slot_limit != null ? (
-                <div className="mt-1.5 flex items-center gap-2">
-                  {isOverLimit && (
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Over limit: {cat.user_count} entries but max is {cat.slot_limit}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                  <span className={`text-sm tabular-nums ${isOverLimit ? "text-red-400 font-medium" : "text-muted-foreground"}`}>
-                    {cat.user_count} entries
-                  </span>
-                  <span className="text-sm text-muted-foreground/50">/</span>
-                  <span className="text-sm text-muted-foreground">
-                    {cat.slot_limit} max
-                  </span>
-                  {(() => {
-                    const pct = Math.min((cat.user_count / cat.slot_limit) * 100, 100);
-                    const barColor = isOverLimit ? "#F87171" : "var(--accent-primary)";
-                    return (
-                      <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-white/10">
-                        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: barColor }} />
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground mt-0.5">{cat.user_count} entries</p>
-              )}
+              <p className="text-base font-medium truncate">{cat.name}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">{cat.user_count} entries</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {cat.manager_count > 0 && (

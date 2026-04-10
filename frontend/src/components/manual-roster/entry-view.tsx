@@ -212,19 +212,167 @@ export default function EntryView({
     <div className="space-y-4">
       {/* Back + header */}
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1 px-2.5 text-xs" onClick={onBack}>
-          <ChevronLeft className="h-3.5 w-3.5" />
+        <Button size="sm" variant="outline" className="h-9 shrink-0 gap-1.5 px-3 text-sm" onClick={onBack}>
+          <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold truncate">{category.name}</h2>
-          <p className="text-xs text-muted-foreground">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold truncate">{category.name}</h2>
+          <p className="text-sm text-muted-foreground">
             {category.slot_limit != null
-              ? `${entriesData?.total ?? category.user_count} / ${category.slot_limit} slots`
+              ? `${entriesData?.total ?? category.user_count} entries / ${category.slot_limit} max`
               : `${entriesData?.total ?? category.user_count ?? 0} entries`}
           </p>
         </div>
       </div>
+
+      {/* ─── Actions bar (Add, Import, Managers) ─────────────────────── */}
+      {!addEntryOpen && !importOpen && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => setAddEntryOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Entry
+          </Button>
+          <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-1.5 h-4 w-4" />
+            Import CSV
+          </Button>
+        </div>
+      )}
+
+      {/* ─── Add entry form ──────────────────────────────────────────── */}
+      {addEntryOpen && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Add Entry</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm">Steam ID <span className="text-red-400">*</span></Label>
+              <Input
+                value={steamId}
+                onChange={(e) => setSteamId(e.target.value)}
+                placeholder="76561198..."
+                className="font-mono text-sm"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Discord ID <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={discordId}
+                onChange={(e) => setDiscordId(e.target.value)}
+                placeholder="123456789012345678"
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Discord Name <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={discordName}
+                onChange={(e) => setDiscordName(e.target.value)}
+                placeholder="Username"
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Notes <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={entryNotes}
+                onChange={(e) => setEntryNotes(e.target.value)}
+                placeholder="Internal note"
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Expiry Date <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                type="date"
+                value={entryExpiry}
+                onChange={(e) => setEntryExpiry(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleAddEntry} disabled={addEntry.isPending || !steamId.trim()}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAddEntryOpen(false); setSteamId(""); setDiscordId(""); setDiscordName(""); setEntryNotes(""); setEntryExpiry(""); }}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ─── Import CSV form ─────────────────────────────────────────── */}
+      {importOpen && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Import CSV</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              One row per entry. Columns: <code className="font-mono text-xs">steam_id, discord_id, discord_name, notes, expires_at</code>
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <textarea
+              className="w-full h-40 rounded-md border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-white/20"
+              placeholder={"76561198000000001,123456789012345678,PlayerName,,2026-12-31\n76561198000000002,,,some note,"}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+            />
+            {importResult && (
+              <div className="space-y-1 text-sm">
+                {(importResult.added + importResult.updated) > 0 && (
+                  <div className="flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    {importResult.added} added, {importResult.updated} updated
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <div className="space-y-0.5">
+                    {importResult.errors.map((e) => (
+                      <div key={e.row} className="flex items-start gap-1.5 text-red-400">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                        Row {e.row}: {e.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={importEntries.isPending || !csvText.trim()}
+                onClick={() => {
+                  importEntries.mutate(csvText, {
+                    onSuccess: (res) => {
+                      setImportResult(res);
+                      if (res.added + res.updated > 0) {
+                        toast.success(`Imported ${res.added + res.updated} entries`);
+                        setCsvText("");
+                      }
+                      if (res.errors.length > 0) toast.warning(`${res.errors.length} row(s) had errors`);
+                    },
+                    onError: () => toast.error("Import failed"),
+                  });
+                }}
+              >
+                {importEntries.isPending ? "Importing\u2026" : "Import"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setImportOpen(false); setCsvText(""); setImportResult(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ─── Managers section ─────────────────────────────────────────── */}
+      <ManagersSection whitelistId={whitelist.id} categoryId={category.id} />
+
+      <Separator className="bg-white/[0.06]" />
 
       {/* Search + expiry filter */}
       <div className="flex flex-wrap gap-2 items-center">
@@ -311,157 +459,6 @@ export default function EntryView({
         </div>
       )}
 
-      {/* Add entry */}
-      {addEntryOpen ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Add Entry</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Steam ID <span className="text-red-400">*</span></Label>
-              <Input
-                value={steamId}
-                onChange={(e) => setSteamId(e.target.value)}
-                placeholder="76561198..."
-                className="font-mono text-xs"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Discord ID <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
-                placeholder="123456789012345678"
-                className="font-mono text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Discord Name <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={discordName}
-                onChange={(e) => setDiscordName(e.target.value)}
-                placeholder="Username"
-                className="text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Notes <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={entryNotes}
-                onChange={(e) => setEntryNotes(e.target.value)}
-                placeholder="Internal note"
-                className="text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Expiry Date <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                type="date"
-                value={entryExpiry}
-                onChange={(e) => setEntryExpiry(e.target.value)}
-                className="text-xs"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={handleAddEntry}
-                disabled={addEntry.isPending || !steamId.trim()}
-              >
-                Add
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setAddEntryOpen(false);
-                  setSteamId(""); setDiscordId(""); setDiscordName(""); setEntryNotes(""); setEntryExpiry("");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : importOpen ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Import CSV</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              One row per entry. Columns: <code className="font-mono">steam_id, discord_id, discord_name, notes, expires_at</code>
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <textarea
-              className="w-full h-40 rounded-md border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-1 focus:ring-white/20"
-              placeholder={"76561198000000001,123456789012345678,PlayerName,,2026-12-31\n76561198000000002,,,some note,"}
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-            />
-            {importResult && (
-              <div className="space-y-1 text-xs">
-                {(importResult.added + importResult.updated) > 0 && (
-                  <div className="flex items-center gap-1.5 text-emerald-400">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    {importResult.added} added, {importResult.updated} updated
-                  </div>
-                )}
-                {importResult.errors.length > 0 && (
-                  <div className="space-y-0.5">
-                    {importResult.errors.map((e) => (
-                      <div key={e.row} className="flex items-start gap-1.5 text-red-400">
-                        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        Row {e.row}: {e.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={importEntries.isPending || !csvText.trim()}
-                onClick={() => {
-                  importEntries.mutate(csvText, {
-                    onSuccess: (res) => {
-                      setImportResult(res);
-                      if (res.added + res.updated > 0) {
-                        toast.success(`Imported ${res.added + res.updated} entries`);
-                        setCsvText("");
-                      }
-                      if (res.errors.length > 0) toast.warning(`${res.errors.length} row(s) had errors`);
-                    },
-                    onError: () => toast.error("Import failed"),
-                  });
-                }}
-              >
-                {importEntries.isPending ? "Importing\u2026" : "Import"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setImportOpen(false); setCsvText(""); setImportResult(null); }}>
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1" onClick={() => setAddEntryOpen(true)}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Add Entry
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            Import CSV
-          </Button>
-        </div>
-      )}
-
-      {/* ─── Managers sub-section ──────────────────────────────────────── */}
-      <Separator className="bg-white/[0.06]" />
-      <ManagersSection whitelistId={whitelist.id} categoryId={category.id} />
     </div>
   );
 }
