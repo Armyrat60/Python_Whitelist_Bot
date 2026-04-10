@@ -189,12 +189,14 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
 
 export async function kickPlayer(config: RconConfig, playerId: string, reason: string): Promise<string> {
   return withRcon(config, async (client) => {
-    return client.execute(`AdminKick ${playerId} ${reason}`)
+    // Use AdminKickById for numeric player IDs (from ListPlayers)
+    return client.execute(`AdminKickById ${playerId} ${reason}`)
   })
 }
 
 export async function warnPlayer(config: RconConfig, target: string, message: string): Promise<string> {
   return withRcon(config, async (client) => {
+    // AdminWarn accepts name, Steam ID, or player ID
     return client.execute(`AdminWarn ${target} ${message}`)
   })
 }
