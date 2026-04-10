@@ -180,7 +180,7 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/roles", { preHandler: requireAdmin }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
     const roles = await app.discord.fetchRoles(guildId)
-    return reply.send({ roles: roles.map((r) => ({ id: r.id, name: r.name })) })
+    return reply.send({ roles: roles.map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position })) })
   })
 
 }

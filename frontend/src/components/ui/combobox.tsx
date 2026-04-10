@@ -180,6 +180,7 @@ export function MultiCombobox({
                   value={option.value}
                   keywords={[option.label]}
                   onSelect={() => toggleValue(option.value)}
+                  onPointerDown={(e) => e.preventDefault()}
                 >
                   {option.icon}
                   <span className="truncate">{option.label}</span>

@@ -25,8 +25,10 @@ export interface DiscordChannel {
 }
 
 export interface DiscordRole {
-  id:   string
-  name: string
+  id:       string
+  name:     string
+  color:    number
+  position: number
   tags?: { premium_subscriber?: null | boolean }
 }
 
@@ -113,12 +115,15 @@ export class DiscordRESTClient {
   // ── Roles ──────────────────────────────────────────────────────────────────
 
   async fetchRoles(guildId: bigint): Promise<DiscordRole[]> {
-    const data = await this._get<Array<{ id: string; name: string; tags?: Record<string, unknown> }>>(`/guilds/${guildId}/roles`)
+    const data = await this._get<Array<{ id: string; name: string; color: number; position: number; tags?: Record<string, unknown> }>>(`/guilds/${guildId}/roles`)
     return data
       .filter((r) => r.name !== "@everyone")
+      .sort((a, b) => b.position - a.position)
       .map((r) => ({
-        id:   r.id,
-        name: r.name,
+        id:       r.id,
+        name:     r.name,
+        color:    r.color,
+        position: r.position,
         tags: r.tags as DiscordRole["tags"],
       }))
   }
