@@ -203,7 +203,14 @@ export interface TestApp {
  */
 export async function buildTestApp(
   registerRoutes: (app: FastifyInstance) => Promise<void>,
-  sessionGuilds?: Array<Record<string, unknown>>,
+  sessionGuilds?: Array<{
+    id: string
+    name: string
+    icon: string | null
+    isAdmin: boolean
+    permissionLevel: "owner" | "admin" | "roster_manager" | "viewer" | "granular"
+    granularPermissions?: Record<string, boolean>
+  }>,
 ): Promise<TestApp> {
   const mockPrisma  = makeMockPrisma()
   const mockDiscord = makeMockDiscord()
