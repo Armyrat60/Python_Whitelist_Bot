@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Plus,
@@ -8,6 +8,7 @@ import {
   Pencil,
   Check,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import {
   useGroups,
@@ -47,94 +48,101 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CategoryWithWhitelist extends WhitelistCategory {
+  whitelist_name: string;
+  whitelist_slug: string;
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function CategoryListView({
-  whitelist,
+  whitelists,
   onManage,
 }: {
-  whitelist: Whitelist;
-  onManage: (cat: WhitelistCategory) => void;
+  whitelists: Whitelist[];
+  onManage: (cat: WhitelistCategory, wl: Whitelist) => void;
 }) {
-  const { data: categories, isLoading } = useCategories(whitelist.id);
   const { data: groups } = useGroups();
-  const createCategory = useCreateCategory(whitelist.id);
-  const updateCategory = useUpdateCategory(whitelist.id);
-  const deleteCategory = useDeleteCategory(whitelist.id);
 
-  const [addOpen, setAddOpen] = useState(false);
-  const [newCatName, setNewCatName] = useState("");
-  const [newCatSlotLimit, setNewCatSlotLimit] = useState("");
+  // Fetch categories for all manual whitelists
+  const categoryQueries = whitelists.map((wl) => ({
+    wl,
+    query: useCategories(wl.id),
+  }));
+
+  const isLoading = categoryQueries.some((q) => q.query.isLoading);
+
+  // Merge all categories into one flat list with whitelist info
+  const allCategories: CategoryWithWhitelist[] = useMemo(() => {
+    const cats: CategoryWithWhitelist[] = [];
+    for (const { wl, query } of categoryQueries) {
+      if (!query.data) continue;
+      for (const cat of query.data) {
+        cats.push({
+          ...cat,
+          whitelist_name: wl.name,
+          whitelist_slug: wl.slug,
+        });
+      }
+    }
+    // Sort alphabetically by category name
+    cats.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    return cats;
+  }, [categoryQueries.map((q) => q.query.data)]);
+
+  // Edit state
   const [editingCatId, setEditingCatId] = useState<number | null>(null);
   const [editCatName, setEditCatName] = useState("");
   const [editCatSlotLimit, setEditCatSlotLimit] = useState("");
+  const [editCatWhitelistId, setEditCatWhitelistId] = useState<number | null>(null);
 
-  function handleAddCategory() {
-    if (!newCatName.trim()) return;
-    createCategory.mutate(
-      { name: newCatName.trim(), slot_limit: newCatSlotLimit ? parseInt(newCatSlotLimit, 10) : null },
-      {
-        onSuccess: () => {
-          toast.success("Category created");
-          setNewCatName("");
-          setNewCatSlotLimit("");
-          setAddOpen(false);
-        },
-        onError: () => toast.error("Failed to create category"),
-      }
-    );
-  }
+  // Add state
+  const [addOpen, setAddOpen] = useState(false);
+  const [addToWhitelistId, setAddToWhitelistId] = useState<number | null>(whitelists[0]?.id ?? null);
 
-  function startEdit(cat: WhitelistCategory) {
+  function startEdit(cat: CategoryWithWhitelist) {
     setEditingCatId(cat.id);
     setEditCatName(cat.name);
     setEditCatSlotLimit(cat.slot_limit != null ? String(cat.slot_limit) : "");
-  }
-
-  function handleSaveCat(cat: WhitelistCategory) {
-    updateCategory.mutate(
-      {
-        id: cat.id,
-        name: editCatName.trim() || cat.name,
-        slot_limit: editCatSlotLimit ? parseInt(editCatSlotLimit, 10) : null,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Category updated");
-          setEditingCatId(null);
-        },
-        onError: () => toast.error("Failed to update category"),
-      }
-    );
+    setEditCatWhitelistId(cat.whitelist_id);
   }
 
   if (isLoading) {
     return (
       <div className="space-y-2">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
       </div>
     );
   }
 
-  // Compute aggregate stats across all categories
-  const totalEntries  = categories?.reduce((s, c) => s + c.user_count, 0) ?? 0;
-  const totalCapacity = categories?.reduce((s, c) => s + (c.slot_limit ?? 0), 0) ?? 0;
-  const numCats       = categories?.length ?? 0;
-  const nearlFull     = categories?.filter(c => c.slot_limit != null && c.user_count / c.slot_limit >= 0.8).length ?? 0;
+  // Compute aggregate stats
+  const totalEntries  = allCategories.reduce((s, c) => s + c.user_count, 0);
+  const totalCapacity = allCategories.reduce((s, c) => s + (c.slot_limit ?? 0), 0);
+  const numCats       = allCategories.length;
+  const nearlyFull    = allCategories.filter(c => c.slot_limit != null && c.user_count / c.slot_limit >= 0.8).length;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Stats */}
-      {categories && categories.length > 0 && (
+      {allCategories.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { label: "Categories", value: numCats, color: "text-white/80" },
             { label: "Total Entries", value: totalEntries, color: "text-white/80" },
             { label: "Capacity", value: totalCapacity > 0 ? `${totalEntries}/${totalCapacity}` : "\u2014", color: totalCapacity > 0 && totalEntries >= totalCapacity ? "text-red-400" : "text-white/80" },
-            { label: "Near Full", value: nearlFull, color: nearlFull > 0 ? "text-amber-400" : "text-white/80" },
+            { label: "Near Full", value: nearlyFull, color: nearlyFull > 0 ? "text-amber-400" : "text-white/80" },
           ].map(({ label, value, color }) => (
-            <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-3 py-2">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
-              <span className={`text-lg font-semibold tabular-nums ${color}`}>{value}</span>
+            <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-3">
+              <span className="text-xs uppercase tracking-wider text-muted-foreground/60">{label}</span>
+              <span className={`text-xl font-semibold tabular-nums ${color}`}>{value}</span>
             </div>
           ))}
         </div>
@@ -142,194 +150,374 @@ export default function CategoryListView({
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          {whitelist.name} — Categories
+          All Categories
         </h2>
         {!addOpen && (
           <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Plus className="mr-1.5 h-4 w-4" />
             Add Category
           </Button>
         )}
       </div>
 
-      {!categories || categories.length === 0 ? (
+      {allCategories.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-12 text-center">
           <p className="text-sm font-medium">No categories yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add a category to start building this roster.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add a category to start building your roster.</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {categories.map((cat) => (
-            <Card key={cat.id} className="overflow-hidden">
-              <CardContent className="flex items-center gap-3 px-4 py-3">
-                {editingCatId === cat.id ? (
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Input
-                      value={editCatName}
-                      onChange={(e) => setEditCatName(e.target.value)}
-                      className="h-7 text-sm flex-1 min-w-0"
-                      autoFocus
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      value={editCatSlotLimit}
-                      onChange={(e) => setEditCatSlotLimit(e.target.value)}
-                      className="h-7 text-xs w-20 shrink-0"
-                      placeholder="slots"
-                    />
-                    <Button size="xs" className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleSaveCat(cat)}>
-                      <Check className="h-3 w-3" />
-                      Save
-                    </Button>
-                    <Button size="xs" variant="outline" className="shrink-0" onClick={() => setEditingCatId(null)}>
-                      <X className="h-3 w-3" />
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{cat.name}</p>
-                      {cat.slot_limit != null ? (
-                        <div className="mt-1 flex items-center gap-2">
-                          {(() => {
-                            const pct = Math.min((cat.user_count / cat.slot_limit) * 100, 100);
-                            const isOver = cat.user_count > cat.slot_limit;
-                            const barColor = isOver ? "#F87171" : "var(--accent-primary)";
-                            return (
-                              <>
-                                <span className={`text-[11px] tabular-nums ${isOver ? "text-red-400" : "text-muted-foreground"}`}>
-                                  {cat.user_count}/{cat.slot_limit}
-                                </span>
-                                <div className="relative h-[3px] w-16 overflow-hidden rounded-full bg-white/10">
-                                  <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: barColor }} />
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">{cat.user_count} entries</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {cat.manager_count > 0 && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {cat.manager_count} mgr
-                        </Badge>
-                      )}
-                      <Select
-                        value={cat.squad_group ?? ""}
-                        onValueChange={(val) => {
-                          updateCategory.mutate(
-                            { id: cat.id, squad_group: val || null },
-                            { onSuccess: () => toast.success("Group updated"), onError: () => toast.error("Failed to update group") }
-                          );
-                        }}
-                      >
-                        <SelectTrigger className="h-7 w-32 text-xs">
-                          <SelectValue placeholder="No group" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">No group</SelectItem>
-                          {(groups ?? []).map((g) => (
-                            <SelectItem key={g.group_name} value={g.group_name}>
-                              {g.group_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button size="icon-xs" variant="outline" className="text-muted-foreground hover:text-foreground hover:border-foreground/30" onClick={() => startEdit(cat)} title="Edit">
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger render={
-                          <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30" title="Delete" />
-                        }>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Deleting this category removes all managers. Existing members will be unassigned (not deleted).
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() =>
-                              deleteCategory.mutate(cat.id, {
-                                onSuccess: () => toast.success("Category deleted"),
-                                onError:   () => toast.error("Failed to delete category"),
-                              })
-                            }>Delete</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-3 text-xs"
-                        onClick={() => onManage(cat)}
-                      >
-                        Manage
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+          {allCategories.map((cat) => (
+            <CategoryCard
+              key={cat.id}
+              cat={cat}
+              whitelists={whitelists}
+              groups={groups ?? []}
+              isEditing={editingCatId === cat.id}
+              editCatName={editCatName}
+              setEditCatName={setEditCatName}
+              editCatSlotLimit={editCatSlotLimit}
+              setEditCatSlotLimit={setEditCatSlotLimit}
+              editCatWhitelistId={editCatWhitelistId}
+              setEditCatWhitelistId={setEditCatWhitelistId}
+              onStartEdit={() => startEdit(cat)}
+              onCancelEdit={() => setEditingCatId(null)}
+              onManage={() => {
+                const wl = whitelists.find((w) => w.id === cat.whitelist_id);
+                if (wl) onManage(cat, wl);
+              }}
+            />
           ))}
         </div>
       )}
 
       {/* Add category form */}
       {addOpen && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">New Category</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Name</Label>
+        <AddCategoryForm
+          whitelists={whitelists}
+          defaultWhitelistId={addToWhitelistId ?? whitelists[0]?.id ?? 0}
+          onCreated={() => { setAddOpen(false); }}
+          onCancel={() => { setAddOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Category Card ───────────────────────────────────────────────────────────
+
+function CategoryCard({
+  cat,
+  whitelists,
+  groups,
+  isEditing,
+  editCatName,
+  setEditCatName,
+  editCatSlotLimit,
+  setEditCatSlotLimit,
+  editCatWhitelistId,
+  setEditCatWhitelistId,
+  onStartEdit,
+  onCancelEdit,
+  onManage,
+}: {
+  cat: CategoryWithWhitelist;
+  whitelists: Whitelist[];
+  groups: { group_name: string }[];
+  isEditing: boolean;
+  editCatName: string;
+  setEditCatName: (v: string) => void;
+  editCatSlotLimit: string;
+  setEditCatSlotLimit: (v: string) => void;
+  editCatWhitelistId: number | null;
+  setEditCatWhitelistId: (v: number | null) => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onManage: () => void;
+}) {
+  const updateCategory = useUpdateCategory(cat.whitelist_id);
+  const deleteCategory = useDeleteCategory(cat.whitelist_id);
+
+  function handleSave() {
+    updateCategory.mutate(
+      {
+        id: cat.id,
+        name: editCatName.trim() || cat.name,
+        slot_limit: editCatSlotLimit ? parseInt(editCatSlotLimit, 10) : null,
+        ...(editCatWhitelistId && editCatWhitelistId !== cat.whitelist_id ? { whitelist_id: editCatWhitelistId } : {}),
+      },
+      {
+        onSuccess: () => {
+          toast.success("Category updated");
+          onCancelEdit();
+        },
+        onError: () => toast.error("Failed to update category"),
+      }
+    );
+  }
+
+  const isOverLimit = cat.slot_limit != null && cat.user_count > cat.slot_limit;
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="flex items-center gap-4 px-5 py-4">
+        {isEditing ? (
+          <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Name</Label>
               <Input
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                placeholder="e.g. [SquadName]"
-                onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                value={editCatName}
+                onChange={(e) => setEditCatName(e.target.value)}
+                className="h-9 text-sm w-48"
                 autoFocus
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Slot Limit <span className="text-muted-foreground">(optional)</span></Label>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Max Entries</Label>
               <Input
                 type="number"
                 min={1}
-                value={newCatSlotLimit}
-                onChange={(e) => setNewCatSlotLimit(e.target.value)}
-                placeholder="Leave blank for unlimited"
+                value={editCatSlotLimit}
+                onChange={(e) => setEditCatSlotLimit(e.target.value)}
+                className="h-9 text-sm w-24"
+                placeholder="No limit"
               />
             </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={handleAddCategory}
-                disabled={createCategory.isPending || !newCatName.trim()}
-              >
-                Add
+            {whitelists.length > 1 && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Whitelist</Label>
+                <Select
+                  value={editCatWhitelistId != null ? String(editCatWhitelistId) : ""}
+                  onValueChange={(val) => setEditCatWhitelistId(Number(val))}
+                >
+                  <SelectTrigger className="h-9 w-40 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {whitelists.map((wl) => (
+                      <SelectItem key={wl.id} value={String(wl.id)}>
+                        {wl.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex items-end gap-2 pb-0.5">
+              <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleSave}>
+                <Check className="mr-1 h-3.5 w-3.5" />
+                Save
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => { setAddOpen(false); setNewCatName(""); setNewCatSlotLimit(""); }}
-              >
+              <Button size="sm" variant="outline" onClick={onCancelEdit}>
+                <X className="mr-1 h-3.5 w-3.5" />
                 Cancel
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-base font-medium truncate">{cat.name}</p>
+                {whitelists.length > 1 && (
+                  <Badge variant="outline" className="text-[11px] px-2 py-0 shrink-0">
+                    {cat.whitelist_name}
+                  </Badge>
+                )}
+              </div>
+              {/* Entry count + slot limit */}
+              {cat.slot_limit != null ? (
+                <div className="mt-1.5 flex items-center gap-2">
+                  {isOverLimit && (
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Over limit: {cat.user_count} entries but max is {cat.slot_limit}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <span className={`text-sm tabular-nums ${isOverLimit ? "text-red-400 font-medium" : "text-muted-foreground"}`}>
+                    {cat.user_count} entries
+                  </span>
+                  <span className="text-sm text-muted-foreground/50">/</span>
+                  <span className="text-sm text-muted-foreground">
+                    {cat.slot_limit} max
+                  </span>
+                  {(() => {
+                    const pct = Math.min((cat.user_count / cat.slot_limit) * 100, 100);
+                    const barColor = isOverLimit ? "#F87171" : "var(--accent-primary)";
+                    return (
+                      <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-white/10">
+                        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: barColor }} />
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-0.5">{cat.user_count} entries</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {cat.manager_count > 0 && (
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
+                  {cat.manager_count} mgr
+                </Badge>
+              )}
+              <Select
+                value={cat.squad_group ?? ""}
+                onValueChange={(val) => {
+                  updateCategory.mutate(
+                    { id: cat.id, squad_group: val || null },
+                    { onSuccess: () => toast.success("Group updated"), onError: () => toast.error("Failed to update group") }
+                  );
+                }}
+              >
+                <SelectTrigger className="h-9 w-36 text-sm">
+                  <SelectValue placeholder="No group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No group</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.group_name} value={g.group_name}>
+                      {g.group_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" className="h-9" onClick={onStartEdit} title="Edit category">
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger render={
+                  <Button size="sm" variant="outline" className="h-9 text-destructive hover:text-destructive hover:border-destructive/30" title="Delete category" />
+                }>
+                  <Trash2 className="h-4 w-4" />
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {cat.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Deleting this category removes all managers. Existing members will be unassigned (not deleted).
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" onClick={() =>
+                      deleteCategory.mutate(cat.id, {
+                        onSuccess: () => toast.success("Category deleted"),
+                        onError:   () => toast.error("Failed to delete category"),
+                      })
+                    }>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 px-4 text-sm"
+                onClick={onManage}
+              >
+                Manage
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Add Category Form ───────────────────────────────────────────────────────
+
+function AddCategoryForm({
+  whitelists,
+  defaultWhitelistId,
+  onCreated,
+  onCancel,
+}: {
+  whitelists: Whitelist[];
+  defaultWhitelistId: number;
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [slotLimit, setSlotLimit] = useState("");
+  const [whitelistId, setWhitelistId] = useState(defaultWhitelistId);
+
+  const createCategory = useCreateCategory(whitelistId);
+
+  function handleAdd() {
+    if (!name.trim()) return;
+    createCategory.mutate(
+      { name: name.trim(), slot_limit: slotLimit ? parseInt(slotLimit, 10) : null },
+      {
+        onSuccess: () => {
+          toast.success("Category created");
+          onCreated();
+        },
+        onError: () => toast.error("Failed to create category"),
+      }
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">New Category</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-sm">Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. DMH, S2C, AdHoc"
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            autoFocus
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm">Max Entries <span className="text-muted-foreground">(optional)</span></Label>
+          <Input
+            type="number"
+            min={1}
+            value={slotLimit}
+            onChange={(e) => setSlotLimit(e.target.value)}
+            placeholder="Leave blank for unlimited"
+          />
+          <p className="text-xs text-muted-foreground">Maximum number of entries allowed in this category</p>
+        </div>
+        {whitelists.length > 1 && (
+          <div className="space-y-1.5">
+            <Label className="text-sm">Whitelist</Label>
+            <Select
+              value={String(whitelistId)}
+              onValueChange={(val) => setWhitelistId(Number(val))}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Select whitelist" />
+              </SelectTrigger>
+              <SelectContent>
+                {whitelists.map((wl) => (
+                  <SelectItem key={wl.id} value={String(wl.id)}>
+                    {wl.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Button size="sm" onClick={handleAdd} disabled={createCategory.isPending || !name.trim()}>
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

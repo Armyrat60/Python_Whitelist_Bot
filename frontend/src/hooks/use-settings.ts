@@ -408,9 +408,12 @@ export function useCreateCategory(whitelistId: number) {
 export function useUpdateCategory(whitelistId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: number; name?: string; slot_limit?: number | null; sort_order?: number; squad_group?: string | null }) =>
+    mutationFn: ({ id, ...data }: { id: number; name?: string; slot_limit?: number | null; sort_order?: number; squad_group?: string | null; whitelist_id?: number }) =>
       api.put(`/api/admin/whitelists/${whitelistId}/categories/${id}`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories", whitelistId] }),
+    onSuccess: () => {
+      // Invalidate all category queries since a category may have moved between whitelists
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
   });
 }
 

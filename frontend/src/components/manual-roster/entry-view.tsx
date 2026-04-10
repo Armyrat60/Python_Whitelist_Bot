@@ -71,30 +71,30 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
   const expiredSoon = isExpiredOrSoon(entry.expires_at);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-white/[0.01] hover:bg-white/[0.03] text-xs">
+    <div className="flex items-center gap-4 px-5 py-3 bg-white/[0.01] hover:bg-white/[0.03] text-sm">
       <div className="flex-1 min-w-0 space-y-0.5">
         <div>
           {noDiscord ? (
             <span className="italic text-muted-foreground/60">No Discord</span>
           ) : (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="font-medium truncate">{entry.discord_name}</span>
               <Link
                 href={`/dashboard/players/${entry.discord_id}`}
                 className="shrink-0 text-muted-foreground/60 hover:text-white/80 transition-colors"
                 title="View profile"
               >
-                <ExternalLink className="h-3 w-3" />
+                <ExternalLink className="h-3.5 w-3.5" />
               </Link>
             </span>
           )}
         </div>
-        <div className="font-mono text-[10px] text-muted-foreground/60 truncate">{steamId}</div>
+        <div className="font-mono text-xs text-muted-foreground/60 truncate">{steamId}</div>
         {entry.notes && (
-          <div className="text-[10px] text-muted-foreground/50 italic truncate">{entry.notes}</div>
+          <div className="text-xs text-muted-foreground/50 italic truncate">{entry.notes}</div>
         )}
       </div>
-      <div className="shrink-0 text-right space-y-0.5 text-[10px] text-muted-foreground">
+      <div className="shrink-0 text-right space-y-0.5 text-xs text-muted-foreground">
         <div>{formatDate(entry.created_at)}</div>
         {entry.expires_at && (
           <div className={expiredSoon ? "text-red-400" : ""}>
@@ -104,9 +104,9 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
       </div>
       <AlertDialog>
         <AlertDialogTrigger render={
-          <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
+          <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
         }>
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-4 w-4" />
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>

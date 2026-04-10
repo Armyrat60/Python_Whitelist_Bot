@@ -8,15 +8,7 @@ import type { Whitelist, WhitelistCategory } from "@/lib/types";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 
 import CategoryListView from "@/components/manual-roster/category-list";
 import EntryView from "@/components/manual-roster/entry-view";
@@ -27,24 +19,17 @@ export default function ManualRosterPage() {
   const { activeGuild } = useGuild();
   const { data: whitelists, isLoading: wlLoading } = useWhitelists();
 
-  const availableWhitelists = useMemo(
+  const manualWhitelists = useMemo(
     () => (whitelists ?? []).filter((wl) => wl.is_manual),
     [whitelists]
   );
 
-  const [selectedWhitelistId, setSelectedWhitelistId] = useState<number | null>(null);
   const [view, setView] = useState<"categories" | "entries">("categories");
   const [selectedCat, setSelectedCat] = useState<WhitelistCategory | null>(null);
+  const [selectedWhitelist, setSelectedWhitelist] = useState<Whitelist | null>(null);
   const [entryPage, setEntryPage] = useState(1);
   const [entrySearchInput, setEntrySearchInput] = useState("");
   const [entrySearch, setEntrySearch] = useState("");
-
-  // Auto-select first manual whitelist on load
-  useEffect(() => {
-    if (availableWhitelists.length > 0 && selectedWhitelistId === null) {
-      setSelectedWhitelistId(availableWhitelists[0].id);
-    }
-  }, [availableWhitelists, selectedWhitelistId]);
 
   // Debounce search
   useEffect(() => {
@@ -55,15 +40,13 @@ export default function ManualRosterPage() {
   // Reset entry page when search or category changes
   useEffect(() => { setEntryPage(1); }, [entrySearch, selectedCat?.id]);
 
-  const selectedWhitelist = availableWhitelists.find((wl) => wl.id === selectedWhitelistId) ?? null;
-
   if (wlLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-4 w-40" />
         <div className="space-y-3 mt-6">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
         </div>
       </div>
     );
@@ -80,11 +63,11 @@ export default function ManualRosterPage() {
       </div>
 
       {/* ─── Empty state ─────────────────────────────────────────────────── */}
-      {availableWhitelists.length === 0 ? (
+      {manualWhitelists.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] py-16 text-center">
-          <p className="text-sm font-medium">No whitelists found</p>
-          <p className="mt-1 text-xs text-muted-foreground mb-4">
-            Create a whitelist first to manage roster entries.
+          <p className="text-sm font-medium">No manual whitelists found</p>
+          <p className="mt-1 text-sm text-muted-foreground mb-4">
+            Create a manual whitelist first, or import data to auto-create one.
           </p>
           <Link href="/dashboard/config" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             Go to Whitelists
@@ -92,105 +75,36 @@ export default function ManualRosterPage() {
         </div>
       ) : (
         <>
-          {/* ─── Whitelist selector (if multiple) ──────────────────────── */}
-          {availableWhitelists.length > 1 && (
-            <div className="flex items-center gap-3">
-              <Label className="text-sm shrink-0">Roster</Label>
-              <Select
-                value={selectedWhitelistId !== null ? String(selectedWhitelistId) : ""}
-                onValueChange={(val) => {
-                  setSelectedWhitelistId(Number(val));
-                  setView("categories");
-                  setSelectedCat(null);
-                }}
-              >
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="Select roster" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableWhitelists.map((wl) => (
-                    <SelectItem key={wl.id} value={String(wl.id)}>
-                      {wl.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           {/* ─── Content ───────────────────────────────────────────────── */}
-          {selectedWhitelist && (
-            <RosterContent
+          {view === "categories" ? (
+            <CategoryListView
+              whitelists={manualWhitelists}
+              onManage={(cat, wl) => {
+                setSelectedCat(cat);
+                setSelectedWhitelist(wl);
+                setView("entries");
+              }}
+            />
+          ) : selectedWhitelist && selectedCat ? (
+            <EntryView
               whitelist={selectedWhitelist}
-              view={view}
-              setView={setView}
-              selectedCat={selectedCat}
-              setSelectedCat={setSelectedCat}
+              category={selectedCat}
               entryPage={entryPage}
               setEntryPage={setEntryPage}
-              entrySearchInput={entrySearchInput}
-              setEntrySearchInput={setEntrySearchInput}
-              entrySearch={entrySearch}
+              searchInput={entrySearchInput}
+              setSearchInput={setEntrySearchInput}
+              search={entrySearch}
+              onBack={() => {
+                setView("categories");
+                setSelectedCat(null);
+                setSelectedWhitelist(null);
+                setEntrySearchInput("");
+                setEntryPage(1);
+              }}
             />
-          )}
+          ) : null}
         </>
       )}
     </div>
-  );
-}
-
-// ─── RosterContent ────────────────────────────────────────────────────────────
-
-function RosterContent({
-  whitelist,
-  view,
-  setView,
-  selectedCat,
-  setSelectedCat,
-  entryPage,
-  setEntryPage,
-  entrySearchInput,
-  setEntrySearchInput,
-  entrySearch,
-}: {
-  whitelist: Whitelist;
-  view: "categories" | "entries";
-  setView: (v: "categories" | "entries") => void;
-  selectedCat: WhitelistCategory | null;
-  setSelectedCat: (c: WhitelistCategory | null) => void;
-  entryPage: number;
-  setEntryPage: (p: number) => void;
-  entrySearchInput: string;
-  setEntrySearchInput: (s: string) => void;
-  entrySearch: string;
-}) {
-  if (view === "categories") {
-    return (
-      <CategoryListView
-        whitelist={whitelist}
-        onManage={(cat) => {
-          setSelectedCat(cat);
-          setView("entries");
-        }}
-      />
-    );
-  }
-
-  return (
-    <EntryView
-      whitelist={whitelist}
-      category={selectedCat!}
-      entryPage={entryPage}
-      setEntryPage={setEntryPage}
-      searchInput={entrySearchInput}
-      setSearchInput={setEntrySearchInput}
-      search={entrySearch}
-      onBack={() => {
-        setView("categories");
-        setSelectedCat(null);
-        setEntrySearchInput("");
-        setEntryPage(1);
-      }}
-    />
   );
 }

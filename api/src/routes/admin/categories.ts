@@ -140,10 +140,11 @@ export default async function categoryRoutes(app: FastifyInstance) {
       if (!existing) return reply.code(404).send({ error: "Category not found" })
 
       const body = req.body as {
-        name?:        string
-        slot_limit?:  number | null
-        sort_order?:  number
-        squad_group?: string | null
+        name?:         string
+        slot_limit?:   number | null
+        sort_order?:   number
+        squad_group?:  string | null
+        whitelist_id?: number
       }
 
       const data: Record<string, unknown> = { updatedAt: new Date() }
@@ -151,6 +152,22 @@ export default async function categoryRoutes(app: FastifyInstance) {
       if (body.slot_limit  !== undefined) data.slotLimit  = body.slot_limit ?? null
       if (body.sort_order  !== undefined) data.sortOrder  = body.sort_order
       if (body.squad_group !== undefined) data.squadGroup = body.squad_group ?? null
+
+      // Support reassigning category to a different whitelist
+      if (body.whitelist_id !== undefined && body.whitelist_id !== whitelistId) {
+        const targetWl = await prisma.whitelist.findFirst({ where: { id: body.whitelist_id, guildId } })
+        if (!targetWl) return reply.code(404).send({ error: "Target whitelist not found" })
+        data.whitelistId = body.whitelist_id
+        // Also move all users in this category to the new whitelist
+        await prisma.whitelistUser.updateMany({
+          where: { guildId, whitelistId, categoryId },
+          data: { whitelistId: body.whitelist_id, updatedAt: new Date() },
+        })
+        await prisma.whitelistIdentifier.updateMany({
+          where: { guildId, whitelistId, discordId: { in: (await prisma.whitelistUser.findMany({ where: { guildId, whitelistId: body.whitelist_id, categoryId }, select: { discordId: true } })).map(u => u.discordId) } },
+          data: { whitelistId: body.whitelist_id },
+        })
+      }
 
       await prisma.whitelistCategory.update({ where: { id: categoryId }, data })
 
