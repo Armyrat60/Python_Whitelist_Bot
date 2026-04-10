@@ -88,6 +88,7 @@ export default function ManualRosterPage() {
           ) : selectedWhitelist && selectedCat ? (
             <EntryView
               whitelist={selectedWhitelist}
+              allWhitelists={manualWhitelists}
               category={selectedCat}
               entryPage={entryPage}
               setEntryPage={setEntryPage}

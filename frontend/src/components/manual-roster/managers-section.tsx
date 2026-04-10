@@ -34,13 +34,16 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
   const removeManager = useRemoveCategoryManager(whitelistId, categoryId);
 
   const [addOpen, setAddOpen]         = useState(false);
-  const [mgrName, setMgrName]         = useState("");
   const [mgrDiscordId, setMgrDiscordId] = useState("");
+  const [mgrName, setMgrName]         = useState("");
 
   function handleAddManager() {
-    if (!mgrName.trim() || !mgrDiscordId.trim()) return;
+    if (!mgrDiscordId.trim()) return;
     addManager.mutate(
-      { discord_name: mgrName.trim(), discord_id: mgrDiscordId.trim() },
+      {
+        discord_id: mgrDiscordId.trim(),
+        discord_name: mgrName.trim() || `User ${mgrDiscordId.trim().slice(-4)}`,
+      },
       {
         onSuccess: () => {
           toast.success("Manager added");
@@ -54,35 +57,35 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Managers</p>
+        <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Managers</p>
         {!addOpen && (
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1 h-3 w-3" />
+          <Button size="sm" variant="outline" className="h-8 text-sm" onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
             Add Manager
           </Button>
         )}
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-10 w-full" />
       ) : !managers || managers.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No managers assigned.</p>
+        <p className="text-sm text-muted-foreground italic">No managers assigned.</p>
       ) : (
         <div className="space-y-1">
           {managers.map((mgr) => (
             <div
               key={mgr.discord_id}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 bg-white/[0.02] text-xs"
+              className="flex items-center gap-3 rounded-lg px-4 py-2.5 bg-white/[0.02] text-sm"
             >
               <div className="flex-1 min-w-0">
                 <span className="font-medium truncate">{mgr.discord_name}</span>
-                <span className="ml-2 font-mono text-[10px] text-muted-foreground">{mgr.discord_id}</span>
+                <span className="ml-2 font-mono text-xs text-muted-foreground">{mgr.discord_id}</span>
               </div>
               <AlertDialog>
                 <AlertDialogTrigger render={
-                  <Button size="icon-xs" variant="outline" className="text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
+                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:border-destructive/30 shrink-0" />
                 }>
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -108,32 +111,33 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
       )}
 
       {addOpen && (
-        <div className="rounded-lg border border-white/[0.08] p-3 space-y-2">
-          <p className="text-xs font-medium">Add Manager</p>
+        <div className="rounded-lg border border-white/[0.08] p-4 space-y-3">
+          <p className="text-sm font-medium">Add Manager</p>
           <div className="space-y-1.5">
-            <Label className="text-xs">Discord Name</Label>
-            <Input
-              value={mgrName}
-              onChange={(e) => setMgrName(e.target.value)}
-              placeholder="Username"
-              className="text-xs"
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Discord ID</Label>
+            <Label className="text-sm">Discord ID <span className="text-red-400">*</span></Label>
             <Input
               value={mgrDiscordId}
               onChange={(e) => setMgrDiscordId(e.target.value)}
               placeholder="123456789012345678"
-              className="font-mono text-xs"
+              className="font-mono text-sm"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">Right-click the user in Discord &rarr; Copy User ID</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Display Name <span className="text-muted-foreground">(optional)</span></Label>
+            <Input
+              value={mgrName}
+              onChange={(e) => setMgrName(e.target.value)}
+              placeholder="Their Discord username"
+              className="text-sm"
             />
           </div>
           <div className="flex gap-2">
             <Button
               size="sm"
               onClick={handleAddManager}
-              disabled={addManager.isPending || !mgrName.trim() || !mgrDiscordId.trim()}
+              disabled={addManager.isPending || !mgrDiscordId.trim()}
             >
               Add
             </Button>

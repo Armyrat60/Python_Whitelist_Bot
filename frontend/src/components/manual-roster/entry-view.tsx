@@ -19,6 +19,8 @@ import {
   useAddCategoryEntry,
   useRemoveCategoryEntry,
   useImportCategoryEntries,
+  useUpdateCategory,
+  useGroups,
 } from "@/hooks/use-settings";
 import type { Whitelist, WhitelistCategory, CategoryEntry } from "@/lib/types";
 
@@ -45,6 +47,13 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import ManagersSection from "./managers-section";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,6 +138,7 @@ function EntryRow({ entry, onRemove }: { entry: CategoryEntry; onRemove: () => v
 
 export default function EntryView({
   whitelist,
+  allWhitelists,
   category,
   entryPage,
   setEntryPage,
@@ -138,6 +148,7 @@ export default function EntryView({
   onBack,
 }: {
   whitelist: Whitelist;
+  allWhitelists?: Whitelist[];
   category: WhitelistCategory;
   entryPage: number;
   setEntryPage: (p: number) => void;
@@ -155,6 +166,8 @@ export default function EntryView({
   const addEntry    = useAddCategoryEntry(whitelist.id, category.id);
   const removeEntry = useRemoveCategoryEntry(whitelist.id, category.id);
   const importEntries = useImportCategoryEntries(whitelist.id, category.id);
+  const updateCategory = useUpdateCategory(whitelist.id);
+  const { data: groups } = useGroups();
 
   const [addEntryOpen, setAddEntryOpen] = useState(false);
   const [importOpen, setImportOpen]     = useState(false);
@@ -216,14 +229,87 @@ export default function EntryView({
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold truncate">{category.name}</h2>
-          <p className="text-sm text-muted-foreground">
-            {category.slot_limit != null
-              ? `${entriesData?.total ?? category.user_count} entries / ${category.slot_limit} max`
-              : `${entriesData?.total ?? category.user_count ?? 0} entries`}
-          </p>
+        <h2 className="text-lg font-semibold truncate">{category.name}</h2>
+      </div>
+
+      {/* ─── Stats + Config ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Entries</span>
+          <span className="text-lg font-semibold tabular-nums">{entriesData?.total ?? category.user_count}</span>
         </div>
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Max Entries</span>
+          <Input
+            type="number"
+            min={1}
+            className="h-8 text-sm mt-0.5 w-full"
+            placeholder="No limit"
+            defaultValue={category.slot_limit ?? ""}
+            onBlur={(e) => {
+              const val = e.target.value.trim();
+              const newLimit = val ? parseInt(val, 10) : null;
+              if (newLimit !== category.slot_limit) {
+                updateCategory.mutate(
+                  { id: category.id, slot_limit: newLimit },
+                  { onSuccess: () => toast.success("Limit updated"), onError: () => toast.error("Failed to update") }
+                );
+              }
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Squad Group</span>
+          <Select
+            value={category.squad_group ?? ""}
+            onValueChange={(val) => {
+              updateCategory.mutate(
+                { id: category.id, squad_group: val || null },
+                { onSuccess: () => toast.success("Group updated"), onError: () => toast.error("Failed to update") }
+              );
+            }}
+          >
+            <SelectTrigger className="h-8 text-sm mt-0.5">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Default</SelectItem>
+              {(groups ?? []).map((g) => (
+                <SelectItem key={g.group_name} value={g.group_name}>
+                  {g.group_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {(allWhitelists?.length ?? 0) > 1 && (
+          <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Whitelist</span>
+            <Select
+              value={String(whitelist.id)}
+              onValueChange={(val) => {
+                const newId = Number(val);
+                if (newId !== whitelist.id) {
+                  updateCategory.mutate(
+                    { id: category.id, whitelist_id: newId },
+                    { onSuccess: () => toast.success("Whitelist changed"), onError: () => toast.error("Failed to update") }
+                  );
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 text-sm mt-0.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {allWhitelists!.map((wl) => (
+                  <SelectItem key={wl.id} value={String(wl.id)}>
+                    {wl.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* ─── Actions bar (Add, Import, Managers) ─────────────────────── */}
