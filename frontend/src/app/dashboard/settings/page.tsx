@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { BridgeSettings } from "@/components/bridge-settings";
 import { BattleMetricsSettings as BMSettings } from "@/components/battlemetrics-settings";
+import { GameServerSettings } from "@/components/game-server-settings";
 import {
   useSettings,
   useRoles,
@@ -1067,6 +1068,7 @@ export default function SettingsPage() {
         <div className="max-w-2xl space-y-6">
           <BridgeSettings />
           <BMSettings />
+          <GameServerSettings />
         </div>
       )}
 

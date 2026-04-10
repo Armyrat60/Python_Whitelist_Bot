@@ -300,6 +300,24 @@ model BattleMetricsConfig {
   @@map("battlemetrics_configs")
 }
 
+model GameServer {
+  id           Int      @id @default(autoincrement())
+  guildId      BigInt   @map("guild_id")
+  name         String   @db.VarChar(100)
+  sftpHost     String?  @map("sftp_host") @db.VarChar(255)
+  sftpPort     Int      @default(22) @map("sftp_port")
+  sftpUser     String?  @map("sftp_user") @db.VarChar(100)
+  sftpPassword String?  @map("sftp_password")
+  sftpBasePath String   @default("/SquadGame/ServerConfig") @map("sftp_base_path") @db.VarChar(500)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([guildId, name])
+  @@index([guildId])
+  @@map("game_servers")
+}
+
 model JobQueue {
   id          Int       @id @default(autoincrement())
   guildId     BigInt    @map("guild_id")

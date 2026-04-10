@@ -1032,6 +1032,65 @@ export function useBattleMetricsPlayer(steamId: string | null) {
   });
 }
 
+// ── Game server hooks ───────────────────────────────────────────────────────
+
+interface GameServer {
+  id: number;
+  name: string;
+  sftp_host: string | null;
+  sftp_port: number;
+  sftp_user: string | null;
+  sftp_password: string | null;
+  sftp_base_path: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export function useGameServers() {
+  return useQuery<{ servers: GameServer[] }>({
+    queryKey: ["game-servers"],
+    queryFn: () => api.get<{ servers: GameServer[] }>("/api/admin/game-servers"),
+  });
+}
+
+export function useAddGameServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string }) =>
+      api.post("/api/admin/game-servers", data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["game-servers"] }),
+  });
+}
+
+export function useUpdateGameServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; sftp_host?: string; sftp_port?: number; sftp_user?: string; sftp_password?: string; sftp_base_path?: string; enabled?: boolean }) =>
+      api.put(`/api/admin/game-servers/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["game-servers"] }),
+  });
+}
+
+export function useDeleteGameServer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/admin/game-servers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["game-servers"] }),
+  });
+}
+
+export function useTestSftp() {
+  return useMutation<{ ok: boolean; message: string }, Error, number>({
+    mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/sftp/test`),
+  });
+}
+
+export function usePushWhitelist() {
+  return useMutation<{ ok: boolean; message: string; results?: Array<{ filename: string; ok: boolean; error?: string }> }, Error, number>({
+    mutationFn: (id) => api.post(`/api/admin/game-servers/${id}/sftp/push-whitelist`),
+  });
+}
+
 // ── Seeding config hooks ────────────────────────────────────────────────────
 
 export function useSeedingConfig() {
