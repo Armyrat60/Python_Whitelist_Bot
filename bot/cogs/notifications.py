@@ -44,6 +44,10 @@ class NotificationsCog(commands.Cog):
         """
         today = utcnow().date()
 
+        # Prune stale dedup entries (older than 2 days) to prevent unbounded growth
+        cutoff = str(today - timedelta(days=2))
+        self._notified_expiry = {k for k in self._notified_expiry if k.rsplit(":", 1)[-1] >= cutoff}
+
         for guild in self.bot.guilds:
             guild_id = guild.id
 

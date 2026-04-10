@@ -25,6 +25,13 @@ const pageTitles: Record<string, string> = {
   "/dashboard/manual-roster": "Manual Roster",
   "/dashboard/conflicts": "Steam ID Conflicts",
   "/dashboard/search": "Player Search",
+  "/dashboard/logs": "Audit Logs",
+  "/dashboard/leaderboard": "Player Leaderboard",
+  "/dashboard/servers": "Live Server",
+  "/dashboard/seeding": "Seeding Dashboard",
+  "/dashboard/seeding/leaderboard": "Seeding Leaderboard",
+  "/dashboard/seeding/settings": "Seeding Configuration",
+  "/dashboard/import-export": "Import / Export",
   "/my-whitelist": "My Whitelist",
 };
 

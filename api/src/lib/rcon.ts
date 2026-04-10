@@ -154,20 +154,35 @@ class RconClient {
       // Consume the packet from buffer
       this.responseBuffer = this.responseBuffer.subarray(4 + packet.size)
 
+      // Source RCON sends an empty SERVERDATA_RESPONSE (type 0) packet
+      // BEFORE the real SERVERDATA_AUTH_RESPONSE during authentication.
+      // Skip these so we don't prematurely resolve the auth callback.
+      if (packet.type === SERVERDATA_RESPONSE && this.pendingCallbacks.has(packet.id)) {
+        // Check if this is likely a pre-auth empty packet by seeing if there's
+        // more data coming. For command responses, resolve normally.
+        // Auth pre-packets have empty body and are followed by the real auth response.
+        if (packet.body === "" || packet.body === "\0") {
+          continue  // skip — wait for the real AUTH_RESPONSE
+        }
+      }
+
+      // Handle auth failure: server sends AUTH_RESPONSE with id=-1
+      if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id === -1) {
+        // Find any pending auth callback and reject it
+        for (const [id, cb] of this.pendingCallbacks) {
+          clearTimeout(cb.timer)
+          this.pendingCallbacks.delete(id)
+          cb.reject(new Error("RCON authentication failed — check password"))
+          break
+        }
+        continue
+      }
+
       const cb = this.pendingCallbacks.get(packet.id)
       if (cb) {
         clearTimeout(cb.timer)
         this.pendingCallbacks.delete(packet.id)
-
-        if (packet.type === SERVERDATA_AUTH_RESPONSE) {
-          if (packet.id === -1) {
-            cb.reject(new Error("RCON authentication failed — check password"))
-          } else {
-            cb.resolve(packet.body)
-          }
-        } else {
-          cb.resolve(packet.body)
-        }
+        cb.resolve(packet.body)
       }
     }
   }
