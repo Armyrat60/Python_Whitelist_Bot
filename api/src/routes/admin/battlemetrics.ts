@@ -140,6 +140,26 @@ export default async function battlemetricsRoutes(app: FastifyInstance) {
     return reply.send(connTest)
   })
 
+  // ── GET /battlemetrics/servers ──────────────────────────────────────────────
+  // Discover Squad servers accessible to the configured BM API token.
+
+  app.get("/battlemetrics/servers", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+    const config = await prisma.battleMetricsConfig.findUnique({ where: { guildId } })
+    if (!config?.apiKey) {
+      return reply.send({ servers: [], reason: "BattleMetrics not configured" })
+    }
+
+    try {
+      const bm = new BattleMetricsClient(config.apiKey)
+      const servers = await bm.discoverServers()
+      return reply.send({ servers })
+    } catch (err) {
+      app.log.error({ err, guildId }, "BattleMetrics server discovery failed")
+      return reply.send({ servers: [], reason: "Failed to discover servers" })
+    }
+  })
+
   // ── GET /battlemetrics/player/:steamId ────────────────────────────────────
 
   app.get<{

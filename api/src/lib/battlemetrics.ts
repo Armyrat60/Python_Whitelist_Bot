@@ -220,20 +220,62 @@ export class BattleMetricsClient {
   }
 
   /**
-   * Validate the API token by fetching account servers.
+   * Validate the API token by listing organizations (most tokens have this scope).
    */
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     try {
-      const res = await fetch(`${BM_API}/servers?page[size]=1`, {
+      // Try organizations endpoint first (most reliable for RCON tokens)
+      let res = await fetch(`${BM_API}/organizations?page[size]=1`, {
         headers: this._headers(),
       })
       if (!res.ok) {
+        // Fall back to a simple server lookup if orgs endpoint fails
+        res = await fetch(`${BM_API}/servers?page[size]=1&filter[game]=squad`, {
+          headers: this._headers(),
+        })
+      }
+      if (!res.ok) {
         if (res.status === 401) return { ok: false, message: "Invalid API token" }
+        if (res.status === 403) return { ok: false, message: "API token lacks required permissions — try generating a new token with server access" }
         return { ok: false, message: `BattleMetrics returned ${res.status}` }
       }
       return { ok: true, message: "Connected to BattleMetrics" }
     } catch (err) {
       return { ok: false, message: `Connection failed: ${(err as Error).message}` }
+    }
+  }
+
+  /**
+   * Discover servers accessible to this API token.
+   * Returns a list of Squad servers from the user's organizations.
+   */
+  async discoverServers(): Promise<Array<{ id: string; name: string; players: number; maxPlayers: number; status: string }>> {
+    try {
+      // First get organizations
+      const orgsRes = await this._get<{
+        data: Array<{ id: string; attributes: { name: string } }>
+      }>("/organizations?page[size]=25")
+
+      const orgIds = orgsRes.data.map((o) => o.id)
+      if (orgIds.length === 0) return []
+
+      // Then get servers for those orgs, filtered to Squad
+      const serversRes = await this._get<{
+        data: Array<{
+          id: string
+          attributes: { name: string; players: number; maxPlayers: number; status: string }
+        }>
+      }>(`/servers?filter[organizations]=${orgIds.join(",")}&filter[game]=squad&page[size]=25`)
+
+      return serversRes.data.map((s) => ({
+        id: s.id,
+        name: s.attributes.name,
+        players: s.attributes.players ?? 0,
+        maxPlayers: s.attributes.maxPlayers ?? 0,
+        status: s.attributes.status ?? "unknown",
+      }))
+    } catch {
+      return []
     }
   }
 

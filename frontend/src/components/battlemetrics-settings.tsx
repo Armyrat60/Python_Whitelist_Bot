@@ -13,6 +13,7 @@ import {
   useSaveBattleMetricsConfig,
   useDeleteBattleMetricsConfig,
   useTestBattleMetrics,
+  useBattleMetricsServers,
 } from "@/hooks/use-settings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,8 +47,10 @@ export function BattleMetricsSettings() {
   const save = useSaveBattleMetricsConfig();
   const remove = useDeleteBattleMetricsConfig();
   const test = useTestBattleMetrics();
+  const { data: serversData } = useBattleMetricsServers();
 
   const existing = data?.config ?? null;
+  const discoveredServers = serversData?.servers ?? [];
 
   const [apiKey, setApiKey] = useState("");
   const [serverId, setServerId] = useState("");
@@ -152,37 +155,63 @@ export function BattleMetricsSettings() {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">API Token</Label>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={existing ? "Leave blank to keep current" : "BattleMetrics API token"}
-              className="h-8 text-xs"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Server ID</Label>
-            <Input
-              value={serverId}
-              onChange={(e) => setServerId(e.target.value)}
-              placeholder="e.g. 12345678"
-              className="h-8 text-xs"
-            />
-            <p className="text-[10px] text-muted-foreground/70">
-              Find in your server&apos;s BattleMetrics URL: battlemetrics.com/servers/squad/<strong>12345678</strong>
-            </p>
-          </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">API Token</Label>
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={existing ? "Leave blank to keep current" : "BattleMetrics API token"}
+            className="h-8 text-xs"
+          />
         </div>
 
-        {serverName && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Server:</span>
-            <span className="font-medium text-white/80">{serverName}</span>
-          </div>
-        )}
+        {/* Server selection — auto-discovered from BM API or manual ID */}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Server</Label>
+          {discoveredServers.length > 0 ? (
+            <div className="space-y-2">
+              <select
+                value={serverId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setServerId(id);
+                  const found = discoveredServers.find((s) => s.id === id);
+                  if (found) setServerName(found.name);
+                }}
+                className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+              >
+                <option value="">Select a server...</option>
+                {discoveredServers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.players}/{s.maxPlayers}) — {s.status}
+                  </option>
+                ))}
+              </select>
+              {serverName && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Selected:</span>
+                  <span className="font-medium text-white/80">{serverName}</span>
+                  <span className="text-muted-foreground/50">ID: {serverId}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Input
+                value={serverId}
+                onChange={(e) => setServerId(e.target.value)}
+                placeholder="Server ID (e.g. 27157414)"
+                className="h-8 text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground/70">
+                {existing?.has_api_key
+                  ? "No servers found — save your API token first, then servers will auto-populate."
+                  : "Enter your API token and save to auto-discover servers, or paste the ID from your BattleMetrics URL."}
+              </p>
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           <Button

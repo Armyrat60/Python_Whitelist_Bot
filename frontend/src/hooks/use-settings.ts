@@ -1054,6 +1054,14 @@ interface BMPlayerData {
   reason?: string;
 }
 
+export function useBattleMetricsServers() {
+  return useQuery<{ servers: Array<{ id: string; name: string; players: number; maxPlayers: number; status: string }> }>({
+    queryKey: ["bm-servers"],
+    queryFn: () => api.get("/api/admin/battlemetrics/servers"),
+    staleTime: 60_000,
+  });
+}
+
 export function useBattleMetricsPlayer(steamId: string | null) {
   return useQuery<BMPlayerData>({
     queryKey: ["bm-player", steamId],
