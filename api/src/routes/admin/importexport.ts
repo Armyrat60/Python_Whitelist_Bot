@@ -77,6 +77,8 @@ interface ParsedRow {
   slot_limit?: number
   notes?: string
   category?: string
+  squad_group?: string
+  clan_tag?: string
 }
 
 interface UserGroup {
@@ -88,6 +90,8 @@ interface UserGroup {
   slot_limit: number
   notes: string
   category: string
+  squad_group: string
+  clan_tag: string
   status: "new" | "existing"
   matched_name?: string
   match_score?: number
@@ -129,6 +133,18 @@ function parseCsvData(data: string, columnMap: Record<string, string> | null): {
   return { rows, invalid }
 }
 
+/** Extract clan tag from bracket notation in a name, e.g. "[DMH] Xyan" → { tag: "DMH", name: "Xyan" } */
+function extractClanTag(raw: string): { tag: string; name: string } {
+  // Match [tag] or {tag} at start of name, with optional emoji prefixes (e.g. "★QG★")
+  const m = raw.match(/^[\s★☆✦✧⚔🏳🏴🎮]*(?:\[([^\]]+)\]|\{([^}]+)\})\s*(.*)$/)
+  if (m) {
+    const tag = (m[1] ?? m[2] ?? "").trim()
+    const name = (m[3] ?? "").trim() || "(unknown)"
+    return { tag, name }
+  }
+  return { tag: "", name: raw }
+}
+
 /** Parse Squad .cfg format: Admin=STEAM64:group // name */
 function parseSquadCfg(data: string, existingSteam: Set<string>): { rows: ParsedRow[]; invalid: number } {
   const rows: ParsedRow[] = []
@@ -138,8 +154,16 @@ function parseSquadCfg(data: string, existingSteam: Set<string>): { rows: Parsed
     if (!m) continue
     const steam64 = m[1]
     if (!STEAM64_RE.test(steam64)) { invalid++; continue }
-    const category = m[2]?.trim() || ""
-    rows.push({ steam64, category, discord_name: m[3]?.trim() || "(unknown)" })
+    const squad_group = m[2]?.trim() || ""
+    const rawName = m[3]?.trim() || "(unknown)"
+    const { tag: clan_tag, name: cleanName } = extractClanTag(rawName)
+    rows.push({
+      steam64,
+      squad_group,
+      category: clan_tag || "",   // bracket tag becomes category
+      clan_tag,
+      discord_name: cleanName,
+    })
   }
   return { rows, invalid }
 }
@@ -188,6 +212,8 @@ function groupRowsByUser(
         slot_limit: slotLimit,
         notes: row.notes || "",
         category: row.category || "",
+        squad_group: row.squad_group || "",
+        clan_tag: row.clan_tag || "",
         status: (discordId && existingIds.has(did)) ? "existing" : "new",
       })
     }
@@ -336,12 +362,15 @@ export default async function importExportRoutes(app: FastifyInstance) {
     const actorId = BigInt(req.session.userId!)
     const body = req.body as Record<string, unknown>
 
+    // Accept pre-edited preview data from frontend (skips re-parsing)
+    const previewUsers = Array.isArray(body?.users) ? body.users as UserGroup[] : null
+
     let data = String(body?.data ?? body?.paste_data ?? body?.content ?? "")
-    if (data.length > MAX_IMPORT_BYTES) return reply.code(413).send({ error: `Import data exceeds ${MAX_IMPORT_BYTES / 1024 / 1024} MB limit.` })
+    if (!previewUsers && data.length > MAX_IMPORT_BYTES) return reply.code(413).send({ error: `Import data exceeds ${MAX_IMPORT_BYTES / 1024 / 1024} MB limit.` })
     const url = String(body?.url ?? "").trim()
 
-    // Fetch from URL if provided and no inline data
-    if (!data.trim() && url) {
+    // Fetch from URL if provided and no inline data (skip if using preview data)
+    if (!previewUsers && !data.trim() && url) {
       try {
         const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) })
         if (!resp.ok) return reply.code(400).send({ error: `URL fetch failed: ${resp.status} ${resp.statusText}` })
@@ -361,13 +390,19 @@ export default async function importExportRoutes(app: FastifyInstance) {
       ? body.category_map as Record<string, string>
       : null
     const defaultCategory = String(body?.default_category ?? "").trim()
+    const groupMap = body?.group_map && typeof body.group_map === "object"
+      ? body.group_map as Record<string, string>
+      : null
 
-    if (fmt === "cfg") fmt = "squad_cfg"
-    else if (fmt === "auto") fmt = detectFormat(data)
-    else if (!["csv", "squad_cfg", "plain_ids"].includes(fmt)) fmt = "csv"
+    if (!previewUsers) {
+      if (fmt === "cfg") fmt = "squad_cfg"
+      else if (fmt === "auto") fmt = detectFormat(data)
+      else if (!["csv", "squad_cfg", "plain_ids"].includes(fmt)) fmt = "csv"
+      if (!["skip", "overwrite", "merge"].includes(dupHandling)) dupHandling = "skip"
+      if (!data.trim()) return reply.code(400).send({ error: "No data provided." })
+      if (fmt === "discord_members") return reply.code(400).send({ error: "Use the Reconcile tab to match a Discord member list." })
+    }
     if (!["skip", "overwrite", "merge"].includes(dupHandling)) dupHandling = "skip"
-    if (!data.trim()) return reply.code(400).send({ error: "No data provided." })
-    if (fmt === "discord_members") return reply.code(400).send({ error: "Use the Reconcile tab to match a Discord member list." })
 
     // Always use the dedicated "Imported" manual whitelist
     const wl = await getOrCreateImportedWhitelist(app.prisma, guildId)
@@ -380,12 +415,29 @@ export default async function importExportRoutes(app: FastifyInstance) {
       (await app.prisma.whitelistIdentifier.findMany({ where: { guildId, whitelistId: wl.id, idType: "steam64" } })).map((i) => i.idValue)
     )
 
-    let parsed: { rows: ParsedRow[]; invalid: number }
-    if (fmt === "squad_cfg") parsed = parseSquadCfg(data, existingSteam)
-    else if (fmt === "plain_ids") parsed = parsePlainIds(data, existingSteam)
-    else parsed = parseCsvData(data, columnMap)
-
-    const users = groupRowsByUser(parsed.rows, wl.defaultSlotLimit, existingIds, planMap)
+    let users: UserGroup[]
+    if (previewUsers) {
+      // Use pre-edited preview data directly (already parsed + edited by user)
+      users = previewUsers.map((u) => ({
+        discord_id: u.discord_id ?? "",
+        discord_name: u.discord_name ?? "(unknown)",
+        steam_ids: Array.isArray(u.steam_ids) ? u.steam_ids : [],
+        eos_ids: Array.isArray(u.eos_ids) ? u.eos_ids : [],
+        plan: u.plan ?? "",
+        slot_limit: u.slot_limit ?? wl.defaultSlotLimit,
+        notes: u.notes ?? "",
+        category: u.category ?? "",
+        squad_group: u.squad_group ?? "",
+        clan_tag: u.clan_tag ?? "",
+        status: (u.discord_id && existingIds.has(BigInt(u.discord_id))) ? "existing" : "new",
+      }))
+    } else {
+      let parsed: { rows: ParsedRow[]; invalid: number }
+      if (fmt === "squad_cfg") parsed = parseSquadCfg(data, existingSteam)
+      else if (fmt === "plain_ids") parsed = parsePlainIds(data, existingSteam)
+      else parsed = parseCsvData(data, columnMap)
+      users = groupRowsByUser(parsed.rows, wl.defaultSlotLimit, existingIds, planMap)
+    }
 
     let added = 0, updated = 0, skipped = 0, errors = 0
     let idCounter = Date.now()
@@ -403,6 +455,12 @@ export default async function importExportRoutes(app: FastifyInstance) {
         if (!u.category) u.category = defaultCategory
       }
     }
+    // ── Apply squad group mapping ──
+    if (groupMap) {
+      for (const u of users) {
+        if (u.squad_group && groupMap[u.squad_group]) u.squad_group = groupMap[u.squad_group]
+      }
+    }
 
     // ── Category handling: auto-create categories if any row has one ──
     const hasCategories = users.some((u) => u.category)
@@ -415,13 +473,16 @@ export default async function importExportRoutes(app: FastifyInstance) {
       })
       for (const cat of existingCats) categoryIdMap.set(cat.name.toLowerCase(), cat.id)
 
-      // Create any new categories
+      // Create any new categories, assigning squad_group if all entries in a category share the same one
       const uniqueCats = [...new Set(users.map((u) => u.category).filter(Boolean))]
       let sortOrder = existingCats.length
       for (const catName of uniqueCats) {
         if (categoryIdMap.has(catName.toLowerCase())) continue
+        // Derive squad_group from the first entry in this category that has one
+        const catUsers = users.filter((u) => u.category === catName && u.squad_group)
+        const squadGroup = catUsers.length > 0 ? catUsers[0].squad_group : undefined
         const created = await app.prisma.whitelistCategory.create({
-          data: { guildId, whitelistId: wl.id, name: catName, sortOrder: sortOrder++ },
+          data: { guildId, whitelistId: wl.id, name: catName, sortOrder: sortOrder++, ...(squadGroup ? { squadGroup } : {}) },
         })
         categoryIdMap.set(catName.toLowerCase(), created.id)
       }
@@ -449,6 +510,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
         const isExisting = existingIds.has(discordId)
 
         const categoryId = user.category ? (categoryIdMap.get(user.category.toLowerCase()) ?? null) : null
+        const clanTag = user.clan_tag || null
 
         if (isExisting) {
           if (dupHandling === "skip") { skipped++; continue }
@@ -462,7 +524,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
             if (ids.length > 0) await app.prisma.whitelistIdentifier.createMany({ data: ids, skipDuplicates: true })
             await app.prisma.whitelistUser.update({
               where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
-              data: { discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), updatedAt: now },
+              data: { discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), ...(clanTag != null ? { clanTag } : {}), updatedAt: now },
             })
             updated++
           } else if (dupHandling === "merge") {
@@ -472,11 +534,14 @@ export default async function importExportRoutes(app: FastifyInstance) {
               ...user.eos_ids.map((eid) => ({ guildId, discordId, whitelistId: wl.id, idType: "eosid", idValue: eid, isVerified: false, verificationSource: "import", createdAt: now, updatedAt: now })),
             ]
             if (newIds.length > 0) await app.prisma.whitelistIdentifier.createMany({ data: newIds, skipDuplicates: true })
-            // Update category if provided
-            if (categoryId != null) {
+            // Update category and clanTag if provided
+            const updateData: Record<string, unknown> = { updatedAt: now }
+            if (categoryId != null) updateData.categoryId = categoryId
+            if (clanTag != null) updateData.clanTag = clanTag
+            if (Object.keys(updateData).length > 1) {
               await app.prisma.whitelistUser.update({
                 where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
-                data: { categoryId, updatedAt: now },
+                data: updateData,
               })
             }
             updated++
@@ -484,7 +549,7 @@ export default async function importExportRoutes(app: FastifyInstance) {
         } else {
           // New user
           await app.prisma.whitelistUser.create({
-            data: { guildId, discordId, whitelistId: wl.id, discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), createdVia: "import", createdAt: now, updatedAt: now },
+            data: { guildId, discordId, whitelistId: wl.id, discordName: user.discord_name, status: "active", effectiveSlotLimit: user.slot_limit, ...(categoryId != null ? { categoryId } : {}), ...(clanTag != null ? { clanTag } : {}), createdVia: "import", createdAt: now, updatedAt: now },
           })
           const ids = [
             ...user.steam_ids.map((sid) => ({ guildId, discordId, whitelistId: wl.id, idType: "steam64", idValue: sid, isVerified: false, verificationSource: "import", createdAt: now, updatedAt: now })),
