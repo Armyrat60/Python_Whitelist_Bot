@@ -116,14 +116,24 @@ function parsePlayers(text: string): SquadPlayer[] {
 function parseSquads(text: string): SquadInfo[] {
   const squads: SquadInfo[] = []
   const lines = text.split("\n")
+  let currentTeamId = "0"
   for (const line of lines) {
+    // Check for team header lines like "Team ID: 1" or "----- Team 1 -----"
+    const teamHeader = line.match(/Team ID:\s*(\d+)/)
+      ?? line.match(/-+\s*Team\s+(\d+)\s*-+/)
+    if (teamHeader) {
+      currentTeamId = teamHeader[1]
+      continue
+    }
+
     const squadMatch = line.match(/ID:\s*(\d+)\s*\|\s*Name:\s*(.+?)\s*\|\s*Size:\s*(\d+)\s*\|\s*Locked:\s*(True|False|true|false)\s*\|\s*Creator Name:\s*(.+?)(?:\s*\||$)/)
     if (squadMatch) {
-      const teamMatch = line.match(/Team ID:\s*(\d+)/)
+      // Try inline Team ID first, fall back to section header
+      const inlineTeam = line.match(/Team ID:\s*(\d+)/)
       squads.push({
         id: squadMatch[1],
         name: squadMatch[2].trim(),
-        teamId: teamMatch?.[1] ?? "0",
+        teamId: inlineTeam?.[1] ?? currentTeamId,
         size: parseInt(squadMatch[3], 10),
         locked: squadMatch[4].toLowerCase() === "true",
         leader: squadMatch[5].trim(),
@@ -182,13 +192,16 @@ export async function getFullServerState(config: RconConfig): Promise<FullServer
     const squads = parseSquads(squadsText)
     const info = parseServerInfo(infoText)
 
-    // Debug logging
-    console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads, server: "${info.name}"`)
-    for (const s of squads) console.log(`[rcon] Squad: id=${s.id} team=${s.teamId} name="${s.name}" size=${s.size} locked=${s.locked}`)
-    for (const p of players) console.log(`[rcon] Player: id=${p.id} team=${p.teamId} squad=${p.squadId} name="${p.name}" leader=${p.isLeader}`)
-    if (squads.length === 0 && squadsText.length > 50) {
-      console.log(`[rcon] SQUAD PARSE FAIL — first 500 chars: ${squadsText.slice(0, 500)}`)
+    // Infer squad team from players when squad parser couldn't determine it
+    for (const squad of squads) {
+      if (squad.teamId === "0") {
+        const member = players.find((p) => p.squadId === squad.id)
+        if (member) squad.teamId = member.teamId
+      }
     }
+
+    console.log(`[rcon] Parsed — ${players.length} players, ${squads.length} squads`)
+    for (const s of squads) console.log(`[rcon] Squad: id=${s.id} team=${s.teamId} name="${s.name}" size=${s.size} locked=${s.locked}`)
 
     // Group into teams with faction detection
     const teamIds = [...new Set([...players.map((p) => p.teamId), ...squads.map((s) => s.teamId)])]
