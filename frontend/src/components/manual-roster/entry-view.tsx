@@ -17,7 +17,6 @@ import {
   Pencil,
   Check,
   X,
-  Settings2,
   ArrowRightLeft,
 } from "lucide-react";
 import {
@@ -206,13 +205,9 @@ export default function EntryView({
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState(category.name);
 
-  // Settings panel
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSlotLimit, setSettingsSlotLimit] = useState(category.slot_limit != null ? String(category.slot_limit) : "");
-  const [settingsSquadGroup, setSettingsSquadGroup] = useState(category.squad_group ?? "");
-  const [settingsWhitelistId, setSettingsWhitelistId] = useState(whitelist.id);
-  const [settingsTags, setSettingsTags] = useState(category.tags ?? "");
-  const [settingsDirty, setSettingsDirty] = useState(false);
+  // Inline settings
+  const [tagInput, setTagInput] = useState("");
+  const currentTags = (category.tags ?? "").split(",").map(t => t.trim()).filter(Boolean);
 
   const now = new Date();
   const soonThreshold = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -269,33 +264,23 @@ export default function EntryView({
     );
   }
 
-  function handleSaveSettings() {
-    const newLimit = settingsSlotLimit.trim() ? parseInt(settingsSlotLimit, 10) : null;
-    const newGroup = settingsSquadGroup || null;
-    const newTags = settingsTags.trim() || null;
-    const newWlId = settingsWhitelistId !== whitelist.id ? settingsWhitelistId : undefined;
-
-    updateCategory.mutate(
-      {
-        id: category.id,
-        slot_limit: newLimit,
-        squad_group: newGroup,
-        tags: newTags,
-        ...(newWlId ? { whitelist_id: newWlId } : {}),
-      },
-      {
-        onSuccess: () => {
-          toast.success("Settings saved");
-          setSettingsDirty(false);
-          setSettingsOpen(false);
-        },
-        onError: () => toast.error("Failed to save settings"),
-      }
-    );
+  function saveField(data: Parameters<typeof updateCategory.mutate>[0]) {
+    updateCategory.mutate(data, {
+      onSuccess: () => toast.success("Updated"),
+      onError: () => toast.error("Failed to update"),
+    });
   }
 
-  function markDirty() {
-    setSettingsDirty(true);
+  function addTag(tag: string) {
+    const trimmed = tag.trim();
+    if (!trimmed || currentTags.includes(trimmed)) return;
+    const newTags = [...currentTags, trimmed].join(", ");
+    saveField({ id: category.id, tags: newTags });
+  }
+
+  function removeTag(tag: string) {
+    const newTags = currentTags.filter(t => t !== tag).join(", ") || null;
+    saveField({ id: category.id, tags: newTags });
   }
 
   return (
@@ -332,133 +317,105 @@ export default function EntryView({
         )}
       </div>
 
-      {/* ─── Stats row (read-only) ───────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* ─── Stats + Inline Settings ─────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Entries (read-only) */}
         <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
           <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Entries</span>
           <span className="text-lg font-semibold tabular-nums">{entriesData?.total ?? category.user_count}</span>
         </div>
-        {category.slot_limit != null && (
+        {/* Max Entries (always shown, inline editable) */}
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Max Entries</span>
+          <span className="text-lg font-semibold tabular-nums">{category.slot_limit ?? "Unlimited"}</span>
+          <Input
+            type="number"
+            min={1}
+            className="h-7 text-xs mt-1"
+            placeholder="Set limit..."
+            defaultValue={category.slot_limit ?? ""}
+            onBlur={(e) => {
+              const val = e.target.value.trim();
+              const newLimit = val ? parseInt(val, 10) : null;
+              if (newLimit !== category.slot_limit) {
+                saveField({ id: category.id, slot_limit: newLimit });
+              }
+            }}
+          />
+        </div>
+        {/* Squad Group (inline dropdown) */}
+        <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Squad Group</span>
+          <Select
+            value={category.squad_group ?? ""}
+            onValueChange={(val) => saveField({ id: category.id, squad_group: val || null })}
+          >
+            <SelectTrigger className="h-7 text-xs mt-1">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Default</SelectItem>
+              {(groups ?? []).map((g) => (
+                <SelectItem key={g.group_name} value={g.group_name}>{g.group_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Whitelist (only if >1 manual) */}
+        {(allWhitelists?.filter(wl => wl.is_manual)?.length ?? 0) > 1 && (
           <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Limit</span>
-            <span className="text-lg font-semibold tabular-nums">{category.slot_limit}</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Whitelist</span>
+            <Select
+              value={String(whitelist.id)}
+              onValueChange={(val) => {
+                const newId = Number(val);
+                if (newId !== whitelist.id) saveField({ id: category.id, whitelist_id: newId });
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {allWhitelists!.filter(wl => wl.is_manual).map((wl) => (
+                  <SelectItem key={wl.id} value={String(wl.id)}>{wl.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
-        {category.squad_group && (
-          <div className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-2.5">
-            <span className="text-xs uppercase tracking-wider text-muted-foreground/60">Group</span>
-            <span className="text-sm font-medium">{category.squad_group}</span>
-          </div>
-        )}
-        {category.tags && (
-          <div className="flex flex-wrap gap-1 items-center">
-            {category.tags.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
-              <span key={tag} className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs text-violet-400">{tag}</span>
-            ))}
-          </div>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          className={cn("h-9 text-sm ml-auto", settingsOpen && "bg-white/[0.05]")}
-          onClick={() => setSettingsOpen(!settingsOpen)}
-        >
-          <Settings2 className="mr-1.5 h-4 w-4" />
-          Settings
-        </Button>
       </div>
 
-      {/* ─── Settings panel (collapsible, requires explicit save) ───── */}
-      {settingsOpen && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Category Settings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="text-sm">Max Entries</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={settingsSlotLimit}
-                  onChange={(e) => { setSettingsSlotLimit(e.target.value); markDirty(); }}
-                  placeholder="No limit"
-                  className="text-sm"
-                />
-                <p className="text-xs text-muted-foreground">Maximum entries allowed. Leave blank for unlimited.</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm">Squad Group</Label>
-                <Select
-                  value={settingsSquadGroup}
-                  onValueChange={(val) => { setSettingsSquadGroup(val ?? ""); markDirty(); }}
-                >
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Default (uses whitelist group)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Default</SelectItem>
-                    {(groups ?? []).map((g) => (
-                      <SelectItem key={g.group_name} value={g.group_name}>
-                        {g.group_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Override the Squad group for entries in this category.</p>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm">Tags</Label>
-              <Input
-                value={settingsTags}
-                onChange={(e) => { setSettingsTags(e.target.value); markDirty(); }}
-                placeholder="e.g. clan, partner, VIP (comma-separated)"
-                className="text-sm"
-              />
-              <p className="text-xs text-muted-foreground">Custom tags for organizing categories. Separate with commas.</p>
-            </div>
-            {(allWhitelists?.length ?? 0) > 1 && (
-              <div className="space-y-1.5">
-                <Label className="text-sm">Whitelist</Label>
-                <Select
-                  value={String(settingsWhitelistId)}
-                  onValueChange={(val) => { setSettingsWhitelistId(Number(val)); markDirty(); }}
-                >
-                  <SelectTrigger className="text-sm w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allWhitelists!.map((wl) => (
-                      <SelectItem key={wl.id} value={String(wl.id)}>
-                        {wl.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Move this category to a different whitelist.</p>
-              </div>
-            )}
-            <div className="flex items-center gap-2 pt-1">
-              <Button size="sm" onClick={handleSaveSettings} disabled={!settingsDirty || updateCategory.isPending}>
-                Save Settings
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => {
-                setSettingsOpen(false);
-                setSettingsSlotLimit(category.slot_limit != null ? String(category.slot_limit) : "");
-                setSettingsSquadGroup(category.squad_group ?? "");
-                setSettingsWhitelistId(whitelist.id);
-                setSettingsTags(category.tags ?? "");
-                setSettingsDirty(false);
-              }}>
-                Cancel
-              </Button>
-              {settingsDirty && <span className="text-xs text-amber-400">Unsaved changes</span>}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ─── Tags (chip UI with tab-to-create) ───────────────────────── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground/60 mr-1">Tags</span>
+        {currentTags.map((tag) => (
+          <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 pl-2.5 pr-1 py-0.5 text-xs text-violet-400">
+            {tag}
+            <button
+              className="rounded-full p-0.5 hover:bg-violet-500/20 transition-colors"
+              onClick={() => removeTag(tag)}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        <Input
+          value={tagInput}
+          onChange={(e) => setTagInput(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.key === "Tab" || e.key === "Enter") && tagInput.trim()) {
+              e.preventDefault();
+              addTag(tagInput);
+              setTagInput("");
+            }
+            if (e.key === "Backspace" && !tagInput && currentTags.length > 0) {
+              removeTag(currentTags[currentTags.length - 1]);
+            }
+          }}
+          placeholder={currentTags.length === 0 ? "Add tags..." : ""}
+          className="h-7 w-32 text-xs border-none bg-transparent shadow-none focus-visible:ring-0 px-1"
+        />
+      </div>
 
       {/* ─── Actions bar (Add, Import, Export) ─────────────────────────── */}
       {!addEntryOpen && !importOpen && (

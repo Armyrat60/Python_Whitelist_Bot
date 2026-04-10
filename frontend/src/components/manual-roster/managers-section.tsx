@@ -42,14 +42,19 @@ export default function ManagersSection({ whitelistId, categoryId }: { whitelist
   const [lookupDone, setLookupDone]   = useState(false);
 
   async function lookupDiscordName(id: string) {
-    if (!id.trim() || id.length < 17) return;
+    const trimmed = id.trim();
+    if (!trimmed || !/^\d{15,20}$/.test(trimmed)) return;
     setLookingUp(true);
+    setLookupDone(false);
     try {
-      const res = await api.get<{ name: string; username: string }>(`/api/admin/discord/member/${id.trim()}`);
-      setMgrName(res.name || res.username);
-      setLookupDone(true);
+      const res = await api.get<{ name: string; username: string; discord_id: string }>(`/api/admin/discord/member/${trimmed}`);
+      if (res.name || res.username) {
+        setMgrName(res.name || res.username);
+        setLookupDone(true);
+      } else {
+        toast.info("Member found but no name available — enter name manually");
+      }
     } catch {
-      setLookupDone(false);
       toast.info("Member not found in server — enter name manually");
     } finally {
       setLookingUp(false);
