@@ -28,7 +28,7 @@ export default function ManualRosterPage() {
   const { data: whitelists, isLoading: wlLoading } = useWhitelists();
 
   const availableWhitelists = useMemo(
-    () => whitelists ?? [],
+    () => (whitelists ?? []).filter((wl) => wl.is_manual),
     [whitelists]
   );
 

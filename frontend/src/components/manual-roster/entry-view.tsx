@@ -212,8 +212,9 @@ export default function EntryView({
     <div className="space-y-4">
       {/* Back + header */}
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={onBack}>
-          <ChevronLeft className="h-4 w-4" />
+        <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1 px-2.5 text-xs" onClick={onBack}>
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back
         </Button>
         <div className="min-w-0">
           <h2 className="text-base font-semibold truncate">{category.name}</h2>
