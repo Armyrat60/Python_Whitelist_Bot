@@ -281,6 +281,7 @@ export default function LiveServerPage() {
             value={activeServerId ?? ""}
             onChange={(e) => setSelectedServerId(parseInt(e.target.value, 10))}
             className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+            style={{ colorScheme: "dark" }}
           >
             {servers.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>

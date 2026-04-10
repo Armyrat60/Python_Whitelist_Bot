@@ -124,6 +124,7 @@ export default function LogsPage() {
                 value={filters.action ?? ""}
                 onChange={(e) => updateFilter("action", e.target.value)}
                 className="flex h-8 w-44 items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
+                style={{ colorScheme: "dark" }}
               >
                 <option value="">All actions</option>
                 <option value="user_added">User Added</option>
@@ -148,6 +149,7 @@ export default function LogsPage() {
                 value={filters.type ?? ""}
                 onChange={(e) => updateFilter("type", e.target.value)}
                 className="flex h-8 w-40 items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
+                style={{ colorScheme: "dark" }}
               >
                 <option value="">All whitelists</option>
                 {whitelists?.map((wl) => (

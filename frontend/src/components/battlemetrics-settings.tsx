@@ -180,6 +180,7 @@ export function BattleMetricsSettings() {
                   if (found) setServerName(found.name);
                 }}
                 className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+                style={{ colorScheme: "dark" }}
               >
                 <option value="">Select a server...</option>
                 {discoveredServers.map((s) => (

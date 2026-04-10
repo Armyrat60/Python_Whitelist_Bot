@@ -313,6 +313,7 @@ function RolePermissionGrants() {
                       value={editLevel}
                       onChange={(e) => setEditLevel(e.target.value)}
                       className="flex h-8 w-48 items-center rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none dark:bg-input/30"
+                      style={{ colorScheme: "dark" }}
                     >
                       <option value="viewer">Viewer (read-only)</option>
                       <option value="roster_manager">Roster Manager</option>
