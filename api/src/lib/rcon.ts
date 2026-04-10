@@ -2,10 +2,12 @@
  * Source Engine RCON client.
  *
  * Native implementation using Node.js `net` module.
- * Implements the Source RCON protocol:
+ * Implements the Source RCON protocol with multi-packet response support:
  *   [size:int32LE][id:int32LE][type:int32LE][body:utf8\0][padding:\0]
  *
- * Ported from SquadOps rcon-client.ts pattern.
+ * Multi-packet handling: After sending a command, we send a follow-up
+ * empty SERVERDATA_RESPONSE packet. All response packets before the
+ * follow-up's response are concatenated as the command output.
  */
 import { Socket } from "net"
 
@@ -17,7 +19,7 @@ const SERVERDATA_EXECCOMMAND = 2
 const SERVERDATA_RESPONSE = 0
 
 const AUTH_TIMEOUT = 5_000   // 5 seconds
-const CMD_TIMEOUT = 10_000   // 10 seconds
+const CMD_TIMEOUT = 15_000   // 15 seconds
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,14 +33,12 @@ export interface RconConfig {
 
 function encodePacket(id: number, type: number, body: string): Buffer {
   const bodyBuf = Buffer.from(body, "utf8")
-  // size = 4 (id) + 4 (type) + body.length + 1 (null) + 1 (padding null)
   const size = 4 + 4 + bodyBuf.length + 2
   const buf = Buffer.alloc(4 + size)
   buf.writeInt32LE(size, 0)
   buf.writeInt32LE(id, 4)
   buf.writeInt32LE(type, 8)
   bodyBuf.copy(buf, 12)
-  // Null terminators already zero from alloc
   return buf
 }
 
@@ -50,7 +50,7 @@ function decodePacket(buf: Buffer): { size: number; id: number; type: number; bo
     size,
     id: buf.readInt32LE(4),
     type: buf.readInt32LE(8),
-    body: buf.toString("utf8", 12, 4 + size - 2), // strip null terminators
+    body: buf.toString("utf8", 12, 4 + size - 2),
   }
 }
 
@@ -60,7 +60,23 @@ class RconClient {
   private socket: Socket | null = null
   private requestId = 0
   private responseBuffer = Buffer.alloc(0)
-  private pendingCallbacks = new Map<number, { resolve: (body: string) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private authenticated = false
+
+  // Multi-packet response accumulator
+  private commandResponses = new Map<number, string[]>()
+  private commandCallbacks = new Map<number, {
+    resolve: (body: string) => void
+    reject: (err: Error) => void
+    timer: ReturnType<typeof setTimeout>
+    sentinelId: number
+  }>()
+  // Auth callback
+  private authCallback: {
+    resolve: () => void
+    reject: (err: Error) => void
+    timer: ReturnType<typeof setTimeout>
+    authId: number
+  } | null = null
 
   async connect(config: RconConfig): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -83,50 +99,57 @@ class RconClient {
       })
 
       socket.on("close", () => {
-        for (const [, cb] of this.pendingCallbacks) {
+        for (const [, cb] of this.commandCallbacks) {
           clearTimeout(cb.timer)
           cb.reject(new Error("Connection closed"))
         }
-        this.pendingCallbacks.clear()
+        this.commandCallbacks.clear()
+        if (this.authCallback) {
+          clearTimeout(this.authCallback.timer)
+          this.authCallback.reject(new Error("Connection closed"))
+          this.authCallback = null
+        }
       })
 
       socket.connect(config.port, config.host, () => {
-        // Send auth packet
         const authId = this._nextId()
-        const authPacket = encodePacket(authId, SERVERDATA_AUTH, config.password)
-
-        const authCb = {
-          resolve: (body: string) => {
-            clearTimeout(timeout)
-            resolve()
-          },
-          reject: (err: Error) => {
-            clearTimeout(timeout)
-            reject(err)
-          },
+        this.authCallback = {
+          resolve: () => { clearTimeout(timeout); this.authenticated = true; resolve() },
+          reject: (err) => { clearTimeout(timeout); reject(err) },
           timer: timeout,
+          authId,
         }
-
-        this.pendingCallbacks.set(authId, authCb)
-        socket.write(authPacket)
+        socket.write(encodePacket(authId, SERVERDATA_AUTH, config.password))
       })
     })
   }
 
   async execute(command: string): Promise<string> {
-    if (!this.socket) throw new Error("Not connected")
+    if (!this.socket || !this.authenticated) throw new Error("Not connected")
 
     return new Promise((resolve, reject) => {
-      const id = this._nextId()
-      const packet = encodePacket(id, SERVERDATA_EXECCOMMAND, command)
+      const cmdId = this._nextId()
+      const sentinelId = this._nextId()
 
       const timer = setTimeout(() => {
-        this.pendingCallbacks.delete(id)
-        reject(new Error(`RCON command timed out: ${command}`))
+        // On timeout, return whatever we've accumulated so far
+        const parts = this.commandResponses.get(cmdId) ?? []
+        this.commandResponses.delete(cmdId)
+        this.commandCallbacks.delete(cmdId)
+        if (parts.length > 0) {
+          resolve(parts.join(""))
+        } else {
+          reject(new Error(`RCON command timed out: ${command}`))
+        }
       }, CMD_TIMEOUT)
 
-      this.pendingCallbacks.set(id, { resolve, reject, timer })
-      this.socket!.write(packet)
+      this.commandResponses.set(cmdId, [])
+      this.commandCallbacks.set(cmdId, { resolve, reject, timer, sentinelId })
+
+      // Send the actual command
+      this.socket!.write(encodePacket(cmdId, SERVERDATA_EXECCOMMAND, command))
+      // Send a follow-up empty packet — its response marks the end of the command output
+      this.socket!.write(encodePacket(sentinelId, SERVERDATA_EXECCOMMAND, ""))
     })
   }
 
@@ -135,10 +158,15 @@ class RconClient {
       this.socket.destroy()
       this.socket = null
     }
-    for (const [, cb] of this.pendingCallbacks) {
+    for (const [, cb] of this.commandCallbacks) {
       clearTimeout(cb.timer)
     }
-    this.pendingCallbacks.clear()
+    this.commandCallbacks.clear()
+    this.commandResponses.clear()
+    if (this.authCallback) {
+      clearTimeout(this.authCallback.timer)
+      this.authCallback = null
+    }
     this.responseBuffer = Buffer.alloc(0)
   }
 
@@ -151,38 +179,48 @@ class RconClient {
       const packet = decodePacket(this.responseBuffer)
       if (!packet) break
 
-      // Consume the packet from buffer
       this.responseBuffer = this.responseBuffer.subarray(4 + packet.size)
 
-      // Source RCON sends an empty SERVERDATA_RESPONSE (type 0) packet
-      // BEFORE the real SERVERDATA_AUTH_RESPONSE during authentication.
-      // Skip these so we don't prematurely resolve the auth callback.
-      if (packet.type === SERVERDATA_RESPONSE && this.pendingCallbacks.has(packet.id)) {
-        // Check if this is likely a pre-auth empty packet by seeing if there's
-        // more data coming. For command responses, resolve normally.
-        // Auth pre-packets have empty body and are followed by the real auth response.
-        if (packet.body === "" || packet.body === "\0") {
-          continue  // skip — wait for the real AUTH_RESPONSE
+      // ── Auth response handling ──
+      if (this.authCallback) {
+        // Skip the empty pre-auth SERVERDATA_RESPONSE packet
+        if (packet.type === SERVERDATA_RESPONSE && packet.id === this.authCallback.authId) {
+          continue
+        }
+        // Auth success
+        if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id >= 0) {
+          const cb = this.authCallback
+          this.authCallback = null
+          cb.resolve()
+          continue
+        }
+        // Auth failure (id = -1)
+        if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id === -1) {
+          const cb = this.authCallback
+          this.authCallback = null
+          cb.reject(new Error("RCON authentication failed — check password"))
+          continue
         }
       }
 
-      // Handle auth failure: server sends AUTH_RESPONSE with id=-1
-      if (packet.type === SERVERDATA_AUTH_RESPONSE && packet.id === -1) {
-        // Find any pending auth callback and reject it
-        for (const [id, cb] of this.pendingCallbacks) {
+      // ── Command response handling ──
+      // Check if this packet is a sentinel response (marks end of multi-packet output)
+      for (const [cmdId, cb] of this.commandCallbacks) {
+        if (packet.id === cb.sentinelId) {
+          // Sentinel received — finalize the command response
           clearTimeout(cb.timer)
-          this.pendingCallbacks.delete(id)
-          cb.reject(new Error("RCON authentication failed — check password"))
+          const parts = this.commandResponses.get(cmdId) ?? []
+          this.commandResponses.delete(cmdId)
+          this.commandCallbacks.delete(cmdId)
+          cb.resolve(parts.join(""))
           break
         }
-        continue
-      }
-
-      const cb = this.pendingCallbacks.get(packet.id)
-      if (cb) {
-        clearTimeout(cb.timer)
-        this.pendingCallbacks.delete(packet.id)
-        cb.resolve(packet.body)
+        if (packet.id === cmdId) {
+          // Accumulate response part
+          const parts = this.commandResponses.get(cmdId)
+          if (parts) parts.push(packet.body)
+          break
+        }
       }
     }
   }
@@ -190,9 +228,6 @@ class RconClient {
 
 // ─── Public Wrapper ──────────────────────────────────────────────────────────
 
-/**
- * Run an RCON operation with automatic connection management.
- */
 export async function withRcon<T>(
   config: RconConfig,
   fn: (client: RconClient) => Promise<T>,
@@ -206,9 +241,6 @@ export async function withRcon<T>(
   }
 }
 
-/**
- * Test RCON connection.
- */
 export async function testRconConnection(config: RconConfig): Promise<{ ok: boolean; message: string }> {
   try {
     return await withRcon(config, async () => {
