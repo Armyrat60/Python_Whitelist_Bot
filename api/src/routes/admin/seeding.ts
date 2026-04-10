@@ -710,6 +710,15 @@ export default async function seedingRoutes(app: FastifyInstance) {
       pendingDiscordLink = Number(pendingResult[0]?.count ?? 0)
     }
 
+    // Parse tiers for tier chip labels on top seeders
+    const tiers = (config?.rewardTiers as Array<{ points: number; duration_hours: number; label: string }>) ?? null
+    const sortedTiers = tiers?.length ? [...tiers].sort((a, b) => b.points - a.points) : null
+    function getStatsTierLabel(points: number): string | null {
+      if (!sortedTiers) return null
+      const tier = sortedTiers.find((t) => points >= t.points)
+      return tier?.label ?? null
+    }
+
     return reply.send({
       points_required: pointsRequired,
       total_seeders: totalSeeders,
@@ -721,6 +730,7 @@ export default async function seedingRoutes(app: FastifyInstance) {
         points: p.points,
         progress_pct: Math.min(100, Math.round((p.points / pointsRequired) * 100)),
         rewarded: p.rewarded,
+        tier_label: getStatsTierLabel(p.points),
       })),
       recent_rewards: recentRewards.map((r) => {
         let d: Record<string, unknown> = {}

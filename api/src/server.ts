@@ -36,6 +36,7 @@ import { steamRoutes } from "./routes/steam.js"
 import importExportRoutes from "./routes/admin/importexport.js"
 import roleSyncRoutes from "./routes/admin/rolesync.js"
 import reconcileRoutes from "./routes/admin/reconcile.js"
+import guildInfoRoutes from "./routes/admin/guild-info.js"
 import { adminSettingsRoutes } from "./routes/admin/settings.js"
 import whitelistRoutes from "./routes/admin/whitelists.js"
 import groupRoutes from "./routes/admin/groups.js"
@@ -127,6 +128,7 @@ async function build() {
   await app.register(importExportRoutes, { prefix: "/api/admin" })
   await app.register(roleSyncRoutes, { prefix: "/api/admin" })
   await app.register(reconcileRoutes, { prefix: "/api/admin" })
+  await app.register(guildInfoRoutes, { prefix: "/api/admin" })
   await app.register(myWhitelistRoutes, { prefix: "/api" })
   await app.register(seedingPublicRoutes, { prefix: "/api" })
   await app.register(steamRoutes, { prefix: "/api" })

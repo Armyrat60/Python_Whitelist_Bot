@@ -245,6 +245,24 @@ export function useInfiniteUsers(
   });
 }
 
+// ─── Guild Info ─────────────────────────────────────────────────────────────
+
+interface GuildInfo {
+  member_count: number;
+  online_count: number;
+  boost_level: number;
+  booster_count: number;
+  role_count: number;
+}
+
+export function useGuildInfo() {
+  return useQuery<GuildInfo>({
+    queryKey: ["guild-info"],
+    queryFn: () => api.get<GuildInfo>("/api/admin/guild-info"),
+    staleTime: 5 * 60 * 1000, // 5 min — matches server cache
+  });
+}
+
 interface PaginatedAudit {
   entries: AuditEntry[];
   total: number;
@@ -1010,7 +1028,7 @@ export function useSeedingStats() {
     total_rewarded: number;
     total_seeding_hours: number;
     pending_discord_link: number;
-    top_seeders: Array<{ player_name: string | null; points: number; progress_pct: number; rewarded: boolean }>;
+    top_seeders: Array<{ player_name: string | null; points: number; progress_pct: number; rewarded: boolean; tier_label: string | null }>;
     recent_rewards: Array<{ player_name: string; tier_label: string; created_at: string }>;
   }>({
     queryKey: ["seeding-stats", guildId],

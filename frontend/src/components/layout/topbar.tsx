@@ -131,12 +131,12 @@ export function Topbar() {
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         {/* Brand shown on mobile (sidebar is hidden) */}
-        <div className="flex items-center gap-2 md:hidden">
+        <Link href="/dashboard" className="flex items-center gap-2 md:hidden">
           <Image src="/logo.png" alt="Squad Whitelister" width={24} height={24} className="rounded" />
           <span className="text-sm font-bold tracking-wide" style={{ color: "var(--accent-primary)" }}>
             Squad Whitelister
           </span>
-        </div>
+        </Link>
         <div className="hidden min-w-0 flex-col md:flex">
           <h1 className="truncate text-lg font-semibold">{title}</h1>
           {activeGuild ? (

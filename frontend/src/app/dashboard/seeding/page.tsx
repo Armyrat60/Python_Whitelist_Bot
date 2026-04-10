@@ -11,6 +11,8 @@ import {
   ArrowRight,
   TrendingUp,
   Link2,
+  Flame,
+  Zap,
 } from "lucide-react";
 import {
   useSeedingConfig,
@@ -154,6 +156,33 @@ export default function SeedingDashboard() {
         )}
       </div>
 
+      {/* Active Bonus Banners */}
+      {(config.bonus_multiplier_enabled || config.streak_enabled) && (
+        <div className="flex flex-wrap gap-2">
+          {config.bonus_multiplier_enabled && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-sm">
+              <Flame className="h-4 w-4 text-amber-400 shrink-0" />
+              <span className="text-amber-300 font-medium">
+                {config.bonus_multiplier_value}x Points Active
+              </span>
+              {config.bonus_multiplier_end && (
+                <span className="text-amber-400/60 text-xs">
+                  — ends {new Date(config.bonus_multiplier_end).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          )}
+          {config.streak_enabled && (
+            <div className="flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-4 py-2.5 text-sm">
+              <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+              <span className="text-violet-300 font-medium">
+                Streak Bonus: {config.streak_multiplier}x after {config.streak_days_required} days
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Population Chart */}
       {config.population_tracking_enabled && <PopulationChart threshold={config.seeding_player_threshold} />}
 
@@ -182,6 +211,14 @@ export default function SeedingDashboard() {
                   <div className="flex-1 min-w-0 space-y-0.5">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-white/80 truncate">{player.player_name ?? "Unknown"}</span>
+                      {player.tier_label && (
+                        <Badge variant="secondary" className={`text-[8px] px-1 py-0 ${
+                          player.tier_label === "Gold" ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+                          : player.tier_label === "Silver" ? "bg-gray-400/15 text-gray-300 border-gray-400/20"
+                          : player.tier_label === "Bronze" ? "bg-orange-500/15 text-orange-400 border-orange-500/20"
+                          : "bg-white/[0.06] text-white/60"
+                        }`}>{player.tier_label}</Badge>
+                      )}
                       {player.rewarded && <Badge variant="default" className="text-[8px] px-1 py-0" style={{ background: "var(--accent-primary)", color: "black" }}>R</Badge>}
                     </div>
                     <ProgressBar pct={player.progress_pct} />

@@ -154,12 +154,9 @@ export async function syncOutputs(
 
     if (sections && sections.size > 0) {
       for (const [sectionName, lines] of sections) {
-        // Only add section headers if there are multiple sections
-        if (sections.size > 1) {
-          allLines.push(`// ─── ${sectionName} ${"─".repeat(Math.max(0, 40 - sectionName.length))}`)
-        }
+        allLines.push(`// ─── ${sectionName} ${"─".repeat(Math.max(0, 40 - sectionName.length))}`)
         allLines.push(...lines)
-        if (sections.size > 1) allLines.push("")
+        allLines.push("")
       }
     }
 

@@ -10,11 +10,17 @@ import {
   AlertTriangle,
   Info,
   UserX,
+  Sprout,
+  Gift,
+  TrendingUp,
+  ArrowRight,
+  Flame,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings, useRoleStats, useDuplicateIdCount } from "@/hooks/use-settings";
+import { useStats, useHealth, useAudit, useWhitelists, usePanels, useSettings, useRoleStats, useDuplicateIdCount, useSeedingConfig, useSeedingStats, useGuildInfo } from "@/hooks/use-settings";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/stats/stat-card";
 import { SetupGuide } from "@/components/setup-guide";
@@ -47,7 +53,11 @@ export default function DashboardPage() {
   const { data: settingsData } = useSettings();
   const { data: roleStats } = useRoleStats();
   const { data: dupData } = useDuplicateIdCount();
+  const { data: seedingConfigData } = useSeedingConfig();
+  const { data: seedingStats } = useSeedingStats();
+  const { data: guildInfo } = useGuildInfo();
 
+  const seedingConfig = seedingConfigData?.config ?? null;
   const whitelistCount = whitelists?.filter((w) => w.enabled).length ?? 0;
   const panelCount = panels?.length ?? 0;
 
@@ -249,56 +259,158 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Health Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Health Status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {healthLoading ? (
-              <>
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-5 w-full" />
-              </>
-            ) : health?.alerts?.length ? (
-              <div className="space-y-2">
-                {health.alerts.map((alert, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
-                      alert.level === "warning"
-                        ? "border-amber-800 bg-amber-950/30 text-amber-400"
-                        : alert.level === "error"
-                        ? "border-red-800 bg-red-950/30 text-red-400"
-                        : "border-blue-800 bg-blue-950/30 text-blue-400"
+        {/* Right column: Health + Discord */}
+        <div className="space-y-6">
+          {/* Health Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Health Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {healthLoading ? (
+                <>
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                </>
+              ) : health?.alerts?.length ? (
+                <div className="space-y-2">
+                  {health.alerts.map((alert, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
+                        alert.level === "warning"
+                          ? "border-amber-800 bg-amber-950/30 text-amber-400"
+                          : alert.level === "error"
+                          ? "border-red-800 bg-red-950/30 text-red-400"
+                          : "border-blue-800 bg-blue-950/30 text-blue-400"
+                      )}
+                    >
+                      {alert.level === "warning" ? (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      ) : (
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                      )}
+                      <span>{alert.message}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm" style={{ color: "var(--accent-primary)" }}>
+                  <Shield className="h-4 w-4" />
+                  All systems healthy — no alerts
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Discord Server Stats */}
+          {guildInfo && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                  Discord Server
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Members</p>
+                    <p className="text-lg font-bold text-white/90">
+                      {guildInfo.member_count.toLocaleString()}
+                    </p>
+                    {guildInfo.online_count > 0 && (
+                      <p className="text-[10px] text-emerald-400">{guildInfo.online_count.toLocaleString()} online</p>
                     )}
-                  >
-                    {alert.level === "warning" ? (
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    ) : (
-                      <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                    )}
-                    <span>{alert.message}</span>
                   </div>
-                ))}
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Boost Level</p>
+                    <p className="text-lg font-bold text-white/90">
+                      {guildInfo.boost_level > 0 ? `Tier ${guildInfo.boost_level}` : "None"}
+                    </p>
+                    {guildInfo.booster_count > 0 && (
+                      <p className="text-[10px] text-pink-400">{guildInfo.booster_count} booster{guildInfo.booster_count !== 1 ? "s" : ""}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-white/[0.06]">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{guildInfo.role_count} roles</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Seeding Stats — only if seeding is configured */}
+      {seedingConfig && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Sprout className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+                Seeding
+              </CardTitle>
+              <CardDescription>Live seeding activity</CardDescription>
+            </div>
+            <Link href="/dashboard/seeding">
+              <Button variant="ghost" size="sm" className="text-muted-foreground">
+                Details <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Active Seeders</p>
+                <p className="text-2xl font-bold text-white/90">{seedingStats?.total_seeders ?? 0}</p>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm" style={{ color: "var(--accent-primary)" }}>
-                <Shield className="h-4 w-4" />
-                All systems healthy — no alerts
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Rewards Given</p>
+                <p className="text-2xl font-bold text-white/90">{seedingStats?.total_rewarded ?? 0}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Total Hours</p>
+                <p className="text-2xl font-bold text-white/90">{seedingStats?.total_seeding_hours ?? 0}h</p>
+              </div>
+            </div>
+            {/* Active bonus indicators */}
+            {(seedingConfig.bonus_multiplier_enabled || seedingConfig.streak_enabled) && (
+              <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-white/[0.06]">
+                {seedingConfig.bonus_multiplier_enabled && (
+                  <div className="flex items-center gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-1 text-xs">
+                    <Flame className="h-3 w-3 text-amber-400" />
+                    <span className="text-amber-300 font-medium">{seedingConfig.bonus_multiplier_value}x Points</span>
+                  </div>
+                )}
+                {seedingConfig.streak_enabled && (
+                  <div className="flex items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/5 px-2.5 py-1 text-xs">
+                    <Zap className="h-3 w-3 text-violet-400" />
+                    <span className="text-violet-300 font-medium">{seedingConfig.streak_multiplier}x after {seedingConfig.streak_days_required}d</span>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
-      </div>
+      )}
 
       {/* Recent Audit */}
       <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>Latest 10 audit entries</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Latest 10 audit entries</CardDescription>
+          </div>
+          <Link href="/dashboard/logs">
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              View All
+            </Button>
+          </Link>
         </CardHeader>
         <CardContent>
           {auditLoading ? (

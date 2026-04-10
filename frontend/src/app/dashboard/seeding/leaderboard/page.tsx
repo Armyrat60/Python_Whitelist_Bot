@@ -11,6 +11,8 @@ import {
   Plus,
   Search,
   ExternalLink,
+  Flame,
+  Zap,
 } from "lucide-react";
 import {
   useSeedingConfig,
@@ -198,6 +200,33 @@ export default function SeedingLeaderboardPage() {
           </AlertDialog>
         </div>
       </div>
+
+      {/* Active Bonus Banners */}
+      {config && (config.bonus_multiplier_enabled || config.streak_enabled) && (
+        <div className="flex flex-wrap gap-2">
+          {config.bonus_multiplier_enabled && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+              <Flame className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <span className="text-amber-300 font-medium">
+                {config.bonus_multiplier_value}x Points Active
+              </span>
+              {config.bonus_multiplier_end && (
+                <span className="text-amber-400/60">
+                  — ends {new Date(config.bonus_multiplier_end).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          )}
+          {config.streak_enabled && (
+            <div className="flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-xs">
+              <Zap className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+              <span className="text-violet-300 font-medium">
+                Streak Bonus: {config.streak_multiplier}x after {config.streak_days_required} days
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">

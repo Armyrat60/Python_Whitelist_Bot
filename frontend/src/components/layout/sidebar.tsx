@@ -21,6 +21,7 @@ import {
   Globe,
   ChevronRight,
   LogOut,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -46,6 +47,7 @@ const dashboardLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/conflicts", label: "Conflicts", icon: AlertTriangle },
+  { href: "/dashboard/logs", label: "Logs", icon: History },
 ];
 
 const whitelistLinks = [
@@ -305,7 +307,7 @@ export function Sidebar() {
       style={{ background: "oklch(0.185 0 0 / 0.97)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", boxShadow: "1px 0 0 rgba(255,255,255,0.05)" }}
     >
       {/* Brand */}
-      <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4">
+      <Link href="/dashboard" className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-4 transition-colors hover:bg-white/[0.02]">
         <div className="relative">
           <Image src="/logo.png" alt="Squad Whitelister" width={32} height={32} className="rounded-lg" />
           <span
@@ -323,7 +325,7 @@ export function Sidebar() {
             Command Center
           </span>
         </div>
-      </div>
+      </Link>
 
       {/* Active guild card */}
       <SidebarGuildCard />

@@ -36,6 +36,13 @@ export interface DiscordMember {
   roles:    string[]
 }
 
+export interface GuildPreview {
+  memberCount:  number
+  onlineCount:  number
+  boostLevel:   number
+  boosterCount: number
+}
+
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 export class DiscordRESTClient {
@@ -74,6 +81,25 @@ export class DiscordRESTClient {
 
   guildCount(): number {
     return this.guilds.size
+  }
+
+  // ── Guild preview (detailed info) ──────────────────────────────────────────
+
+  async fetchGuildPreview(guildId: bigint): Promise<GuildPreview> {
+    const data = await this._get<{
+      id: string
+      name: string
+      approximate_member_count?: number
+      approximate_presence_count?: number
+      premium_tier: number
+      premium_subscription_count?: number
+    }>(`/guilds/${guildId}?with_counts=true`)
+    return {
+      memberCount:  data.approximate_member_count ?? 0,
+      onlineCount:  data.approximate_presence_count ?? 0,
+      boostLevel:   data.premium_tier,
+      boosterCount: data.premium_subscription_count ?? 0,
+    }
   }
 
   // ── Channels ───────────────────────────────────────────────────────────────
