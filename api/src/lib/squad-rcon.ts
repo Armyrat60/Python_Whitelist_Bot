@@ -314,6 +314,37 @@ export async function showNextMap(config: RconConfig): Promise<{ level: string; 
   })
 }
 
+// ─── Layer Parsing ─────────────────────────────────────────────────────────
+
+const KNOWN_FACTIONS = new Set(["CAF", "USA", "USMC", "RUS", "GB", "BAF", "MEA", "INS", "MIL", "AUS", "ADF", "PLA", "PLANMC", "TLF", "IMF", "WPMC", "VDV", "RGF"])
+const KNOWN_MODES = new Set(["RAAS", "AAS", "Invasion", "Insurgency", "TC", "Skirmish", "Seed", "Training", "Destruction"])
+
+export interface LayerInfo {
+  name: string
+  map: string
+  mode: string
+  version: string
+  factions: string[]
+}
+
+export function parseLayerInfo(layerName: string): LayerInfo {
+  const parts = layerName.split("_")
+  const map = parts[0] ?? layerName
+  let mode = ""
+  let version = ""
+  const factions: string[] = []
+
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i]
+    if (/^v\d+$/i.test(p)) { version = p; continue }
+    if (KNOWN_MODES.has(p)) { mode = p; continue }
+    if (KNOWN_FACTIONS.has(p.toUpperCase())) { factions.push(p.toUpperCase()); continue }
+    if (!mode) mode = p
+  }
+
+  return { name: layerName, map, mode, version, factions }
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function toRconConfig(server: {

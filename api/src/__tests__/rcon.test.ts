@@ -22,6 +22,10 @@ vi.mock('../lib/squad-rcon.js', () => ({
   showCurrentMap: vi.fn().mockResolvedValue({ level: 'Yehorivka', layer: 'Yehorivka_RAAS_v1' }),
   showNextMap: vi.fn().mockResolvedValue({ level: 'Fallujah', layer: 'Fallujah_Invasion_v1' }),
   toRconConfig: vi.fn().mockReturnValue({ host: '127.0.0.1', port: 21114, password: 'test' }),
+  parseLayerInfo: vi.fn().mockImplementation((name: string) => {
+    const parts = name.split('_')
+    return { name, map: parts[0], mode: parts[1] ?? '', version: parts[2] ?? '', factions: [] }
+  }),
 }))
 
 vi.mock('../lib/rcon.js', () => ({
@@ -334,21 +338,24 @@ describe('RCON Routes', () => {
       })
       expect(res.statusCode).toBe(200)
       const body = res.json()
-      expect(body.layers).toEqual(['Yehorivka_RAAS_v1', 'Fallujah_Invasion_v1'])
+      expect(body.layers).toEqual([
+        { name: 'Yehorivka_RAAS_v1', map: 'Yehorivka', mode: 'RAAS', version: 'v1', factions: [] },
+        { name: 'Fallujah_Invasion_v1', map: 'Fallujah', mode: 'Invasion', version: 'v1', factions: [] },
+      ])
       expect(body.fromCache).toBe(false)
     })
 
     it('returns cached layers when fresh', async () => {
       t.prisma.gameServer.findFirst.mockResolvedValueOnce({
         ...MOCK_SERVER,
-        layers: { items: ['Cached_Layer_v1'], cachedAt: new Date().toISOString() },
+        layers: { items: [{ name: 'Cached_Layer_v1', map: 'Cached', mode: 'Layer', version: 'v1', factions: [] }], cachedAt: new Date().toISOString() },
       } as never)
       const res = await t.app.inject({
         method: 'GET', url: '/api/admin/game-servers/1/rcon/layers',
       })
       expect(res.statusCode).toBe(200)
       const body = res.json()
-      expect(body.layers).toEqual(['Cached_Layer_v1'])
+      expect(body.layers).toEqual([{ name: 'Cached_Layer_v1', map: 'Cached', mode: 'Layer', version: 'v1', factions: [] }])
       expect(body.fromCache).toBe(true)
     })
   })

@@ -23,7 +23,24 @@ import {
   showCurrentMap,
   showNextMap,
   toRconConfig,
+  parseLayerInfo,
+  type LayerInfo,
 } from "../../lib/squad-rcon.js"
+
+// ─── Player Status Cache (60s TTL) ─────────────────────────────────────────
+
+interface PlayerStatusEntry {
+  isWhitelisted: boolean
+  isAdmin: boolean
+  discordId: string | null
+}
+
+interface StatusCache {
+  data: Record<string, PlayerStatusEntry>
+  cachedAt: number
+}
+
+const playerStatusCache = new Map<string, StatusCache>()
 
 // ─── Per-Action Permission Middleware ───────────────────────────────────────
 
@@ -93,6 +110,63 @@ export default async function rconRoutes(app: FastifyInstance) {
 
   // ── GET /game-servers/:id/rcon/players ────────────────────────────────────
 
+  async function lookupPlayerStatus(guildId: bigint, steamIds: string[]): Promise<Record<string, PlayerStatusEntry>> {
+    const cacheKey = guildId.toString()
+    const cached = playerStatusCache.get(cacheKey)
+    if (cached && Date.now() - cached.cachedAt < 60_000) return cached.data
+
+    const result: Record<string, PlayerStatusEntry> = {}
+    if (steamIds.length === 0) return result
+
+    try {
+      // Find all whitelisted Steam IDs for this guild
+      const identifiers = await prisma.whitelistIdentifier.findMany({
+        where: { guildId, idType: "steam", idValue: { in: steamIds } },
+        select: { idValue: true, discordId: true, whitelistId: true },
+      })
+
+      // Get admin group names for this guild
+      const ADMIN_PERMS = ["cameraman", "balance", "canseeadminchat", "manageserver", "kick", "ban", "config", "cheat"]
+      const groups = await prisma.squadGroup.findMany({
+        where: { guildId, enabled: true },
+        select: { groupName: true, permissions: true },
+      })
+      const adminGroups = new Set(
+        groups.filter(g => ADMIN_PERMS.some(p => g.permissions.includes(p))).map(g => g.groupName),
+      )
+
+      // Get whitelists to check their squad_group
+      const wlIds = [...new Set(identifiers.map(i => i.whitelistId).filter((id): id is number => id !== null))]
+      const whitelists = wlIds.length > 0 ? await prisma.whitelist.findMany({
+        where: { id: { in: wlIds }, guildId },
+        select: { id: true, squadGroup: true },
+      }) : []
+      const wlGroupMap = new Map(whitelists.map(w => [w.id, w.squadGroup]))
+
+      // Build result
+      for (const steamId of steamIds) {
+        const matches = identifiers.filter(i => i.idValue === steamId)
+        if (matches.length === 0) continue
+        const isAdmin = matches.some(m => {
+          if (!m.whitelistId) return false
+          const group = wlGroupMap.get(m.whitelistId)
+          return group ? adminGroups.has(group) : false
+        })
+        result[steamId] = {
+          isWhitelisted: true,
+          isAdmin,
+          discordId: matches[0].discordId.toString(),
+        }
+      }
+
+      playerStatusCache.set(cacheKey, { data: result, cachedAt: Date.now() })
+    } catch (err) {
+      app.log.error({ err }, "Failed to lookup player status")
+    }
+
+    return result
+  }
+
   app.get<{ Params: { id: string } }>("/game-servers/:id/rcon/players", { preHandler: requireRconRead }, async (req, reply) => {
     const result = await getServerConfig(req, reply, parseInt(req.params.id, 10))
     if (!result) return
@@ -100,7 +174,15 @@ export default async function rconRoutes(app: FastifyInstance) {
     const start = Date.now()
     try {
       const state = await getFullServerState(result.config)
-      return reply.send({ ...state, responseTime: Date.now() - start })
+
+      // Collect all Steam IDs and lookup whitelist/admin status
+      const allSteamIds = state.teams.flatMap(t => [
+        ...t.squads.flatMap(s => s.players.map(p => p.steamId)),
+        ...t.unassigned.map(p => p.steamId),
+      ])
+      const playerStatus = await lookupPlayerStatus(result.guildId, allSteamIds)
+
+      return reply.send({ ...state, playerStatus, responseTime: Date.now() - start })
     } catch (err) {
       return reply.send({ info: null, teams: [], totalPlayers: 0, error: (err as Error).message, responseTime: Date.now() - start })
     }
@@ -362,8 +444,8 @@ export default async function rconRoutes(app: FastifyInstance) {
 
     const forceRefresh = req.query.refresh === "1"
 
-    // Check cached layers
-    const cached = result.server.layers as { items: string[]; cachedAt: string } | null
+    // Check cached layers (now stores parsed LayerInfo objects)
+    const cached = result.server.layers as { items: LayerInfo[]; cachedAt: string } | null
     if (cached?.items && !forceRefresh) {
       const cacheAge = Date.now() - new Date(cached.cachedAt).getTime()
       if (cacheAge < 24 * 60 * 60 * 1000) {
@@ -373,13 +455,14 @@ export default async function rconRoutes(app: FastifyInstance) {
 
     // Fetch from server
     try {
-      const layers = await listLayers(result.config)
+      const rawLayers = await listLayers(result.config)
       const now = new Date().toISOString()
+      const layers = rawLayers.map(parseLayerInfo)
 
       if (layers.length > 0) {
         await prisma.gameServer.update({
           where: { id: result.server.id },
-          data: { layers: { items: layers, cachedAt: now } },
+          data: { layers: JSON.parse(JSON.stringify({ items: layers, cachedAt: now })) },
         })
       }
 

@@ -1217,10 +1217,17 @@ export interface RconTeam {
   unassigned: RconPlayer[];
 }
 
+export interface PlayerStatusEntry {
+  isWhitelisted: boolean;
+  isAdmin: boolean;
+  discordId: string | null;
+}
+
 export interface RconServerState {
   info: { name: string; map: string; gameMode: string; playerCount: number; maxPlayers: number } | null;
   teams: RconTeam[];
   totalPlayers: number;
+  playerStatus?: Record<string, PlayerStatusEntry>;
   error?: string;
   responseTime?: number;
 }
@@ -1317,8 +1324,16 @@ export function useRestartMatch() {
   });
 }
 
+export interface LayerInfo {
+  name: string;
+  map: string;
+  mode: string;
+  version: string;
+  factions: string[];
+}
+
 export interface RconLayersResponse {
-  layers: string[];
+  layers: LayerInfo[];
   cachedAt: string;
   fromCache: boolean;
   warning?: string;
