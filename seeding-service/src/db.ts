@@ -383,6 +383,7 @@ export async function updateServerPollStatus(
 
 export interface PlayerInput {
   steamId: string
+  eosId: string | null
   name: string
 }
 
@@ -414,6 +415,18 @@ export async function awardPoints(
         [guildId, serverId, p.steamId, p.name || null],
       )
       if ((result.rowCount ?? 0) > 0) awarded++
+      // Update squad_players with EOS ID when available (provides Steam↔EOS pairing data)
+      if (p.eosId) {
+        await client.query(
+          `INSERT INTO squad_players (guild_id, steam_id, eos_id, last_seen_name, first_seen_at, last_seen_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW())
+           ON CONFLICT (guild_id, steam_id) DO UPDATE SET
+             eos_id = COALESCE(EXCLUDED.eos_id, squad_players.eos_id),
+             last_seen_name = COALESCE(EXCLUDED.last_seen_name, squad_players.last_seen_name),
+             last_seen_at = NOW()`,
+          [guildId, p.steamId, p.eosId, p.name || null],
+        )
+      }
     }
   } finally {
     client.release()

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -560,6 +561,10 @@ class WhitelistBot(commands.Bot):
         msg = f"Saved {len(submitted)} identifier(s)."
         if duplicate_warnings:
             msg += "\nWarning: duplicate identifiers exist elsewhere; published output is deduped."
+        has_unverified_steam = any(t == "steam64" and src == "format_only" for t, _, _, src in submitted)
+        web_base = os.environ.get("WEB_BASE_URL", "")
+        if has_unverified_steam and web_base:
+            msg += f"\n\n**Verify your Steam ID** to unlock full features: [Click here]({web_base}/my-whitelist)"
         await interaction.response.send_message(msg, ephemeral=True)
         await self.send_log_embed(guild_id, whitelist_id, "Whitelist Updated", f"User: <@{interaction.user.id}>\nType: `{whitelist_type}`\nSlots: `{slots}`\nPlan: `{plan}`\nIDs: `{len(submitted)}`", discord.Color.green())
 

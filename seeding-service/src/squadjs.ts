@@ -15,9 +15,11 @@
 import { io, Socket } from "socket.io-client"
 
 const STEAM64_RE = /^[0-9]{17}$/
+const EOSID_RE = /^[0-9a-fA-F]{32}$/
 
 export interface OnlinePlayer {
   steamId: string
+  eosId: string | null
   name: string
 }
 
@@ -166,12 +168,15 @@ export async function getOnlinePlayers(guildId: string, serverId: number): Promi
 
       const entry = raw as Record<string, unknown>
       const steamId = entry.steamID ?? entry.steamId ?? entry.steam_id
+      const eosRaw = entry.eosID ?? entry.eosId ?? entry.eos_id
       const name = entry.name ?? entry.playerName ?? entry.player_name
 
       if (!isValidSteamId(steamId)) continue
 
+      const eosId = typeof eosRaw === "string" && EOSID_RE.test(eosRaw) ? eosRaw : null
       players.push({
         steamId: steamId,
+        eosId,
         name: sanitizeName(name),
       })
     }

@@ -104,6 +104,7 @@ async function syncGuild(cfg: BridgeConfigRow): Promise<string> {
   for (let i = 0; i < players.length; i += BATCH) {
     const batch = players.slice(i, i + BATCH).map((p) => ({
       steamId:  p.steamID,
+      eosId:    p.eosID ?? null,
       lastName: p.lastName,
     }))
     const { upserted, linked } = await upsertPlayers(cfg.guild_id, cfg.server_name, batch)

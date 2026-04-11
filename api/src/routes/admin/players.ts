@@ -229,6 +229,7 @@ export default async function playerRoutes(app: FastifyInstance) {
 
     const squadData = squadPlayers.map(p => ({
       steam_id:      p.steamId,
+      eos_id:        p.eosId ?? null,
       last_seen_name: p.lastSeenName ?? null,
       server_name:   p.serverName ?? null,
       last_seen_at:  p.lastSeenAt.toISOString(),

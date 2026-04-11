@@ -179,7 +179,7 @@ export default async function rconRoutes(app: FastifyInstance) {
       const allSteamIds = state.teams.flatMap(t => [
         ...t.squads.flatMap(s => s.players.map(p => p.steamId)),
         ...t.unassigned.map(p => p.steamId),
-      ])
+      ]).filter((id): id is string => id != null)
       const playerStatus = await lookupPlayerStatus(result.guildId, allSteamIds)
 
       return reply.send({ ...state, playerStatus, responseTime: Date.now() - start })

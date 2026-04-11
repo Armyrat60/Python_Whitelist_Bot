@@ -284,6 +284,7 @@ async function pollServer(server: db.SeedingServerRow, cfg: db.SeedingConfigRow)
   // Server is in seeding mode — award points
   const playerInputs: db.PlayerInput[] = players.map((p) => ({
     steamId: p.steamId,
+    eosId: p.eosId,
     name: p.name,
   }))
 

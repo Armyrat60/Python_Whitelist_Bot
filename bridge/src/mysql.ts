@@ -18,6 +18,7 @@ export interface GuildMysqlConfig {
 
 export interface SquadPlayer {
   steamID:  string
+  eosID:    string | null
   lastName: string
 }
 
@@ -41,6 +42,8 @@ export async function fetchPlayersForGuild(
 
   try {
     const baseWhere = `steamID IS NOT NULL AND steamID != '' AND steamID REGEXP '^[0-9]{17}$'`
+    const hasEos = await detectEosColumn(conn)
+    const selectCols = hasEos ? "steamID, eosID, lastName" : "steamID, lastName"
 
     // Try incremental first; some SquadJS versions don't have an updatedAt column
     // so we detect the correct timestamp column name before filtering by it.
@@ -49,24 +52,25 @@ export async function fetchPlayersForGuild(
       const tsCol = await detectTimestampColumn(conn)
       if (tsCol) {
         ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
-          `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere} AND \`${tsCol}\` >= ?`,
+          `SELECT ${selectCols} FROM DBLog_Players WHERE ${baseWhere} AND \`${tsCol}\` >= ?`,
           [since],
         )
       } else {
         // No timestamp column — fall back to full sync
         console.warn("[bridge][mysql] DBLog_Players has no updatedAt/updated_at column — falling back to full sync")
         ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
-          `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere}`,
+          `SELECT ${selectCols} FROM DBLog_Players WHERE ${baseWhere}`,
         )
       }
     } else {
       ;[rows] = await conn.execute<mysql.RowDataPacket[]>(
-        `SELECT steamID, lastName FROM DBLog_Players WHERE ${baseWhere}`,
+        `SELECT ${selectCols} FROM DBLog_Players WHERE ${baseWhere}`,
       )
     }
 
     return (rows as mysql.RowDataPacket[]).map((r) => ({
       steamID:  String(r.steamID),
+      eosID:    r.eosID ? String(r.eosID) : null,
       lastName: String(r.lastName ?? ""),
     }))
   } finally {
@@ -91,4 +95,22 @@ async function detectTimestampColumn(conn: mysql.Connection): Promise<string | n
   const col = names.find((n) => n === "updatedAt" || n === "updated_at") ?? null
   _tsColCache.set(cacheKey, col)
   return col
+}
+
+/**
+ * Detects whether DBLog_Players has an eosID column.
+ * Cached per-process. Older SquadJS installs may not have it.
+ */
+const _eosColCache = new Map<string, boolean>()
+async function detectEosColumn(conn: mysql.Connection): Promise<boolean> {
+  const cacheKey = (conn as any).config?.database ?? "default"
+  if (_eosColCache.has(cacheKey)) return _eosColCache.get(cacheKey)!
+
+  const [cols] = await conn.execute<mysql.RowDataPacket[]>(
+    `SHOW COLUMNS FROM DBLog_Players`,
+  )
+  const names = (cols as mysql.RowDataPacket[]).map((c) => String(c.Field))
+  const has = names.some((n) => n === "eosID" || n === "eos_id")
+  _eosColCache.set(cacheKey, has)
+  return has
 }

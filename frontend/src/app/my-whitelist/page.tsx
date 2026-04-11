@@ -486,6 +486,17 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
                   Verify
                 </a>
               )}
+              {val && status.type === "EOS" && !(
+                (data.verified_eos_ids ?? []).includes(val) ||
+                (data.verified_eos_ids ?? []).includes(val.toLowerCase())
+              ) && (
+                <span
+                  className="shrink-0 text-[11px] text-muted-foreground"
+                  title="EOS IDs are auto-verified when seen in-game with your verified Steam ID"
+                >
+                  Auto-verifies in-game
+                </span>
+              )}
             </div>
           );
         })}

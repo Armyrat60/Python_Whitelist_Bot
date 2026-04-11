@@ -348,6 +348,7 @@ model SquadPlayer {
   id           Int      @id @default(autoincrement())
   guildId      BigInt   @map("guild_id")
   steamId      String   @map("steam_id") @db.VarChar(32)
+  eosId        String?  @map("eos_id") @db.VarChar(64)
   lastSeenName String?  @map("last_seen_name") @db.VarChar(255)
   serverName   String?  @map("server_name") @db.VarChar(255)
   firstSeenAt  DateTime @default(now()) @map("first_seen_at")
@@ -362,6 +363,7 @@ model SquadPlayer {
   // SQL preserves the partial form by hand. If you regenerate this index via Prisma,
   // it will become a full index — see api/prisma/migrations/.../baseline.
   @@index([discordId], map: "idx_squad_players_discord")
+  @@index([guildId, eosId], map: "idx_squad_players_eos")
   @@map("squad_players")
 }
 

@@ -10,7 +10,8 @@ import { withRcon, type RconConfig } from "./rcon.js"
 
 export interface SquadPlayer {
   id: string
-  steamId: string
+  steamId: string | null
+  eosId: string | null
   name: string
   teamId: string
   squadId: string
@@ -93,21 +94,26 @@ function extractFactionTag(roles: string[]): string {
 // ─── Response Parsers ────────────────────────────────────────────────────────
 
 // Modern Squad format: ID: X | Online IDs: EOS: xxx steam: STEAMID | Name: X | Team ID: X | Squad ID: X | Is Leader: True | Role: CAF_SL_05
-const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*Online IDs:\s*(?:EOS:\s*\S+\s*)?steam:\s*(\d{17})\s*\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)\s*\|\s*Is Leader:\s*(True|False)\s*\|\s*Role:\s*(.+?)$/gm
+// Captures both EOS and Steam IDs; either may be absent (future console players have EOS only)
+const PLAYER_REGEX = /ID:\s*(\d+)\s*\|\s*Online IDs:\s*(?:EOS:\s*(\S+)\s*)?(?:steam:\s*(\d{17})\s*)?\|\s*Name:\s*(.+?)\s*\|\s*Team ID:\s*(\d+)\s*\|\s*Squad ID:\s*(\d+|N\/A)\s*\|\s*Is Leader:\s*(True|False)\s*\|\s*Role:\s*(.+?)$/gm
 
 function parsePlayers(text: string): SquadPlayer[] {
   const players: SquadPlayer[] = []
   let match: RegExpExecArray | null
   PLAYER_REGEX.lastIndex = 0
   while ((match = PLAYER_REGEX.exec(text)) !== null) {
+    const eosId = match[2] || null
+    const steamId = match[3] || null
+    if (!steamId && !eosId) continue // need at least one ID
     players.push({
       id: match[1],
-      steamId: match[2],
-      name: match[3].trim(),
-      teamId: match[4],
-      squadId: match[5] === "N/A" ? "0" : match[5],
-      isLeader: match[6] === "True",
-      role: match[7]?.trim() ?? "",
+      steamId,
+      eosId,
+      name: match[4].trim(),
+      teamId: match[5],
+      squadId: match[6] === "N/A" ? "0" : match[6],
+      isLeader: match[7] === "True",
+      role: match[8]?.trim() ?? "",
     })
   }
   return players

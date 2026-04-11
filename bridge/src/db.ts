@@ -49,10 +49,19 @@ export async function ensureTable(): Promise<void> {
     ON squad_players (discord_id)
     WHERE discord_id IS NOT NULL
   `)
+  // Add eos_id column for existing installs (idempotent)
+  await pool.query(`
+    ALTER TABLE squad_players ADD COLUMN IF NOT EXISTS eos_id VARCHAR(64) NULL
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_squad_players_eos
+    ON squad_players (guild_id, eos_id)
+  `)
 }
 
 export interface PlayerRow {
   steamId: string
+  eosId: string | null
   lastName: string
 }
 
@@ -99,16 +108,17 @@ export async function upsertPlayers(
       const valuesWithTime: unknown[] = []
       const phFinal: string[] = []
       for (let j = 0; j < chunk.length; j++) {
-        const offset = j * 5
-        phFinal.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 5})`)
-        valuesWithTime.push(guildId, chunk[j].steamId, chunk[j].lastName || null, serverName, now)
+        const offset = j * 6
+        phFinal.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 6})`)
+        valuesWithTime.push(guildId, chunk[j].steamId, chunk[j].eosId || null, chunk[j].lastName || null, serverName, now)
       }
 
       const result = await client.query(
         `INSERT INTO squad_players
-           (guild_id, steam_id, last_seen_name, server_name, first_seen_at, last_seen_at)
+           (guild_id, steam_id, eos_id, last_seen_name, server_name, first_seen_at, last_seen_at)
          VALUES ${phFinal.join(", ")}
          ON CONFLICT (guild_id, steam_id) DO UPDATE SET
+           eos_id         = COALESCE(EXCLUDED.eos_id, squad_players.eos_id),
            last_seen_name = EXCLUDED.last_seen_name,
            server_name    = EXCLUDED.server_name,
            last_seen_at   = EXCLUDED.last_seen_at`,
@@ -141,7 +151,7 @@ export async function upsertPlayers(
     )
     linked = linkResult.rowCount ?? 0
 
-    // ── Step 3: Batch verify identifiers ────────────────────────────────
+    // ── Step 3: Batch verify Steam identifiers ─────────────────────────
     await client.query(
       `UPDATE whitelist_identifiers wi
        SET is_verified = TRUE, verification_source = 'squadjs_bridge'
@@ -150,6 +160,30 @@ export async function upsertPlayers(
          AND wi.id_type IN ('steam64', 'steamid')
          AND wi.id_value = sp.steam_id
          AND sp.guild_id = $1
+         AND wi.is_verified = FALSE`,
+      [guildId],
+    )
+
+    // ── Step 4: Auto-verify EOS identifiers via Steam↔EOS pairing ────
+    // If a user's Steam ID is verified AND we've seen them in-game with
+    // a paired EOS ID, auto-verify their EOS whitelist identifier too.
+    await client.query(
+      `UPDATE whitelist_identifiers wi
+       SET is_verified = TRUE,
+           verification_source = 'eos_auto_linked',
+           updated_at = NOW()
+       FROM squad_players sp
+       JOIN whitelist_identifiers steam_wi
+         ON steam_wi.guild_id = sp.guild_id
+         AND steam_wi.id_type IN ('steam64', 'steamid')
+         AND steam_wi.id_value = sp.steam_id
+         AND steam_wi.is_verified = TRUE
+       WHERE wi.guild_id = $1
+         AND wi.id_type = 'eosid'
+         AND wi.id_value = sp.eos_id
+         AND sp.guild_id = $1
+         AND sp.eos_id IS NOT NULL
+         AND wi.discord_id = steam_wi.discord_id
          AND wi.is_verified = FALSE`,
       [guildId],
     )

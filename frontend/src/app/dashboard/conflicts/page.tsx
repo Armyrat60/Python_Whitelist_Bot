@@ -50,9 +50,13 @@ function formatRelative(dateStr: string): string {
 function sourceLabel(source: string | null): string {
   switch (source) {
     case "discord_connection": return "Discord Link";
+    case "steam_openid":       return "Steam Login";
     case "steam_api":          return "Steam API";
     case "manual":             return "Manual";
     case "bridge_sync":        return "Bridge Sync";
+    case "squadjs_bridge":     return "In-Game";
+    case "eos_auto_linked":    return "EOS Auto-Link";
+    case "seeding_reward":     return "Seeding Reward";
     case "import":             return "Imported";
     default:                   return source || "Unknown";
   }
