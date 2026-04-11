@@ -10,10 +10,49 @@
  * GET    /role-change-logs      — paginated role change logs
  */
 import type { FastifyInstance } from "fastify"
-import { toJSON } from "../../lib/json.js"
 
 const MAX_RULES = 10
 const MAX_SOURCE_ROLES = 20
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serializeRule(r: any) {
+  return {
+    id:               r.id,
+    name:             r.name,
+    target_role_id:   String(r.targetRoleId),
+    target_role_name: r.targetRoleName,
+    enabled:          r.enabled,
+    created_at:       r.createdAt,
+    updated_at:       r.updatedAt,
+    source_roles:     (r.sourceRoles ?? []).map((s: any) => ({
+      id:        s.id,
+      role_id:   String(s.roleId),
+      role_name: s.roleName,
+    })),
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serializeWatchConfig(c: any) {
+  return {
+    id:        c.id,
+    role_id:   String(c.roleId),
+    role_name: c.roleName,
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serializeLogEntry(e: any) {
+  return {
+    id:           e.id,
+    discord_id:   String(e.discordId),
+    discord_name: e.discordName,
+    role_id:      String(e.roleId),
+    role_name:    e.roleName,
+    action:       e.action,
+    created_at:   e.createdAt,
+  }
+}
 
 export default async function roleSyncRuleRoutes(app: FastifyInstance) {
   const adminHook = [app.requireAdmin]
@@ -29,7 +68,7 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "asc" },
     })
 
-    return reply.send(toJSON({ rules }))
+    return reply.send({ rules: rules.map(serializeRule) })
   })
 
   // ── POST /role-sync-rules ───────────────────────────────────────────────
@@ -87,7 +126,7 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       include: { sourceRoles: true },
     })
 
-    return reply.send(toJSON({ rule }))
+    return reply.send({ rule: serializeRule(rule) })
   })
 
   // ── PUT /role-sync-rules/:id ────────────────────────────────────────────
@@ -147,7 +186,7 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       include: { sourceRoles: true },
     })
 
-    return reply.send(toJSON({ rule: updated }))
+    return reply.send({ rule: serializeRule(updated) })
   })
 
   // ── DELETE /role-sync-rules/:id ─────────────────────────────────────────
@@ -182,7 +221,7 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       orderBy: { roleName: "asc" },
     })
 
-    return reply.send(toJSON({ configs }))
+    return reply.send({ configs: configs.map(serializeWatchConfig) })
   })
 
   // ── PUT /role-watch-configs ─────────────────────────────────────────────
@@ -215,7 +254,7 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       orderBy: { roleName: "asc" },
     })
 
-    return reply.send(toJSON({ configs }))
+    return reply.send({ configs: configs.map(serializeWatchConfig) })
   })
 
   // ── GET /role-change-logs ───────────────────────────────────────────────
@@ -260,14 +299,12 @@ export default async function roleSyncRuleRoutes(app: FastifyInstance) {
       app.prisma.roleChangeLog.count({ where }),
     ])
 
-    return reply.send(
-      toJSON({
-        entries,
-        total,
-        page,
-        per_page: perPage,
-        pages: Math.ceil(total / perPage),
-      }),
-    )
+    return reply.send({
+      entries: entries.map(serializeLogEntry),
+      total,
+      page,
+      per_page: perPage,
+      pages: Math.ceil(total / perPage),
+    })
   })
 }
