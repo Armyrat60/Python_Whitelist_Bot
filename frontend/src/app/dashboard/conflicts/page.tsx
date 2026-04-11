@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Loader2, Trash2, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2, CheckCircle2, Import, Link, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
@@ -24,12 +25,37 @@ import {
 interface DuplicateHolder {
   discord_id: string;
   discord_name: string | null;
+  discord_username: string | null;
+  verification_source: string | null;
+  created_at: string;
+  is_orphan: boolean;
 }
 
 interface DuplicateEntry {
   steam_id: string;
   holder_count: number;
   holders: DuplicateHolder[];
+}
+
+function formatRelative(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function sourceLabel(source: string | null): string {
+  switch (source) {
+    case "discord_connection": return "Discord Link";
+    case "steam_api":          return "Steam API";
+    case "manual":             return "Manual";
+    case "bridge_sync":        return "Bridge Sync";
+    case "import":             return "Imported";
+    default:                   return source || "Unknown";
+  }
 }
 
 function useDuplicateIds() {
@@ -40,11 +66,13 @@ function useDuplicateIds() {
 }
 
 export default function ConflictsPage() {
-  const { data, isLoading, error } = useDuplicateIds();
+  const { data, isLoading } = useDuplicateIds();
   const queryClient = useQueryClient();
   const [removing, setRemoving] = useState<string | null>(null);
+  const [bulkRemoving, setBulkRemoving] = useState(false);
 
   const duplicates = data?.duplicates ?? [];
+  const orphanConflictCount = duplicates.filter(d => d.holders.some(h => h.is_orphan)).length;
 
   async function handleRemove(steamId: string, discordId: string) {
     const key = `${steamId}:${discordId}`;
@@ -58,13 +86,32 @@ export default function ConflictsPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to remove");
-      toast.success(`Removed Steam ID from user`);
+      toast.success("Removed Steam ID from user");
       queryClient.invalidateQueries({ queryKey: ["duplicate-ids"] });
       queryClient.invalidateQueries({ queryKey: ["health"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
     } finally {
       setRemoving(null);
+    }
+  }
+
+  async function handleBulkResolve() {
+    setBulkRemoving(true);
+    try {
+      const res = await fetch("/api/admin/health/conflicts/orphans", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to resolve");
+      toast.success(`Removed ${json.removed} orphaned entries`);
+      queryClient.invalidateQueries({ queryKey: ["duplicate-ids"] });
+      queryClient.invalidateQueries({ queryKey: ["health"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resolve");
+    } finally {
+      setBulkRemoving(false);
     }
   }
 
@@ -95,10 +142,28 @@ export default function ConflictsPage() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="h-4 w-4 text-amber-400" />
-              {duplicates.length} Conflicting Steam ID{duplicates.length !== 1 ? "s" : ""}
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="h-4 w-4 text-amber-400" />
+                {duplicates.length} Conflicting Steam ID{duplicates.length !== 1 ? "s" : ""}
+              </CardTitle>
+              {orphanConflictCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-amber-400 border-amber-400/30 hover:bg-amber-400/10"
+                  disabled={bulkRemoving}
+                  onClick={handleBulkResolve}
+                >
+                  {bulkRemoving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <UserX className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Resolve All Imported ({orphanConflictCount})
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="rounded-lg border border-white/[0.10]">
@@ -107,6 +172,8 @@ export default function ConflictsPage() {
                   <TableRow>
                     <TableHead>Steam ID</TableHead>
                     <TableHead>Registered To</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Added</TableHead>
                     <TableHead className="w-24">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -120,10 +187,41 @@ export default function ConflictsPage() {
                           </TableCell>
                         ) : null}
                         <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">{holder.discord_name || "(unknown)"}</span>
-                            <span className="text-[10px] font-mono text-muted-foreground">{holder.discord_id}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium">
+                                  {holder.discord_name || "(unknown)"}
+                                </span>
+                                {holder.is_orphan && (
+                                  <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">
+                                    <Import className="h-2.5 w-2.5" />
+                                    Imported
+                                  </Badge>
+                                )}
+                              </div>
+                              {holder.is_orphan ? (
+                                <span className="text-[10px] text-muted-foreground">No linked Discord account</span>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {holder.discord_username ? `@${holder.discord_username}` : holder.discord_id}
+                                </span>
+                              )}
+                            </div>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            {holder.verification_source === "discord_connection" ? (
+                              <Link className="h-3 w-3" />
+                            ) : null}
+                            {sourceLabel(holder.verification_source)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground" title={holder.created_at ? new Date(holder.created_at).toLocaleString() : ""}>
+                            {holder.created_at ? formatRelative(holder.created_at) : "—"}
+                          </span>
                         </TableCell>
                         <TableCell>
                           <Button

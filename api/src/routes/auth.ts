@@ -225,7 +225,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         if (steamConn) {
           // Auto-link Steam ID to all mutual guilds
           const discordId = BigInt(discordUser.id)
-          let isNewLink = false
+          let notified = false
           for (const guild of mutualGuilds) {
             const guildId = BigInt(guild.id)
             // Check if auto-linking is enabled for this guild (default: true)
@@ -239,30 +239,30 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
               WHERE guild_id = ${guildId} AND discord_id = ${discordId}
                 AND id_type = 'steam64' AND id_value = ${steamConn.id} AND is_verified = TRUE
             `
-            if (!existing[0]?.count || existing[0].count === 0n) isNewLink = true
-            // Upsert the Steam link — don't overwrite existing verified links
+            if (existing[0]?.count && existing[0].count > 0n) continue // already linked
+            // Insert the Steam link (skip if already exists — ON CONFLICT doesn't work
+            // with NULL whitelist_id since NULL != NULL in PostgreSQL unique constraints)
             await app.prisma.$executeRaw`
               INSERT INTO whitelist_identifiers (guild_id, discord_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
               VALUES (${guildId}, ${discordId}, 'steam64', ${steamConn.id}, TRUE, 'discord_connection', NOW(), NOW())
-              ON CONFLICT (guild_id, discord_id, whitelist_id, id_type, id_value)
-              DO UPDATE SET is_verified = TRUE, verification_source = 'discord_connection', updated_at = NOW()
             `
             // Also link in squad_players if they exist
             await app.prisma.squadPlayer.updateMany({
               where: { guildId, steamId: steamConn.id, discordId: null },
               data: { discordId },
             })
-          }
-          // Only notify if this is a genuinely new link (not already verified)
-          if (isNewLink) {
-            await app.prisma.$executeRaw`
-              INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
-              VALUES (${BigInt(mutualGuilds[0].id)}, 'steam_account_linked', ${JSON.stringify({
-                discord_id: discordUser.id,
-                steam_id: steamConn.id,
-                username: discordUser.username,
-              })}::jsonb, NOW())
-            `.catch(() => {}) // non-fatal
+            // Send one DM notification per login session (first new guild only)
+            if (!notified) {
+              notified = true
+              await app.prisma.$executeRaw`
+                INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
+                VALUES (${guildId}, 'steam_account_linked', ${JSON.stringify({
+                  discord_id: discordUser.id,
+                  steam_id: steamConn.id,
+                  username: discordUser.username,
+                })}::jsonb, NOW())
+              `.catch(() => {}) // non-fatal
+            }
           }
           app.log.info(`Auto-linked Steam ${steamConn.id} for Discord user ${discordUser.id}`)
         }

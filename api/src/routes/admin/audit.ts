@@ -323,24 +323,40 @@ export default async function auditRoutes(app: FastifyInstance) {
 
     const identifiers = await prisma.whitelistIdentifier.findMany({
       where:   { guildId, idType: { in: ["steamid", "steam64"] }, idValue: { in: duplicateValues } },
-      select:  { idValue: true, discordId: true },
+      select:  { idValue: true, discordId: true, verificationSource: true, createdAt: true },
       distinct: ["idValue", "discordId"],
     })
 
-    // Resolve discord names
+    // Resolve discord names + usernames
     const discordIds = [...new Set(identifiers.map(i => i.discordId))]
     const users = await prisma.whitelistUser.findMany({
       where:   { guildId, discordId: { in: discordIds } },
-      select:  { discordId: true, discordName: true },
+      select:  { discordId: true, discordName: true, discordUsername: true },
       distinct: ["discordId"],
     })
     const nameMap = new Map(users.map(u => [u.discordId.toString(), u.discordName]))
+    const usernameMap = new Map(users.map(u => [u.discordId.toString(), u.discordUsername]))
 
-    const grouped = new Map<string, Array<{ discord_id: string; discord_name: string | null }>>()
+    interface HolderEntry {
+      discord_id: string
+      discord_name: string | null
+      discord_username: string | null
+      verification_source: string | null
+      created_at: string
+      is_orphan: boolean
+    }
+    const grouped = new Map<string, HolderEntry[]>()
     for (const ident of identifiers) {
       const id = ident.discordId.toString()
       if (!grouped.has(ident.idValue)) grouped.set(ident.idValue, [])
-      grouped.get(ident.idValue)!.push({ discord_id: id, discord_name: nameMap.get(id) ?? null })
+      grouped.get(ident.idValue)!.push({
+        discord_id: id,
+        discord_name: nameMap.get(id) ?? null,
+        discord_username: usernameMap.get(id) ?? null,
+        verification_source: ident.verificationSource,
+        created_at: ident.createdAt.toISOString(),
+        is_orphan: ident.discordId < 0n,
+      })
     }
 
     const duplicates = [...grouped.entries()].map(([steam_id, holders]) => ({
@@ -374,6 +390,37 @@ export default async function auditRoutes(app: FastifyInstance) {
     }
 
     await triggerSync(app, guildId)
+    return reply.send({ ok: true, removed: deleted.count })
+  })
+
+  // ── DELETE /api/admin/health/conflicts/orphans ──────────────────────────────
+  // Bulk-remove all orphaned (negative discordId) entries that are in a conflict
+
+  app.delete("/health/conflicts/orphans", { preHandler: adminHook }, async (req, reply) => {
+    const guildId = BigInt(req.session.activeGuildId!)
+
+    // Find all duplicate Steam IDs
+    const rows = await prisma.whitelistIdentifier.groupBy({
+      by:    ["idValue"],
+      where: { guildId, idType: { in: ["steamid", "steam64"] } },
+      _count: { discordId: true },
+      having: { discordId: { _count: { gt: 1 } } },
+    })
+    if (rows.length === 0) return reply.send({ ok: true, removed: 0 })
+
+    const duplicateValues = rows.map(r => r.idValue)
+
+    // Delete only orphaned entries (negative discordId) among the conflicts
+    const deleted = await prisma.whitelistIdentifier.deleteMany({
+      where: {
+        guildId,
+        idType: { in: ["steam64", "steamid"] },
+        idValue: { in: duplicateValues },
+        discordId: { lt: 0n },
+      },
+    })
+
+    if (deleted.count > 0) await triggerSync(app, guildId)
     return reply.send({ ok: true, removed: deleted.count })
   })
 
