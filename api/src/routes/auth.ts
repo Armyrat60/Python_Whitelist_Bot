@@ -240,8 +240,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
                 AND id_type = 'steam64' AND id_value = ${steamConn.id} AND is_verified = TRUE
             `
             if (existing[0]?.count && existing[0].count > 0n) continue // already linked
-            // Insert the Steam link (skip if already exists — ON CONFLICT doesn't work
-            // with NULL whitelist_id since NULL != NULL in PostgreSQL unique constraints)
+            // Remove orphaned/imported entries (negative discordId) for this Steam ID
+            // to prevent conflicts when a real user links the same ID
+            await app.prisma.$executeRaw`
+              DELETE FROM whitelist_identifiers
+              WHERE guild_id = ${guildId} AND id_type = 'steam64' AND id_value = ${steamConn.id}
+                AND discord_id < 0
+            `
+            // Insert the Steam link (verified via Discord connection)
             await app.prisma.$executeRaw`
               INSERT INTO whitelist_identifiers (guild_id, discord_id, id_type, id_value, is_verified, verification_source, created_at, updated_at)
               VALUES (${guildId}, ${discordId}, 'steam64', ${steamConn.id}, TRUE, 'discord_connection', NOW(), NOW())

@@ -205,7 +205,30 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       })),
     ]
 
+    try {
     await app.prisma.$transaction(async (tx) => {
+      // Check for cross-user conflicts before inserting
+      for (const ident of identifiers) {
+        const conflict = await tx.whitelistIdentifier.findFirst({
+          where: {
+            guildId, idValue: ident.idValue, discordId: { not: discordId },
+            idType: { in: ident.idType === "steam64" ? ["steam64", "steamid"] : [ident.idType] },
+          },
+          select: { discordId: true },
+        })
+        if (conflict) {
+          if (conflict.discordId < 0n) {
+            // Auto-remove orphaned (imported) entries
+            await tx.whitelistIdentifier.deleteMany({
+              where: { guildId, discordId: conflict.discordId, idValue: ident.idValue,
+                idType: { in: ident.idType === "steam64" ? ["steam64", "steamid"] : [ident.idType] } },
+            })
+          } else {
+            throw new Error(`${ident.idType === "steam64" ? "Steam" : "EOS"} ID ${ident.idValue} is already registered to another user.`)
+          }
+        }
+      }
+
       await tx.whitelistIdentifier.deleteMany({ where: { guildId, discordId, whitelistId: wl.id } })
 
       if (identifiers.length > 0) {
@@ -233,6 +256,12 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         },
       })
     })
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("already registered to")) {
+        return reply.code(409).send({ error: err.message })
+      }
+      throw err
+    }
 
     const outputs = await syncOutputs(app.prisma, guildId)
     await cache.set(guildId, outputs)

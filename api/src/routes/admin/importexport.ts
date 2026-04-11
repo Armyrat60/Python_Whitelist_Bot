@@ -512,6 +512,14 @@ export default async function importExportRoutes(app: FastifyInstance) {
         const categoryId = user.category ? (categoryIdMap.get(user.category.toLowerCase()) ?? null) : null
         const clanTag = user.clan_tag || null
 
+        // Remove orphaned entries that would conflict with this import's Steam/EOS IDs
+        const importedIds = [...user.steam_ids, ...user.eos_ids].filter(Boolean)
+        if (importedIds.length > 0) {
+          await app.prisma.whitelistIdentifier.deleteMany({
+            where: { guildId, idValue: { in: importedIds }, discordId: { lt: 0n, not: discordId } },
+          })
+        }
+
         if (isExisting) {
           if (dupHandling === "skip") { skipped++; continue }
 

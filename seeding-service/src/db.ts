@@ -697,7 +697,15 @@ export async function createWhitelistReward(
       [guildId, discordId, whitelistId, displayName, now, expiresAt],
     )
 
-    // 3. Upsert whitelist_identifier for the Steam ID
+    // 3. Remove orphaned entries for this Steam ID (prevents conflicts)
+    await client.query(
+      `DELETE FROM whitelist_identifiers
+       WHERE guild_id = $1 AND id_type = 'steam64' AND id_value = $2
+         AND discord_id < 0`,
+      [guildId, steamId],
+    )
+
+    // 4. Upsert whitelist_identifier for the Steam ID
     await client.query(
       `INSERT INTO whitelist_identifiers
          (guild_id, discord_id, whitelist_id, id_type, id_value,
@@ -711,7 +719,7 @@ export async function createWhitelistReward(
       [guildId, discordId, whitelistId, steamId, now],
     )
 
-    // 4. Audit log entry
+    // 5. Audit log entry
     await client.query(
       `INSERT INTO audit_log
          (guild_id, whitelist_id, action_type, target_discord_id, details, created_at)

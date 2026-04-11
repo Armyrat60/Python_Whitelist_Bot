@@ -847,6 +847,11 @@ class Database:
             ("DELETE FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id=%s", (guild_id, discord_id, whitelist_id)),
         ]
         for id_type, id_value, is_verified, verification_source in identifiers:
+            # Remove orphaned entries (negative discord_id) for same ID to prevent conflicts
+            queries.append((
+                "DELETE FROM whitelist_identifiers WHERE guild_id=%s AND id_value=%s AND discord_id < 0",
+                (guild_id, id_value),
+            ))
             queries.append((
                 """
                 INSERT INTO whitelist_identifiers

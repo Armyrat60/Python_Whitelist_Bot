@@ -477,6 +477,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const eosIds   = body.eos_ids
     const hasIdUpdate = steamIds !== undefined || eosIds !== undefined
 
+    try {
     await prisma.$transaction(async (tx) => {
       await tx.whitelistUser.update({
         where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
@@ -484,6 +485,33 @@ export default async function userRoutes(app: FastifyInstance) {
       })
 
       if (hasIdUpdate) {
+        // Check for cross-user conflicts before inserting
+        const allNewIds = [
+          ...(steamIds ?? []).filter((s: string) => s.trim()).map((s: string) => ({ type: "steam64", value: s.trim() })),
+          ...(eosIds ?? []).filter((s: string) => s.trim()).map((s: string) => ({ type: "eosid", value: s.trim() })),
+        ]
+        for (const { type, value } of allNewIds) {
+          const conflict = await tx.whitelistIdentifier.findFirst({
+            where: { guildId, idType: { in: type === "steam64" ? ["steam64", "steamid"] : [type] }, idValue: value, discordId: { not: discordId } },
+            select: { discordId: true },
+          })
+          if (conflict) {
+            // Auto-remove orphaned (imported) entries; warn for real users
+            if (conflict.discordId < 0n) {
+              await tx.whitelistIdentifier.deleteMany({
+                where: { guildId, discordId: conflict.discordId, idType: { in: type === "steam64" ? ["steam64", "steamid"] : [type] }, idValue: value },
+              })
+            } else {
+              const conflictUser = await tx.whitelistUser.findFirst({
+                where: { guildId, discordId: conflict.discordId },
+                select: { discordName: true },
+              })
+              const name = conflictUser?.discordName || conflict.discordId.toString()
+              throw new Error(`${type === "steam64" ? "Steam" : "EOS"} ID ${value} is already registered to ${name}. Remove it from them first.`)
+            }
+          }
+        }
+
         // Remove old identifiers for the types being replaced
         if (steamIds !== undefined) {
           await tx.whitelistIdentifier.deleteMany({
@@ -519,6 +547,12 @@ export default async function userRoutes(app: FastifyInstance) {
         }
       }
     })
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("already registered to")) {
+        return reply.code(409).send({ error: err.message })
+      }
+      throw err
+    }
 
     const changes = Object.keys(data)
     if (steamIds !== undefined) changes.push("steam_ids")
