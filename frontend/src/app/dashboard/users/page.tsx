@@ -433,22 +433,6 @@ export default function UsersPage() {
                     </div>
                   )}
 
-                  {/* Role */}
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Role</label>
-                    <select
-                      value={filters.role_name ?? ""}
-                      onChange={(e) => setFilters(p => ({ ...p, role_name: e.target.value }))}
-                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                    >
-                      <option value="">All roles</option>
-                      {roleOptions.map(r => {
-                        const count = (roleStatsData?.stats ?? []).filter(s => s.role_name === r.value).reduce((sum, s) => sum + (s.registered_count ?? 0), 0);
-                        return <option key={r.value} value={r.value}>{r.label} ({count})</option>;
-                      })}
-                    </select>
-                  </div>
-
                   {/* Linked Status */}
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Linked</label>
@@ -577,6 +561,9 @@ export default function UsersPage() {
           sort={sort}
           sortOrder={sortOrder}
           onSort={handleSort}
+          roleOptions={roleOptions}
+          filters={filters}
+          onRoleFilter={(val) => setFilters(f => ({ ...f, role_name: val }))}
         />
       )}
 
@@ -665,6 +652,9 @@ function UserListView({
   sort,
   sortOrder,
   onSort,
+  roleOptions,
+  filters,
+  onRoleFilter,
 }: {
   users: WhitelistUser[];
   whitelists: { slug: string; name: string }[];
@@ -678,6 +668,9 @@ function UserListView({
   sort: string;
   sortOrder: "asc" | "desc";
   onSort: (col: string) => void;
+  roleOptions: { label: string; value: string }[];
+  filters: Record<string, string>;
+  onRoleFilter: (val: string) => void;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
@@ -704,7 +697,17 @@ function UserListView({
         <button className="flex w-32 items-center justify-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("whitelist")}>
           Whitelist <SortIcon col="whitelist" sort={sort} sortOrder={sortOrder} />
         </button>
-        <span className="w-28 text-center">Role</span>
+        <span className="w-28 text-center">
+          <select
+            value={filters.role_name ?? ""}
+            onChange={(e) => onRoleFilter(e.target.value)}
+            className="w-full bg-transparent text-center text-xs font-medium text-muted-foreground cursor-pointer hover:text-white/80 appearance-none border-none outline-none"
+            title="Filter by role"
+          >
+            <option value="">Role</option>
+            {roleOptions.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </span>
         <button className="flex w-20 items-center justify-center gap-1 hover:text-white/80 transition-colors" onClick={() => onSort("status")}>
           Status <SortIcon col="status" sort={sort} sortOrder={sortOrder} />
         </button>
