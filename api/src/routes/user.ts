@@ -88,6 +88,17 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       const verifiedSteamIds = identifiers.filter((i) => i.idType === "steam64" && i.isVerified).map((i) => i.idValue)
       const verifiedEosIds = identifiers.filter((i) => i.idType === "eosid" && i.isVerified).map((i) => i.idValue)
 
+      // Build linking status per identifier
+      const linkedIds: Record<string, string> = {}
+      for (const ident of identifiers) {
+        if (ident.isVerified) {
+          linkedIds[ident.idValue] = ident.verificationSource === "discord_connection"
+            ? "discord" : ident.verificationSource === "steam_oauth"
+            ? "steam" : ident.verificationSource === "bridge"
+            ? "bridge" : "verified"
+        }
+      }
+
       // Fetch user record for status / expiry / category
       const userRecord = await app.prisma.whitelistUser.findUnique({
         where: { guildId_discordId_whitelistId: { guildId, discordId, whitelistId: wl.id } },
@@ -113,6 +124,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
           eos_ids: eosIds,
           verified_steam_ids: verifiedSteamIds,
           verified_eos_ids: verifiedEosIds,
+          linked_ids: linkedIds,
           status: userRecord?.status ?? null,
           expires_at: userRecord?.expiresAt?.toISOString() ?? null,
           category_name: userRecord?.category?.name ?? null,

@@ -395,9 +395,10 @@ class _EditIDsView(discord.ui.View):
         self.existing = existing
 
         # Slot selector dropdown — only needed when there are multiple slots
-        if slots > 1:
+        # Discord limits Select menus to 25 options; for >25 slots use "Edit All"
+        if slots > 1 and slots <= 25:
             options = []
-            for i in range(1, min(slots + 1, 26)):  # Discord max 25 options
+            for i in range(1, min(slots + 1, 26)):
                 current = existing[i - 1] if i - 1 < len(existing) else None
                 label = f"Slot {i}"
                 desc = f"{current[1][:30]}..." if current else "Empty"

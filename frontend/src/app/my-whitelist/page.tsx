@@ -32,6 +32,7 @@ interface MyWhitelistData {
   eos_ids: string[];
   verified_steam_ids: string[];
   verified_eos_ids: string[];
+  linked_ids: Record<string, string>;
   status: string | null;
   expires_at: string | null;
   category_name: string | null;
@@ -230,16 +231,6 @@ function ManualRosterCard({ data }: { data: MyWhitelistData }) {
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle>{data.whitelist_name}</CardTitle>
-          <Badge
-            variant="outline"
-            style={{
-              background: "color-mix(in srgb, var(--accent-secondary) 12%, transparent)",
-              color: "var(--accent-secondary)",
-              border: "1px solid color-mix(in srgb, var(--accent-secondary) 30%, transparent)",
-            }}
-          >
-            Manual Roster
-          </Badge>
           <StatusBadge status={data.status} expiresAt={data.expires_at} />
         </div>
         <CardDescription className="flex flex-wrap items-center gap-3 pt-1">
@@ -262,22 +253,49 @@ function ManualRosterCard({ data }: { data: MyWhitelistData }) {
           <p className="text-sm text-muted-foreground">No identifiers on file. Contact an admin to add your Steam ID.</p>
         ) : (
           <div className="space-y-2">
-            {(data.steam_ids ?? []).map((id) => (
-              <div key={id} className="flex items-center gap-2">
-                <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
-                <code className="text-xs text-muted-foreground">{id}</code>
-              </div>
-            ))}
-            {(data.eos_ids ?? []).map((id) => (
-              <div key={id} className="flex items-center gap-2">
-                <Badge variant="outline" className="text-blue-400 border-blue-500/30 shrink-0">EOS</Badge>
-                <code className="text-xs text-muted-foreground">{id}</code>
-              </div>
-            ))}
+            {(data.steam_ids ?? []).map((id) => {
+              const linkSource = data.linked_ids?.[id];
+              const isLinked = !!linkSource || (data.verified_steam_ids ?? []).includes(id);
+              return (
+                <div key={id} className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
+                  <code className="text-xs text-muted-foreground">{id}</code>
+                  {isLinked ? (
+                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
+                      <BadgeCheck className="h-3 w-3" />
+                      Linked
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="shrink-0 text-yellow-400 border-yellow-500/30">
+                      Not Linked
+                    </Badge>
+                  )}
+                </div>
+              );
+            })}
+            {(data.eos_ids ?? []).map((id) => {
+              const isLinked = (data.verified_eos_ids ?? []).includes(id);
+              return (
+                <div key={id} className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-blue-400 border-blue-500/30 shrink-0">EOS</Badge>
+                  <code className="text-xs text-muted-foreground">{id}</code>
+                  {isLinked ? (
+                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
+                      <BadgeCheck className="h-3 w-3" />
+                      Linked
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="shrink-0 text-muted-foreground border-white/10">
+                      Auto-links in-game
+                    </Badge>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         <p className="mt-3 text-xs text-muted-foreground">
-          This roster is managed by your server admins. Contact them to update your Steam ID.
+          Managed by server admins. Contact them to update your IDs.
         </p>
       </CardContent>
     </Card>
@@ -466,37 +484,47 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
                   {status.type}
                 </Badge>
               )}
-              {val && (
-                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val.toLowerCase()) ||
-                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val)
-              ) && (
-                <span title="Bridge Verified">
-                  <BadgeCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                </span>
-              )}
-              {val && status.type === "Steam64" && !(
-                (data.verified_steam_ids ?? []).includes(val) ||
-                (data.verified_steam_ids ?? []).includes(val.toLowerCase())
-              ) && (
-                <a
-                  href="/api/steam/verify"
-                  className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:text-emerald-400 hover:underline"
-                  title="Verify this Steam ID is yours via Steam login"
-                >
-                  Verify
-                </a>
-              )}
-              {val && status.type === "EOS" && !(
-                (data.verified_eos_ids ?? []).includes(val) ||
-                (data.verified_eos_ids ?? []).includes(val.toLowerCase())
-              ) && (
-                <span
-                  className="shrink-0 text-[11px] text-muted-foreground"
-                  title="EOS IDs are auto-verified when seen in-game with your verified Steam ID"
-                >
-                  Auto-verifies in-game
-                </span>
-              )}
+              {val && (() => {
+                const linkSource = data.linked_ids?.[val] || data.linked_ids?.[val.toLowerCase()];
+                const isLinked = !!linkSource ||
+                  (data.verified_steam_ids ?? []).includes(val) ||
+                  (data.verified_steam_ids ?? []).includes(val.toLowerCase()) ||
+                  (data.verified_eos_ids ?? []).includes(val) ||
+                  (data.verified_eos_ids ?? []).includes(val.toLowerCase());
+
+                if (isLinked) {
+                  const label = linkSource === "discord" ? "Linked via Discord"
+                    : linkSource === "steam" ? "Linked via Steam"
+                    : linkSource === "bridge" ? "Linked via Server"
+                    : "Linked";
+                  return (
+                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
+                      <BadgeCheck className="h-3 w-3" />
+                      {label}
+                    </Badge>
+                  );
+                }
+                if (status.type === "Steam64") {
+                  return (
+                    <a
+                      href="/api/steam/verify"
+                      className="shrink-0"
+                    >
+                      <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 cursor-pointer hover:bg-yellow-500/10">
+                        Not Linked — Click to verify
+                      </Badge>
+                    </a>
+                  );
+                }
+                if (status.type === "EOS") {
+                  return (
+                    <Badge variant="outline" className="shrink-0 text-muted-foreground border-white/10">
+                      Auto-links in-game
+                    </Badge>
+                  );
+                }
+                return null;
+              })()}
             </div>
           );
         })}

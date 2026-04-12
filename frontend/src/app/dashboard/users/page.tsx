@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Search,
@@ -148,21 +148,15 @@ export default function UsersPage() {
     }
     return opts;
   }, [roleStatsData]);
-  const [showGapReport, setShowGapReport] = useState(false);
-  const [gapData, setGapData] = useState<{members: {discord_id: string; display_name: string; whitelisted_roles: string[]}[]; total: number} | null>(null);
-  const [gapLoading, setGapLoading] = useState(false);
-  async function loadGapReport() {
-    setGapLoading(true);
+  const [showGapReport, setShowGapReport] = useState(true);
+  interface GapMember { discord_id: string; username: string; display_name: string; whitelisted_roles: string[] }
+  const { data: gapData } = useQuery<{members: GapMember[]; total: number}>({
+    queryKey: ["gap-report"],
+    queryFn: () => api.get("/api/admin/members/gap"),
+    staleTime: 60_000,
+  });
+  function loadGapReport() {
     setShowGapReport(true);
-    try {
-      const data = await api.get<{members: {discord_id: string; display_name: string; whitelisted_roles: string[]}[]; total: number}>("/api/admin/members/gap");
-      setGapData(data);
-    } catch {
-      toast.error("Failed to load gap report");
-      setShowGapReport(false);
-    } finally {
-      setGapLoading(false);
-    }
   }
 
   const users = useMemo(() => data?.pages.flatMap(p => p.users) ?? [], [data]);
@@ -254,8 +248,9 @@ export default function UsersPage() {
       {/* ---- Stats Banner ---- */}
       {statsData && (() => {
         const slotsGranted = Object.values(statsData.per_type).reduce((sum, wl) => sum + wl.slots_used, 0);
+        const totalWithRoles = statsData.total_active_users + (gapData?.total ?? 0);
         const stats = [
-          { label: "Active Members", value: statsData.total_active_users, sub: `of ${statsData.total_registered} registered`, color: "text-emerald-400" },
+          { label: "Active Members", value: statsData.total_active_users, sub: `of ${totalWithRoles} with roles`, color: "text-emerald-400" },
           { label: "Slots Granted", value: slotsGranted, sub: "total across all roles", color: "text-white/80" },
           { label: "IDs Submitted", value: statsData.total_identifiers, sub: `${slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0}% fill rate · all users`, color: "var(--accent-primary)" },
         ];
@@ -392,12 +387,11 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={loadGapReport}
-                  disabled={gapLoading}
+                  onClick={() => { setShowGapReport(true); document.getElementById("gap-section")?.scrollIntoView({ behavior: "smooth" }); }}
                   title="Discord members with a whitelist role who haven't submitted any IDs yet"
                 >
-                  {gapLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Users className="mr-1.5 h-3.5 w-3.5" />}
-                  Gap Report
+                  <Users className="mr-1.5 h-3.5 w-3.5" />
+                  Gap Report {gapData?.total ? `(${gapData.total})` : ""}
                 </Button>
 
                 <SyncTiersButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
@@ -532,33 +526,34 @@ export default function UsersPage() {
         );
       })()}
 
-      {/* ---- Member Gap Report ---- */}
-      {showGapReport && gapData && (
-        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
+      {/* ---- Unregistered Role Holders ---- */}
+      {gapData && gapData.total > 0 && (
+        <div id="gap-section" className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold">Unregistered Members</h3>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                Not Registered
+                <Badge variant="outline" className="text-yellow-400 border-yellow-500/30">{gapData.total}</Badge>
+              </h3>
               <p className="text-xs text-muted-foreground">
-                {gapData.total} member(s) have a whitelist role but haven't submitted IDs yet
+                These members have a whitelist role but haven't submitted their IDs yet
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowGapReport(false)}>
-              <X className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="sm" onClick={() => setShowGapReport(!showGapReport)}>
+              {showGapReport ? "Hide" : "Show"}
             </Button>
           </div>
-          {gapData.members.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--accent-primary)" }}>All role holders have registered!</p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto space-y-1">
+          {showGapReport && (
+            <div className="max-h-96 overflow-y-auto space-y-1">
               {gapData.members.map((m) => (
-                <div key={m.discord_id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs hover:bg-yellow-500/10">
-                  <div>
-                    <span className="font-medium">{m.display_name}</span>
-                    <span className="ml-2 font-mono text-muted-foreground">{m.discord_id}</span>
+                <div key={m.discord_id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-yellow-500/10">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{m.display_name || m.username}</span>
+                    <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 text-[10px]">Not Registered</Badge>
                   </div>
                   <div className="flex gap-1">
                     {m.whitelisted_roles.map((r) => (
-                      <Badge key={r} variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-400">{r}</Badge>
+                      <Badge key={r} variant="outline" className="text-[10px] border-white/10 text-muted-foreground">{r}</Badge>
                     ))}
                   </div>
                 </div>
