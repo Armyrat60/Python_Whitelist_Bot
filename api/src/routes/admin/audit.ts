@@ -43,7 +43,7 @@ export default async function auditRoutes(app: FastifyInstance) {
   app.get("/stats", { preHandler: adminHook }, async (req, reply) => {
     const guildId = BigInt(req.session.activeGuildId!)
 
-    const [activeCount, identCount, recentAudit, orphanCount, whitelists, totalRegistered, disabledRoleLostCount, noAccessCount] = await Promise.all([
+    const [activeCount, identCount, recentAudit, orphanCount, whitelists, totalRegistered, disabledRoleLostCount, noAccessCount, linkedCount] = await Promise.all([
       prisma.whitelistUser.count({ where: { guildId, status: "active" } }),
       prisma.whitelistIdentifier.count({ where: { guildId } }),
       prisma.auditLog.count({
@@ -57,6 +57,13 @@ export default async function auditRoutes(app: FastifyInstance) {
       prisma.whitelistUser.count({ where: { guildId } }),
       prisma.whitelistUser.count({ where: { guildId, status: "disabled_role_lost" } }),
       prisma.whitelistUser.count({ where: { guildId, status: "active", effectiveSlotLimit: 0 } }),
+      // Count distinct discord IDs that have at least one verified identifier (linked)
+      prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(DISTINCT wu.discord_id)::bigint AS count
+        FROM whitelist_users wu
+        JOIN whitelist_identifiers wi ON wi.guild_id = wu.guild_id AND wi.discord_id = wu.discord_id
+        WHERE wu.guild_id = ${guildId} AND wu.status = 'active' AND wi.is_verified = TRUE
+      `.then(rows => Number(rows[0]?.count ?? 0n)),
     ])
 
     // Per-whitelist breakdown: active users, identifier count, slot capacity
@@ -125,6 +132,7 @@ export default async function auditRoutes(app: FastifyInstance) {
 
     return reply.send(toJSON({
       total_active_users:       activeCount,
+      total_linked_users:       linkedCount,
       total_identifiers:        identCount,
       recent_audit_count:       recentAudit,
       orphan_count:             orphanCount,

@@ -252,13 +252,11 @@ export default function UsersPage() {
         const fillRate = slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0;
         return (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-sm">
-            <span><strong className="text-emerald-400 tabular-nums">{statsData.total_active_users}</strong> <span className="text-muted-foreground">registered</span></span>
+            <span><strong className="text-emerald-400 tabular-nums">{statsData.total_linked_users ?? 0}</strong> <span className="text-muted-foreground">linked</span></span>
+            <span><strong className="tabular-nums">{statsData.total_active_users}</strong> <span className="text-muted-foreground">enrolled</span></span>
             <span><strong className="tabular-nums">{totalWithRoles}</strong> <span className="text-muted-foreground">with roles</span></span>
             <span><strong className="tabular-nums">{slotsGranted}</strong> <span className="text-muted-foreground">slots</span></span>
             <span><strong className="tabular-nums">{statsData.total_identifiers}</strong> <span className="text-muted-foreground">IDs</span> <span className="text-muted-foreground/50">({fillRate}%)</span></span>
-            {gapData && gapData.total > 0 && (
-              <span><strong className="text-yellow-400 tabular-nums">{gapData.total}</strong> <span className="text-muted-foreground">not registered</span></span>
-            )}
           </div>
         );
       })()}

@@ -205,6 +205,7 @@ export interface AuditEntry {
 
 export interface Stats {
   total_active_users: number;
+  total_linked_users: number;
   total_identifiers: number;
   recent_audit_count: number;
   per_type: Record<string, { active_users: number; total_ids: number; slots_used: number; capacity: number }>;
