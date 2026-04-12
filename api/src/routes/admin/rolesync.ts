@@ -167,7 +167,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
     } catch { /* non-fatal; fall back to stored names */ }
 
     // Fetch all guild members to count per-role Discord membership
-    let allMembers: Array<{ id: bigint; roles: string[] }> = []
+    let allMembers: Array<{ id: bigint; name: string; username: string; roles: string[] }> = []
     let discordAvailable = false
     try {
       allMembers = await app.discord.fetchAllMembers(guildId)
@@ -374,7 +374,7 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       ]),
     )
 
-    let allMembers: Array<{ id: bigint; roles: string[] }>
+    let allMembers: Array<{ id: bigint; name: string; username: string; roles: string[] }>
     try {
       allMembers = await app.discord.fetchAllMembers(guildId)
     } catch {
@@ -457,10 +457,73 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
       updated++
     }
 
+    // Enroll missing members — Discord members with qualifying roles but no WhitelistUser record
+    let enrolled = 0
+    const existingDiscordIds = new Set(users.map(u => u.discordId))
+
+    // Get the default whitelist (or first enabled) to enroll into
+    const defaultWl = await app.prisma.whitelist.findFirst({
+      where: { guildId, enabled: true },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    })
+
+    if (defaultWl) {
+      // Also get existing users in the default whitelist specifically
+      const existingInDefault = await app.prisma.whitelistUser.findMany({
+        where: { guildId, whitelistId: defaultWl.id },
+        select: { discordId: true },
+      })
+      const enrolledIds = new Set(existingInDefault.map(u => u.discordId))
+
+      for (const member of allMembers) {
+        if (enrolledIds.has(member.id)) continue // already enrolled
+
+        const roles = member.roles
+        const stackable: Array<{ name: string; slots: number }> = []
+        const nonStackable: Array<{ name: string; slots: number }> = []
+        for (const r of roles) {
+          const entry = tierByRole.get(r)
+          if (!entry) continue
+          if (entry.stackable) stackable.push({ name: entry.name, slots: entry.slots })
+          else nonStackable.push({ name: entry.name, slots: entry.slots })
+        }
+        if (!stackable.length && !nonStackable.length) continue // no qualifying role
+
+        let tierLabel: string | null = null
+        let totalSlots = 0
+        if (stackable.length > 0) {
+          totalSlots += stackable.reduce((s, e) => s + e.slots, 0)
+          tierLabel = stackable.map((e) => `${e.name}:${e.slots}`).join("+")
+        }
+        if (nonStackable.length > 0) {
+          const best = nonStackable.reduce((a, b) => (b.slots > a.slots ? b : a))
+          totalSlots += best.slots
+          tierLabel = tierLabel ? `${tierLabel}+${best.name}:${best.slots}` : `${best.name}:${best.slots}`
+        }
+
+        // Enroll the member
+        const now = new Date()
+        await app.prisma.whitelistUser.create({
+          data: {
+            guildId,
+            discordId: member.id,
+            whitelistId: defaultWl.id,
+            discordName: member.name ?? `User ${member.id}`,
+            status: "active",
+            effectiveSlotLimit: totalSlots,
+            lastPlanName: tierLabel,
+            createdVia: "tier_sync",
+            createdAt: now,
+            updatedAt: now,
+          },
+        }).catch(() => {}) // skip duplicates
+        enrolled++
+      }
+    }
+
     await triggerSync(app, guildId)
 
-    // Count active users after sync (original active - disabled + reactivated)
-    const activeAfterSync = users.filter(u => u.status === "active").length - disabled + reactivated
-    return reply.send({ ok: true, updated, disabled, reactivated, total: users.length, total_active: activeAfterSync })
+    const activeAfterSync = users.filter(u => u.status === "active").length - disabled + reactivated + enrolled
+    return reply.send({ ok: true, updated, disabled, reactivated, enrolled, total: users.length, total_active: activeAfterSync })
   })
 }
