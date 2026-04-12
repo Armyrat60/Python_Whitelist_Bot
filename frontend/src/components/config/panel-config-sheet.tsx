@@ -65,15 +65,18 @@ export default function PanelConfigSheet({
   const [slotLimit, setSlotLimit] = useState("1");
   const [isStackable, setIsStackable] = useState(true);
 
-  const { data: panelRoles, isLoading: rolesLoading } = usePanelRoles(
+  const { data: panelRolesData, isLoading: rolesLoading } = usePanelRoles(
     panel.id
   );
+  const panelRoles = panelRolesData?.roles ?? [];
+  const activeUsers = panelRolesData?.active_users ?? 0;
+  const totalSlots = panelRolesData?.total_slots ?? 0;
   const { data: discordRoles } = useRoles();
   const addRole = useAddPanelRole(panel.id);
   const removeRole = useRemovePanelRole(panel.id);
 
   const availableRoles: ComboboxOption[] = useMemo(() => {
-    const assignedIds = new Set((panelRoles ?? []).map((r) => r.role_id));
+    const assignedIds = new Set(panelRoles.map((r) => r.role_id));
     return (discordRoles ?? [])
       .filter((r) => !assignedIds.has(r.id))
       .map((r) => ({ value: r.id, label: r.name }));
@@ -242,10 +245,17 @@ export default function PanelConfigSheet({
           {/* Access Roles */}
           <div className="border-t border-white/[0.10] pt-3 space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">
-                <ShieldCheck className="inline mr-1.5 h-4 w-4 opacity-60" />
-                Access Roles
-              </Label>
+              <div>
+                <Label className="text-sm">
+                  <ShieldCheck className="inline mr-1.5 h-4 w-4 opacity-60" />
+                  Access Roles
+                </Label>
+                {panelRoles.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {activeUsers} registered / {totalSlots} total slots
+                  </p>
+                )}
+              </div>
               <Button
                 size="sm"
                 variant="outline"

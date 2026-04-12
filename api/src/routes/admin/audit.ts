@@ -256,7 +256,7 @@ export default async function auditRoutes(app: FastifyInstance) {
     ])
 
     if (panelsWithNoChannel > 0) {
-      alerts.push({ level: "warning", message: `${panelsWithNoChannel} panel(s) have no channel configured`, link: "/dashboard/panels" })
+      alerts.push({ level: "warning", message: `${panelsWithNoChannel} panel(s) have no channel configured`, link: "/dashboard/config" })
     }
 
     // Panels with push errors (bot reported a permission or config problem)
@@ -265,7 +265,7 @@ export default async function auditRoutes(app: FastifyInstance) {
       select: { name: true, lastPushError: true },
     })
     for (const p of panelsWithErrors) {
-      alerts.push({ level: "error", message: `Panel "${p.name}": ${p.lastPushError ?? "push failed"}`, link: "/dashboard/panels" })
+      alerts.push({ level: "error", message: `Panel "${p.name}": ${p.lastPushError ?? "push failed"}`, link: "/dashboard/config" })
     }
 
     if (duplicateSteamRows.length > 0) {

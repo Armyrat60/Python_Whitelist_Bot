@@ -131,6 +131,13 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
         }
       }).catch(() => {})
 
+      // Count active users registered for this panel's whitelist
+      const activeCount = panel.whitelistId
+        ? await prisma.whitelistUser.count({
+            where: { guildId, whitelistId: panel.whitelistId, status: "active" },
+          })
+        : 0
+
       const result = roles.map(r => ({
         id:           r.id,
         role_id:      r.roleId.toString(),
@@ -142,7 +149,10 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
         sort_order:   r.sortOrder,
       }))
 
-      return reply.send(toJSON({ roles: result }))
+      // Total slots available across all roles
+      const totalSlots = roles.reduce((sum, r) => sum + r.slotLimit, 0)
+
+      return reply.send(toJSON({ roles: result, active_users: activeCount, total_slots: totalSlots }))
     }
   )
 

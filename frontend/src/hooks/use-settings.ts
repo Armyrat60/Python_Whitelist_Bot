@@ -632,11 +632,11 @@ export function usePushPanel() {
 // ─── Panel Roles ─────────────────────────────────────────────────────────────
 
 export function usePanelRoles(panelId: number | null) {
-  return useQuery<PanelRole[]>({
+  return useQuery<{ roles: PanelRole[]; active_users: number; total_slots: number }>({
     queryKey: ["panel-roles", panelId],
     queryFn: async () => {
-      const res = await api.get<{ roles: PanelRole[] }>(`/api/admin/panels/${panelId}/roles`);
-      return res.roles;
+      const res = await api.get<{ roles: PanelRole[]; active_users: number; total_slots: number }>(`/api/admin/panels/${panelId}/roles`);
+      return res;
     },
     enabled: panelId !== null,
   });

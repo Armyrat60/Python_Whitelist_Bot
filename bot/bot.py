@@ -752,15 +752,19 @@ class WhitelistBot(commands.Bot):
             await self.db.audit(guild_id, "panel_post", actor, None, f"panel={panel_record['name'] if panel_record else 'unknown'} channel={posted.channel.id} message={posted.id}", whitelist_id)
         else:
             # Determine the specific error message for the status
-            _push_err = (
-                "Bot is missing Send Messages or Embed Links permission in the configured channel"
-                if stored_channel_id
-                else "No channel is configured for this panel"
-            )
+            if not configured_channel_id:
+                _push_err = "No channel is configured for this panel"
+            else:
+                # Check if the channel was resolvable
+                test_ch = await _resolve_channel(int(configured_channel_id))
+                if test_ch is None:
+                    _push_err = f"Could not find channel {configured_channel_id} — was it deleted or is the bot missing access?"
+                else:
+                    _push_err = f"Bot could not send to #{getattr(test_ch, 'name', configured_channel_id)} — check Send Messages + Embed Links permissions"
             log.warning(
-                "%s nothing posted — panel_record=%s stored_channel_id=%s stored_message_id=%s",
+                "%s nothing posted — panel_record=%s configured_channel_id=%s stored_message_id=%s error=%s",
                 label, panel_record["id"] if panel_record else None,
-                stored_channel_id, stored_message_id,
+                configured_channel_id, stored_message_id, _push_err,
             )
             if panel_record:
                 await self.db.update_panel(
