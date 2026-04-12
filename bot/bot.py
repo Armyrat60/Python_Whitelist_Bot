@@ -634,9 +634,9 @@ class WhitelistBot(commands.Bot):
         panel = next((p for p in panels if p.get("whitelist_id") == wl["id"]), None)
         return await build_panel_embed(self.db, guild_id, panel, wl)
 
-    async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None):
+    async def post_or_refresh_panel(self, interaction: Optional[discord.Interaction], guild_id: int, whitelist_type: str, channel: Optional[discord.abc.Messageable] = None, *, wl_dict: dict = None, panel_override: dict = None):
         """Post or refresh a whitelist panel. whitelist_type is the slug for backward compat.
-        Pass wl_dict to avoid an extra DB lookup."""
+        Pass wl_dict to avoid an extra DB lookup. Pass panel_override to skip panel search."""
         wl = wl_dict
         if wl is None:
             wl = await self.db.get_whitelist_by_slug(guild_id, whitelist_type)
@@ -654,9 +654,12 @@ class WhitelistBot(commands.Bot):
             self.add_view(view)
         panel_view = self.panel_views[view_key]
 
-        # Find the panel record that links to this whitelist
-        panels = await self.db.get_panels(guild_id)
-        panel_record = next((p for p in panels if p.get("whitelist_id") == whitelist_id), None)
+        # Find the panel record — use override if provided, otherwise search by whitelist_id
+        if panel_override:
+            panel_record = panel_override
+        else:
+            panels = await self.db.get_panels(guild_id)
+            panel_record = next((p for p in panels if p.get("whitelist_id") == whitelist_id), None)
 
         # Try to find the existing panel message in its stored channel
         posted = None
@@ -681,8 +684,10 @@ class WhitelistBot(commands.Bot):
                     log.exception("%s Unexpected error fetching channel %s: %s", label, ch_id, e)
             return ch
 
-        log.debug("%s panel_record=%s configured_ch=%s msg_ch=%s message=%s", label,
-                  panel_record["id"] if panel_record else None, configured_channel_id, actual_msg_channel_id, stored_message_id)
+        log.info("%s panel_record=%s configured_ch=%s msg_ch=%s message=%s enabled=%s",
+                 label, panel_record["id"] if panel_record else None,
+                 configured_channel_id, actual_msg_channel_id, stored_message_id,
+                 panel_record.get("enabled") if panel_record else None)
 
         # If channel was changed, delete old message from old channel and post fresh
         if (stored_message_id and actual_msg_channel_id and configured_channel_id
@@ -1255,11 +1260,11 @@ class WhitelistBot(commands.Bot):
                             if not wl:
                                 log.warning("Panel refresh: whitelist_id=%s not found for panel_id=%s", panel["whitelist_id"], panel_id)
                             else:
-                                result = await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl)
+                                result = await self.post_or_refresh_panel(None, guild_id, wl["slug"], wl_dict=wl, panel_override=panel)
                                 if result:
                                     log.info("Auto-refreshed panel %s (guild=%s) reason=%s", panel_id, guild_id, reason)
                                 else:
-                                    log.warning("Panel refresh: post_or_refresh_panel returned None for panel_id=%s (channel configured? %s)", panel_id, bool(panel.get("channel_id")))
+                                    log.warning("Panel refresh: post_or_refresh_panel returned None for panel_id=%s channel=%s", panel_id, panel.get("channel_id"))
                 except Exception:
                     log.exception("Failed to process panel queue entry %s (panel=%s action=%s)", refresh_id, panel_id, action)
                 await self.db.mark_refresh_processed(refresh_id)

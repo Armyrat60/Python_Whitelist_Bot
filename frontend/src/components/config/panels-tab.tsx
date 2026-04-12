@@ -225,15 +225,26 @@ export default function PanelsTab() {
                   {/* Push Status */}
                   <TableCell>
                     {panel.last_push_status === "ok" ? (
-                      <span className="text-xs text-emerald-400" title={panel.last_push_at ? `Last pushed ${new Date(panel.last_push_at).toLocaleString()}` : ""}>
-                        Sent
-                      </span>
+                      <div className="group relative">
+                        <span className="text-xs text-emerald-400 cursor-default">Sent</span>
+                        {panel.last_push_at && (
+                          <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-10 whitespace-nowrap rounded-md border border-white/10 bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md">
+                            Last pushed {new Date(panel.last_push_at).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
                     ) : panel.last_push_status === "error" ? (
-                      <span className="text-xs text-red-400" title={panel.last_push_error ?? "Unknown error"}>
-                        Error
-                      </span>
+                      <div className="group relative">
+                        <span className="text-xs text-red-400 cursor-default underline decoration-dotted underline-offset-2">Error</span>
+                        <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-10 max-w-xs rounded-md border border-red-500/30 bg-popover px-3 py-2 text-xs text-red-300 shadow-md">
+                          {panel.last_push_error ?? "Unknown error"}
+                          {panel.last_push_at && (
+                            <div className="mt-1 text-muted-foreground">{new Date(panel.last_push_at).toLocaleString()}</div>
+                          )}
+                        </div>
+                      </div>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Never pushed</span>
+                      <span className="text-xs text-muted-foreground">Not pushed</span>
                     )}
                   </TableCell>
 
