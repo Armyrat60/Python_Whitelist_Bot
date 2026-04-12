@@ -491,30 +491,56 @@ async def _panel_verify_callback(bot, whitelist_type: str, whitelist_id: int, in
             elif row[0] == "eosid":
                 unverified_eos.append(row[1])
 
+    from bot.config import WEB_BASE_URL
+
     if not unverified_steam and not unverified_eos:
         if ids or global_ids:
             await interaction.response.send_message("All your IDs are already verified!", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                "You haven't submitted any IDs yet. Click **Manage Whitelist** first to add your Steam or EOS ID.",
-                ephemeral=True,
-            )
+            return
+
+        # No IDs at all — offer direct verification options instead of redirecting
+        embed = discord.Embed(
+            title="Verify Your Identity",
+            description=(
+                "Link your game account to your Discord profile.\n\n"
+                "**Option 1 — Steam Login** (recommended)\n"
+                "Click the button below to log in with Steam. This automatically links your Steam ID.\n\n"
+                "**Option 2 — Discord Connection**\n"
+                "Add Steam to your Discord profile under **Settings > Connections**. "
+                "It will be linked automatically next time you visit the dashboard.\n\n"
+                "**Option 3 — Manual**\n"
+                "Click **Manage Whitelist** to paste your Steam64 or EOS ID manually."
+            ),
+            color=discord.Color.blurple(),
+        )
+        view = discord.ui.View(timeout=120)
+        if WEB_BASE_URL:
+            view.add_item(discord.ui.Button(
+                label="Verify via Steam Login",
+                url=f"{WEB_BASE_URL}/api/steam/verify",
+                style=discord.ButtonStyle.link,
+            ))
+            view.add_item(discord.ui.Button(
+                label="Open Dashboard",
+                url=f"{WEB_BASE_URL}/my-whitelist",
+                style=discord.ButtonStyle.link,
+            ))
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         return
 
-    from bot.config import WEB_BASE_URL
     embed = discord.Embed(title="Verify Your IDs", color=discord.Color.blurple())
 
     if unverified_steam:
         verify_url = f"{WEB_BASE_URL}/api/steam/verify" if WEB_BASE_URL else ""
         embed.add_field(
-            name="Steam IDs",
-            value="\n".join(f"`{s}`" for s in unverified_steam) + (f"\n\n[Verify via Steam Login]({verify_url})" if verify_url else ""),
+            name="Unverified Steam IDs",
+            value="\n".join(f"`{s}`" for s in unverified_steam) + (f"\n\n[Click here to verify via Steam Login]({verify_url})" if verify_url else ""),
             inline=False,
         )
     if unverified_eos:
         embed.add_field(
-            name="EOS IDs",
-            value="\n".join(f"`{e}`" for e in unverified_eos) + "\n\nUse the button below to get an in-game verification code.",
+            name="Unverified EOS IDs",
+            value="\n".join(f"`{e}`" for e in unverified_eos) + "\n\nUse the **Get In-Game Code** button below.",
             inline=False,
         )
 
