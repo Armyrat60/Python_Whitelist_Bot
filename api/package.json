@@ -8,7 +8,7 @@
     "start": "node dist/server.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:deploy": "node scripts/check-destructive-migration.mjs && prisma migrate deploy",
+    "db:deploy": "node scripts/check-destructive-migration.mjs && prisma migrate resolve --applied 20260411010000_add_eos_id_to_squad_players && prisma migrate deploy",
     "db:push": "prisma db push",
     "db:drift": "node scripts/check-prod-drift.mjs",
     "db:seed": "npx tsx prisma/seed.ts",
