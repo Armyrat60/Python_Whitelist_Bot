@@ -63,7 +63,7 @@ export default function PanelConfigSheet({
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [slotLimit, setSlotLimit] = useState("1");
-  const [isStackable, setIsStackable] = useState(false);
+  const [isStackable, setIsStackable] = useState(true);
 
   const { data: panelRoles, isLoading: rolesLoading } = usePanelRoles(
     panel.id
@@ -119,7 +119,7 @@ export default function PanelConfigSheet({
     );
     setSelectedRoleIds([]);
     setSlotLimit("1");
-    setIsStackable(false);
+    setIsStackable(true);
     setAddRoleOpen(false);
   }
 
@@ -167,7 +167,7 @@ export default function PanelConfigSheet({
         <div className="space-y-4 px-4">
           {/* Name */}
           <div className="space-y-2">
-            <Label className="text-xs">Name</Label>
+            <Label className="text-sm">Name</Label>
             <Input
               value={panelName}
               onChange={(e) => setPanelName(e.target.value)}
@@ -177,7 +177,7 @@ export default function PanelConfigSheet({
 
           {/* Channel */}
           <div className="space-y-2">
-            <Label className="text-xs">Channel</Label>
+            <Label className="text-sm">Channel</Label>
             <Combobox
               options={channelOptions}
               value={channelId}
@@ -190,7 +190,7 @@ export default function PanelConfigSheet({
 
           {/* Log Channel */}
           <div className="space-y-2">
-            <Label className="text-xs">Log Channel</Label>
+            <Label className="text-sm">Log Channel</Label>
             <Combobox
               options={channelOptions}
               value={logChannelId}
@@ -203,7 +203,7 @@ export default function PanelConfigSheet({
 
           {/* Whitelist */}
           <div className="space-y-2">
-            <Label className="text-xs">Whitelist</Label>
+            <Label className="text-sm">Whitelist</Label>
             <Combobox
               options={whitelistOptions}
               value={whitelistId}
@@ -217,8 +217,8 @@ export default function PanelConfigSheet({
           {/* Show Role Mentions */}
           <div className="flex items-center justify-between rounded-lg border border-white/[0.10] px-3 py-2">
             <div>
-              <Label className="text-xs">Show Role Mentions</Label>
-              <p className="text-[10px] text-muted-foreground">
+              <Label className="text-sm">Show Role Mentions</Label>
+              <p className="text-xs text-muted-foreground">
                 Display roles as @mention pills in the panel embed
               </p>
             </div>
@@ -231,8 +231,8 @@ export default function PanelConfigSheet({
           {/* Enabled */}
           <div className="flex items-center justify-between rounded-lg border border-white/[0.10] px-3 py-2">
             <div>
-              <Label className="text-xs">Enabled</Label>
-              <p className="text-[10px] text-muted-foreground">
+              <Label className="text-sm">Enabled</Label>
+              <p className="text-xs text-muted-foreground">
                 Disabled panels will not respond to interactions
               </p>
             </div>
@@ -242,8 +242,8 @@ export default function PanelConfigSheet({
           {/* Access Roles */}
           <div className="border-t border-white/[0.10] pt-3 space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">
-                <ShieldCheck className="inline mr-1.5 h-3.5 w-3.5 opacity-60" />
+              <Label className="text-sm">
+                <ShieldCheck className="inline mr-1.5 h-4 w-4 opacity-60" />
                 Access Roles
               </Label>
               <Button
@@ -251,7 +251,7 @@ export default function PanelConfigSheet({
                 variant="outline"
                 onClick={() => setAddRoleOpen((v) => !v)}
               >
-                <Plus className="mr-1 h-3 w-3" />
+                <Plus className="mr-1 h-4 w-4" />
                 Add
               </Button>
             </div>
@@ -259,7 +259,7 @@ export default function PanelConfigSheet({
             {addRoleOpen && (
               <div className="rounded-lg border border-white/[0.08] p-3 space-y-3 bg-white/[0.02]">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Discord Role</Label>
+                  <Label className="text-sm">Discord Role</Label>
                   <MultiCombobox
                     options={availableRoles}
                     values={selectedRoleIds}
@@ -272,7 +272,7 @@ export default function PanelConfigSheet({
                 </div>
                 <div className="flex gap-2">
                   <div className="space-y-1.5 flex-1">
-                    <Label className="text-xs">Slots</Label>
+                    <Label className="text-sm">Slots</Label>
                     <Input
                       type="number"
                       min={1}
@@ -359,11 +359,11 @@ export default function PanelConfigSheet({
               onClick={handleSave}
               disabled={updatePanel.isPending}
             >
-              <Save className="mr-1.5 h-3.5 w-3.5" />
+              <Save className="mr-1.5 h-4 w-4" />
               Save
             </Button>
             <Button variant="outline" onClick={handleCancel}>
-              <X className="mr-1.5 h-3.5 w-3.5" />
+              <X className="mr-1.5 h-4 w-4" />
               Cancel
             </Button>
           </div>

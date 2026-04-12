@@ -51,7 +51,17 @@ class GeneralCog(commands.Cog):
         )
 
         embed.add_field(
-            name=f"🌐 Web Dashboard — [{domain}]({dashboard_url})",
+            name="Diagnostics",
+            value=(
+                "`/ping` — Check bot latency and uptime\n"
+                "`/permcheck` — Check bot permissions in the current channel\n"
+                "`/panelstatus` — Show push status for all panels"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name=f"Web Dashboard — [{domain}]({dashboard_url})",
             value=(
                 "Full user management, import/export, audit log,\n"
                 "tier configuration, whitelist URLs, and more."

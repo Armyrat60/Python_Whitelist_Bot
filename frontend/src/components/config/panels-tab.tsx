@@ -95,7 +95,7 @@ export default function PanelsTab() {
     pushPanel.mutate(panel.id, {
       onSuccess: () =>
         toast.success(
-          "Panel refresh queued — Discord will update within 15 seconds"
+          "Panel refresh queued — Discord will update within a few seconds"
         ),
       onError: (err: unknown) => {
         const msg =
@@ -173,6 +173,7 @@ export default function PanelsTab() {
               <TableHead>Name</TableHead>
               <TableHead>Channel</TableHead>
               <TableHead>Whitelist</TableHead>
+              <TableHead>Push Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -219,6 +220,21 @@ export default function PanelsTab() {
                   {/* Whitelist */}
                   <TableCell className="text-muted-foreground">
                     {wlName ?? "\u2014"}
+                  </TableCell>
+
+                  {/* Push Status */}
+                  <TableCell>
+                    {panel.last_push_status === "ok" ? (
+                      <span className="text-xs text-emerald-400" title={panel.last_push_at ? `Last pushed ${new Date(panel.last_push_at).toLocaleString()}` : ""}>
+                        Sent
+                      </span>
+                    ) : panel.last_push_status === "error" ? (
+                      <span className="text-xs text-red-400" title={panel.last_push_error ?? "Unknown error"}>
+                        Error
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Never pushed</span>
+                    )}
                   </TableCell>
 
                   {/* Actions */}

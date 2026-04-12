@@ -53,6 +53,7 @@ class WhitelistBot(commands.Bot):
         self._sync_task: Optional[asyncio.Task] = None
         # Limit concurrent panel refreshes so startup doesn't hammer the Discord API
         self._panel_refresh_sem = asyncio.Semaphore(3)
+        self._start_time = datetime.now(timezone.utc)
 
     async def setup_hook(self):
         await self.db.connect()
@@ -69,7 +70,7 @@ class WhitelistBot(commands.Bot):
         else:
             log.info("GitHub publishing disabled (no GITHUB_TOKEN configured)")
         # Load cog extensions (setup, modtools, search, audit, importexport, admin moved to web dashboard)
-        for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications"):
+        for ext in ("bot.cogs.general", "bot.cogs.whitelist", "bot.cogs.notifications", "bot.cogs.diagnostics"):
             await self.load_extension(ext)
 
         # Register persistent views for ALL whitelist panels BEFORE gateway connects.
@@ -659,7 +660,9 @@ class WhitelistBot(commands.Bot):
 
         # Try to find the existing panel message in its stored channel
         posted = None
-        stored_channel_id = panel_record["channel_id"] if panel_record else wl.get("panel_channel_id")
+        configured_channel_id = panel_record["channel_id"] if panel_record else None
+        # The message may live in a different channel than the currently configured one
+        actual_msg_channel_id = wl.get("panel_channel_id") or configured_channel_id
         stored_message_id = panel_record["panel_message_id"] if panel_record else wl.get("panel_message_id")
 
         label = f"[panel][guild={guild_id}][wl={whitelist_id}]"
@@ -678,11 +681,24 @@ class WhitelistBot(commands.Bot):
                     log.exception("%s Unexpected error fetching channel %s: %s", label, ch_id, e)
             return ch
 
-        log.debug("%s panel_record=%s channel=%s message=%s", label,
-                  panel_record["id"] if panel_record else None, stored_channel_id, stored_message_id)
+        log.debug("%s panel_record=%s configured_ch=%s msg_ch=%s message=%s", label,
+                  panel_record["id"] if panel_record else None, configured_channel_id, actual_msg_channel_id, stored_message_id)
 
-        if stored_message_id and stored_channel_id:
-            stored_ch = await _resolve_channel(int(stored_channel_id))
+        # If channel was changed, delete old message from old channel and post fresh
+        if (stored_message_id and actual_msg_channel_id and configured_channel_id
+                and int(actual_msg_channel_id) != int(configured_channel_id)):
+            log.info("%s Channel changed (%s → %s), deleting old message %s", label, actual_msg_channel_id, configured_channel_id, stored_message_id)
+            old_ch = await _resolve_channel(int(actual_msg_channel_id))
+            if old_ch:
+                try:
+                    old_msg = await old_ch.fetch_message(int(stored_message_id))
+                    await old_msg.delete()
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass  # best-effort cleanup
+            stored_message_id = None  # force fresh post in new channel
+
+        if stored_message_id and configured_channel_id:
+            stored_ch = await _resolve_channel(int(configured_channel_id))
             if stored_ch:
                 try:
                     old = await stored_ch.fetch_message(int(stored_message_id))
@@ -690,12 +706,12 @@ class WhitelistBot(commands.Bot):
                     posted = old
                 except discord.NotFound:
                     # Old message was deleted — will post fresh below
-                    log.info("Panel message %s not found in channel %s, posting fresh", stored_message_id, stored_channel_id)
+                    log.info("Panel message %s not found in channel %s, posting fresh", stored_message_id, configured_channel_id)
                 except discord.Forbidden:
                     log.warning(
                         "post_or_refresh_panel: Missing Permissions to edit message %s in channel %s (guild=%s) — "
                         "grant the bot Send Messages + Embed Links in that channel",
-                        stored_message_id, stored_channel_id, guild_id,
+                        stored_message_id, configured_channel_id, guild_id,
                     )
                 except discord.HTTPException as e:
                     log.exception("Failed to edit panel message %s: %s", stored_message_id, e)
@@ -704,10 +720,10 @@ class WhitelistBot(commands.Bot):
         if posted is None:
             # Use provided channel, or fall back to the configured panel channel
             target = channel
-            if target is None and stored_channel_id:
-                target = await _resolve_channel(int(stored_channel_id))
+            if target is None and configured_channel_id:
+                target = await _resolve_channel(int(configured_channel_id))
             if target is None:
-                log.warning("%s No target channel — stored_channel_id=%s, passed channel=%s. Set a channel on the panel.", label, stored_channel_id, channel)
+                log.warning("%s No target channel — configured_channel_id=%s, passed channel=%s. Set a channel on the panel.", label, configured_channel_id, channel)
             if target is not None:
                 try:
                     posted = await target.send(embed=embed, view=panel_view, allowed_mentions=discord.AllowedMentions.none())
@@ -715,7 +731,7 @@ class WhitelistBot(commands.Bot):
                     log.warning(
                         "post_or_refresh_panel: Missing Permissions to send in channel %s (guild=%s) — "
                         "grant the bot Send Messages + Embed Links in that channel",
-                        stored_channel_id or getattr(target, "id", "?"), guild_id,
+                        configured_channel_id or getattr(target, "id", "?"), guild_id,
                     )
                 except discord.HTTPException as e:
                     log.exception("post_or_refresh_panel: Discord HTTP error sending panel (guild=%s): %s", guild_id, e)
@@ -1194,7 +1210,7 @@ class WhitelistBot(commands.Bot):
             except Exception:
                 log.exception("Error in forced report for guild %s", guild.id)
 
-    @tasks.loop(seconds=15)
+    @tasks.loop(seconds=5)
     async def panel_refresh_poller(self):
         """Poll for panel refresh requests from the web dashboard."""
         try:

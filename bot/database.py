@@ -585,7 +585,8 @@ class Database:
     _PANEL_COLUMNS = (
         "id", "guild_id", "name", "channel_id", "log_channel_id",
         "whitelist_id", "panel_message_id", "is_default", "enabled",
-        "show_role_mentions", "created_at", "updated_at",
+        "show_role_mentions", "last_push_status", "last_push_error", "last_push_at",
+        "created_at", "updated_at",
     )
 
     def _row_to_panel(self, row: tuple) -> Dict[str, Any]:
@@ -601,7 +602,8 @@ class Database:
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
                    whitelist_id, panel_message_id, is_default, enabled,
-                   show_role_mentions, created_at, updated_at
+                   show_role_mentions, last_push_status, last_push_error, last_push_at,
+                   created_at, updated_at
             FROM panels WHERE guild_id=%s
             ORDER BY is_default DESC, name ASC
             """,
@@ -614,7 +616,8 @@ class Database:
             """
             SELECT id, guild_id, name, channel_id, log_channel_id,
                    whitelist_id, panel_message_id, is_default, enabled,
-                   show_role_mentions, created_at, updated_at
+                   show_role_mentions, last_push_status, last_push_error, last_push_at,
+                   created_at, updated_at
             FROM panels WHERE id=%s
             """,
             (panel_id,),

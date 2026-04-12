@@ -81,16 +81,16 @@ export default function PanelRoleRow({
           </div>
           <div className="ml-auto flex gap-1.5">
             <Button
-              size="xs"
+              size="sm"
               className="bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={handleSave}
               disabled={updateRole.isPending}
             >
-              <Check className="h-3 w-3" />
+              <Check className="h-4 w-4" />
               Save
             </Button>
-            <Button size="xs" variant="outline" onClick={handleCancel}>
-              <X className="h-3 w-3" />
+            <Button size="sm" variant="outline" onClick={handleCancel}>
+              <X className="h-4 w-4" />
               Cancel
             </Button>
           </div>
@@ -108,27 +108,27 @@ export default function PanelRoleRow({
         {role.slot_limit} slot{role.slot_limit !== 1 ? "s" : ""}
       </span>
       {role.is_stackable && (
-        <span className="shrink-0 text-[10px] text-blue-400 border border-blue-400/30 rounded px-1">
+        <span className="shrink-0 text-xs text-blue-400 border border-blue-400/30 rounded px-1">
           stack
         </span>
       )}
       <Button
-        size="icon-xs"
+        size="icon-sm"
         variant="outline"
         className="shrink-0 text-muted-foreground hover:text-foreground hover:border-foreground/30"
         onClick={() => setEditing(true)}
         title="Edit role"
       >
-        <Pencil className="h-3 w-3" />
+        <Pencil className="h-4 w-4" />
       </Button>
       <Button
-        size="icon-xs"
+        size="icon-sm"
         variant="outline"
         className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/30"
         onClick={onRemove}
         title="Remove role"
       >
-        <X className="h-3 w-3" />
+        <X className="h-4 w-4" />
       </Button>
     </div>
   );

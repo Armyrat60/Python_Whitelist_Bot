@@ -114,7 +114,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
 
       const roles = await prisma.panelRole.findMany({
         where:   { panelId, guildId },
-        orderBy: [{ sortOrder: "asc" }, { slotLimit: "asc" }, { roleName: "asc" }],
+        orderBy: [{ sortOrder: "asc" }, { slotLimit: "desc" }, { roleName: "asc" }],
       })
 
       // Refresh role names from Discord (fire-and-forget)
@@ -185,7 +185,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
           roleId,
           roleName:    body.role_name,
           slotLimit:   Number(body.slot_limit),
-          isStackable: body.is_stackable ?? false,
+          isStackable: body.is_stackable ?? true,
           displayName: body.display_name ?? null,
           sortOrder:   body.sort_order   ?? 0,
           createdAt:   now,
@@ -194,7 +194,7 @@ export default async function panelRoleRoutes(app: FastifyInstance) {
         update: {
           roleName:    body.role_name,
           slotLimit:   Number(body.slot_limit),
-          isStackable: body.is_stackable ?? false,
+          isStackable: body.is_stackable ?? true,
           displayName: body.display_name ?? null,
           isActive:    true,
           updatedAt:   now,

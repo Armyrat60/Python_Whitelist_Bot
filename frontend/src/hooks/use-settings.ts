@@ -618,9 +618,14 @@ export function useDeletePanel() {
 }
 
 export function usePushPanel() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) =>
       api.post(`/api/admin/panels/${id}/push`),
+    onSuccess: () => {
+      // Poll for status update — bot processes in ~5s
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["panels"] }), 6000);
+    },
   });
 }
 
