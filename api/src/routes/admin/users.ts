@@ -112,6 +112,7 @@ export default async function userRoutes(app: FastifyInstance) {
     }
     if (query.unlinked === "true") where.discordId = { lt: 0n }
     if (query.verified === "true") where.identifiers = { some: { isVerified: true } }
+    if (query.verified === "false") where.identifiers = { none: { isVerified: true } }
     if (query.role_name) where.lastPlanName = { contains: `${query.role_name}:`, mode: "insensitive" }
     if (allowedCategoryIds !== undefined) {
       // Roster manager: restrict to their assigned categories

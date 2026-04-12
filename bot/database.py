@@ -876,6 +876,19 @@ class Database:
             (guild_id, discord_id, whitelist_id),
         )
 
+    async def check_user_linked(self, guild_id: int, discord_id: int) -> bool:
+        """Check if user has at least one truly verified identifier (Steam login, Discord connection, bridge, or in-game code)."""
+        row = await self.fetchone(
+            """
+            SELECT 1 FROM whitelist_identifiers
+            WHERE guild_id=%s AND discord_id=%s AND is_verified=TRUE
+              AND verification_source IN ('discord_connection', 'steam_openid', 'bridge', 'in_game_code')
+            LIMIT 1
+            """,
+            (guild_id, discord_id),
+        )
+        return bool(row)
+
     async def get_active_export_rows(self, guild_id: int) -> List[tuple]:
         return await self.fetchall(
             """

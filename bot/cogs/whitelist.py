@@ -259,6 +259,33 @@ class WhitelistPanelView(discord.ui.View):
                 )
                 return
 
+            # Check if user has linked their account
+            is_linked = await self.bot.db.check_user_linked(guild_id, interaction.user.id)
+            if not is_linked:
+                from bot.config import WEB_BASE_URL
+                embed = discord.Embed(
+                    title="🔗 Link Your Account First",
+                    description=(
+                        "Before you can manage your whitelist IDs, you need to link your "
+                        "Steam or EOS account to your Discord profile.\n\n"
+                        "This confirms you own the game account and is required for "
+                        "whitelist features and player stats.\n\n"
+                        "**Choose a method:**\n"
+                        "1. Click **Link via Steam Login** below (recommended)\n"
+                        "2. Add Steam to Discord: **User Settings > Connections > Steam**"
+                    ),
+                    color=discord.Color.from_rgb(249, 115, 22),
+                )
+                view = discord.ui.View(timeout=120)
+                if WEB_BASE_URL:
+                    view.add_item(discord.ui.Button(
+                        label="Link via Steam Login",
+                        url=f"{WEB_BASE_URL}/api/steam/verify",
+                        style=discord.ButtonStyle.link,
+                    ))
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                return
+
             # First-time user with no IDs — check for an orphan record that matches their name
             has_record = await self.bot.db.get_user_record(guild_id, interaction.user.id, wl_id)
             if not has_record and not ids:

@@ -233,6 +233,21 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     if (!wl) return reply.code(400).send({ error: "Invalid whitelist type." })
     if (!wl.enabled) return reply.code(400).send({ error: "This whitelist type is not enabled." })
 
+    // Linking gate: user must have a verified link before submitting IDs
+    const hasVerifiedLink = await app.prisma.whitelistIdentifier.findFirst({
+      where: {
+        guildId, discordId,
+        isVerified: true,
+        verificationSource: { in: ["discord_connection", "steam_openid", "bridge", "in_game_code"] },
+      },
+    })
+    if (!hasVerifiedLink) {
+      return reply.code(403).send({
+        error: "Link your Steam or EOS account first. Use Steam Login on the dashboard or add Steam to your Discord connections.",
+        requires_linking: true,
+      })
+    }
+
     const { steam_ids = [], eos_ids = [] } = req.body ?? {}
 
     if (!Array.isArray(steam_ids) || !Array.isArray(eos_ids)) {

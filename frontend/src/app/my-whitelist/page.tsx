@@ -207,7 +207,7 @@ function buildSlotsFromData(d: MyWhitelistData): string[] {
   return padded;
 }
 
-function WhitelistCard({ data, hideTitle }: { data: MyWhitelistData; hideTitle?: boolean }) {
+function WhitelistCard({ data, hideTitle, isLinked }: { data: MyWhitelistData; hideTitle?: boolean; isLinked?: boolean }) {
   const queryClient = useQueryClient();
   const totalSlots = data.effective_slot_limit;
   const serverFingerprint = useMemo(
@@ -375,6 +375,31 @@ function WhitelistCard({ data, hideTitle }: { data: MyWhitelistData; hideTitle?:
           </p>
         </div>
 
+        {/* Linking gate */}
+        {!isLinked && (
+          <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🔗</span>
+              <div>
+                <p className="text-sm font-semibold">Link your account to continue</p>
+                <p className="text-xs text-muted-foreground">
+                  You need to link your Steam account before you can manage your whitelist IDs.
+                  This confirms you own the game account.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <a href="/api/steam/verify">
+                <Button size="sm">Link via Steam Login</Button>
+              </a>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Or add Steam to your Discord: <strong>User Settings &gt; Connections &gt; Steam</strong>
+            </p>
+          </div>
+        )}
+
+        {isLinked && <>
         {/* Bulk paste / Clear all toolbar */}
         <div className="flex gap-2">
           <Button
@@ -460,18 +485,21 @@ function WhitelistCard({ data, hideTitle }: { data: MyWhitelistData; hideTitle?:
             })}
           </div>
         )}
+      </>}
       </CardContent>
-      <CardFooter>
-        <Button
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          className="text-black font-semibold"
-          style={{ background: "var(--accent-primary)" }}
-        >
-          <Save className="mr-1.5 h-3.5 w-3.5" />
-          {saving ? "Saving..." : "Save Changes"}
-        </Button>
-      </CardFooter>
+      {isLinked && (
+        <CardFooter>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="text-black font-semibold"
+            style={{ background: "var(--accent-primary)" }}
+          >
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            {saving ? "Saving..." : "Save Changes"}
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }
@@ -584,7 +612,7 @@ export default function MyWhitelistPage() {
         wl.is_manual ? (
           <ManualRosterCard key={wl.whitelist_slug} data={wl} />
         ) : (
-          <WhitelistCard key={wl.whitelist_slug} data={wl} hideTitle={hideTitle} />
+          <WhitelistCard key={wl.whitelist_slug} data={wl} hideTitle={hideTitle} isLinked={profile.is_fully_linked} />
         )
       )}
     </div>

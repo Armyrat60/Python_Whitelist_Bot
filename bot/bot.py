@@ -404,6 +404,25 @@ class WhitelistBot(commands.Bot):
             if slots <= 0:
                 await interaction.response.send_message("You don't have a role that grants whitelist access. Contact your server admin.", ephemeral=True)
                 return
+            # Check linking gate
+            is_linked = await self.db.check_user_linked(guild_id, interaction.user.id)
+            if not is_linked:
+                from bot.config import WEB_BASE_URL
+                embed = discord.Embed(
+                    title="🔗 Link Your Account First",
+                    description=(
+                        "Before you can submit whitelist IDs, link your Steam or EOS account to Discord.\n\n"
+                        "**Option 1:** Click the link below to log in with Steam\n"
+                        "**Option 2:** Add Steam to Discord under **User Settings > Connections**\n\n"
+                        "Once linked, run `/whitelist` again."
+                    ),
+                    color=discord.Color.from_rgb(249, 115, 22),
+                )
+                view = discord.ui.View(timeout=60)
+                if WEB_BASE_URL:
+                    view.add_item(discord.ui.Button(label="Link via Steam Login", url=f"{WEB_BASE_URL}/api/steam/verify", style=discord.ButtonStyle.link))
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                return
             existing = await self.db.get_identifiers(guild_id, interaction.user.id, whitelist_id)
             await interaction.response.send_modal(IdentifierModal(self, whitelist_type, slots, existing))
         except Exception:
@@ -439,6 +458,10 @@ class WhitelistBot(commands.Bot):
         member = interaction.guild.get_member(interaction.user.id)
 
         slots, plan = await self.calculate_user_slots(guild_id, member, whitelist_id, wl=wl)
+        # Defense-in-depth: block submission if not linked
+        if not await self.db.check_user_linked(guild_id, interaction.user.id):
+            await interaction.response.send_message("You must link your Steam or EOS account before submitting IDs. Use `/verify` to link.", ephemeral=True)
+            return
         log.info("Submit: guild=%s user=%s (%s) wl=%s slots=%d plan=%s",
                  guild_id, member.id if member else '?', interaction.user, whitelist_type, slots, plan)
         steam_ids = list(dict.fromkeys(token for token in split_identifier_tokens(steam_raw) if token))

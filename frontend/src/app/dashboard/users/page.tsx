@@ -462,18 +462,28 @@ export default function UsersPage() {
                     </div>
                   )}
 
-                  {/* Verified */}
+                  {/* Linked Status */}
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Verified</label>
-                    <Button
-                      variant={filters.verified === "true" ? "secondary" : "outline"}
-                      size="sm"
-                      className="h-8 w-full justify-start gap-1.5 text-xs"
-                      onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "true" ? "" : "true" })); }}
-                    >
-                      <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
-                      {filters.verified === "true" ? "Verified only" : "All members"}
-                    </Button>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Linked</label>
+                    <div className="flex gap-1">
+                      <Button
+                        variant={filters.verified === "true" ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-8 flex-1 justify-center gap-1 text-xs"
+                        onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "true" ? "" : "true" })); }}
+                      >
+                        <BadgeCheck className={`h-3.5 w-3.5 ${filters.verified === "true" ? "text-emerald-400" : ""}`} />
+                        Linked
+                      </Button>
+                      <Button
+                        variant={filters.verified === "false" ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-8 flex-1 justify-center gap-1 text-xs"
+                        onClick={() => { setFilters(p => ({ ...p, verified: p.verified === "false" ? "" : "false" })); }}
+                      >
+                        Not Linked
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -792,8 +802,15 @@ function UserListView({
                     ? (user.discord_name.replace(/^\[[^\]]+\]\s*/, '').trim() || user.discord_name)
                     : user.discord_name}
                 </span>
-                {user.is_verified && (
-                  <span title="Bridge Verified"><BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" /></span>
+                {user.is_verified ? (
+                  <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 text-[10px] gap-0.5 py-0 h-5">
+                    <BadgeCheck className="h-3 w-3" />
+                    Linked
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="shrink-0 text-yellow-400 border-yellow-500/30 text-[10px] py-0 h-5">
+                    Not Linked
+                  </Badge>
                 )}
                 <Link
                   href={`/dashboard/players/${user.discord_id}`}
