@@ -307,22 +307,7 @@ class Database:
         else:
             wl_id = existing[0]
 
-        # Only seed a default panel if NO panels exist at all (first-time setup)
-        if wl_id:
-            existing_panel = await self.fetchone(
-                "SELECT id FROM panels WHERE guild_id=%s LIMIT 1",
-                (guild_id,),
-            )
-            if not existing_panel:
-                try:
-                    await self.create_panel(
-                        guild_id,
-                        name="Panel 1",
-                        whitelist_id=wl_id,
-                        is_default=True,
-                    )
-                except Exception:
-                    pass  # Race condition: another process created it
+        # Panels are user-created — no default seeding
 
     # ── Settings ──
 
