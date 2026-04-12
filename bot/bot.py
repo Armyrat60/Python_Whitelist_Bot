@@ -663,10 +663,16 @@ class WhitelistBot(commands.Bot):
 
         # Try to find the existing panel message in its stored channel
         posted = None
-        configured_channel_id = panel_record["channel_id"] if panel_record else None
-        # The message may live in a different channel than the currently configured one
-        actual_msg_channel_id = wl.get("panel_channel_id") or configured_channel_id
-        stored_message_id = panel_record["panel_message_id"] if panel_record else wl.get("panel_message_id")
+        if panel_record:
+            # Panel record is authoritative — don't fall back to stale whitelist fields
+            configured_channel_id = panel_record["channel_id"]
+            stored_message_id = panel_record["panel_message_id"]
+            actual_msg_channel_id = configured_channel_id
+        else:
+            # Legacy fallback: no panel record, use whitelist fields
+            configured_channel_id = wl.get("panel_channel_id")
+            stored_message_id = wl.get("panel_message_id")
+            actual_msg_channel_id = configured_channel_id
 
         label = f"[panel][guild={guild_id}][wl={whitelist_id}]"
 
