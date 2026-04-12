@@ -117,6 +117,7 @@ interface MultiComboboxProps {
   searchPlaceholder?: string;
   emptyText?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 export function MultiCombobox({
@@ -127,6 +128,7 @@ export function MultiCombobox({
   searchPlaceholder = "Search...",
   emptyText = "No results found.",
   className,
+  disabled,
 }: MultiComboboxProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -155,6 +157,7 @@ export function MultiCombobox({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            disabled={disabled}
             className={cn(
               "w-full justify-between font-normal",
               !values.length && "text-muted-foreground",

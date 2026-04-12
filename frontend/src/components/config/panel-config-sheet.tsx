@@ -24,7 +24,7 @@ import {
   SheetDescription,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox, MultiCombobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import PanelRoleRow from "./panel-role-row";
 
@@ -61,7 +61,7 @@ export default function PanelConfigSheet({
 
   // Access roles
   const [addRoleOpen, setAddRoleOpen] = useState(false);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [slotLimit, setSlotLimit] = useState("1");
   const [isStackable, setIsStackable] = useState(false);
 
@@ -92,30 +92,35 @@ export default function PanelConfigSheet({
     [whitelists]
   );
 
-  function handleAddRole() {
-    if (!selectedRoleId) return;
-    const role = discordRoles?.find((r) => r.id === selectedRoleId);
-    if (!role) return;
+  async function handleAddRole() {
+    if (selectedRoleIds.length === 0) return;
     const slots = parseInt(slotLimit, 10);
     if (isNaN(slots) || slots < 1) return;
-    addRole.mutate(
-      {
-        role_id: role.id,
-        role_name: role.name,
-        slot_limit: slots,
-        is_stackable: isStackable,
-      },
-      {
-        onSuccess: () => {
-          toast.success(`Added ${role.name}`);
-          setSelectedRoleId("");
-          setSlotLimit("1");
-          setIsStackable(false);
-          setAddRoleOpen(false);
-        },
-        onError: () => toast.error("Failed to add role"),
+
+    for (const roleId of selectedRoleIds) {
+      const role = discordRoles?.find((r) => r.id === roleId);
+      if (!role) continue;
+      try {
+        await addRole.mutateAsync({
+          role_id: role.id,
+          role_name: role.name,
+          slot_limit: slots,
+          is_stackable: isStackable,
+        });
+      } catch {
+        toast.error(`Failed to add ${role.name}`);
+        return;
       }
+    }
+    toast.success(
+      selectedRoleIds.length === 1
+        ? `Added ${discordRoles?.find((r) => r.id === selectedRoleIds[0])?.name}`
+        : `Added ${selectedRoleIds.length} roles`
     );
+    setSelectedRoleIds([]);
+    setSlotLimit("1");
+    setIsStackable(false);
+    setAddRoleOpen(false);
   }
 
   function handleSave() {
@@ -255,13 +260,14 @@ export default function PanelConfigSheet({
               <div className="rounded-lg border border-white/[0.08] p-3 space-y-3 bg-white/[0.02]">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Discord Role</Label>
-                  <Combobox
+                  <MultiCombobox
                     options={availableRoles}
-                    value={selectedRoleId}
-                    onValueChange={setSelectedRoleId}
-                    placeholder="Select role..."
+                    values={selectedRoleIds}
+                    onValuesChange={setSelectedRoleIds}
+                    placeholder="Select roles..."
                     searchPlaceholder="Search roles..."
                     emptyText="No roles available."
+                    disabled={addRole.isPending}
                   />
                 </div>
                 <div className="flex gap-2">
@@ -296,9 +302,11 @@ export default function PanelConfigSheet({
                     size="sm"
                     className="flex-1"
                     onClick={handleAddRole}
-                    disabled={!selectedRoleId || addRole.isPending}
+                    disabled={selectedRoleIds.length === 0 || addRole.isPending}
                   >
-                    Add Role
+                    {selectedRoleIds.length > 1
+                      ? `Add ${selectedRoleIds.length} Roles`
+                      : "Add Role"}
                   </Button>
                   <Button
                     size="sm"
