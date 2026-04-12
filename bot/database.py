@@ -307,10 +307,10 @@ class Database:
         else:
             wl_id = existing[0]
 
-        # Seed one default panel linked to the default whitelist if none exists
+        # Only seed a default panel if NO panels exist at all (first-time setup)
         if wl_id:
             existing_panel = await self.fetchone(
-                "SELECT id FROM panels WHERE guild_id=%s AND is_default=TRUE LIMIT 1",
+                "SELECT id FROM panels WHERE guild_id=%s LIMIT 1",
                 (guild_id,),
             )
             if not existing_panel:
