@@ -43,7 +43,14 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const sessionGuild = req.session.guilds?.find((g) => g.id === String(guildId))
     const isAdmin = sessionGuild?.isAdmin ?? false
 
-    const results: unknown[] = []
+    const results: Array<{
+      whitelist_slug: string; whitelist_name: string; is_manual: boolean;
+      tier_name: string | null; effective_slot_limit: number;
+      steam_ids: string[]; eos_ids: string[];
+      verified_steam_ids: string[]; verified_eos_ids: string[];
+      linked_ids: Record<string, string>;
+      status: string | null; expires_at: string | null; category_name: string | null;
+    }> = []
 
     for (const wl of whitelists) {
       let tierName: string | null = null
@@ -146,7 +153,38 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    return reply.send(results)
+    // Build profile summary
+    const allSteamIds = [...new Set(results.flatMap((r) => r.steam_ids))]
+    const allVerifiedSteam = [...new Set(results.flatMap((r) => r.verified_steam_ids))]
+    const allEosIds = [...new Set(results.flatMap((r) => r.eos_ids))]
+    const allVerifiedEos = [...new Set(results.flatMap((r) => r.verified_eos_ids))]
+    const totalSlots = results.reduce((sum, r) => sum + (r.effective_slot_limit || 0), 0)
+    const usedSlots = allSteamIds.length + allEosIds.length
+
+    // Check if member is a server booster
+    const isBooster = memberRoleIds.size > 0 && await (async () => {
+      try {
+        const boosterRole = await app.discord.fetchBoosterRole(guildId)
+        return boosterRole ? memberRoleIds.has(boosterRole.id) : false
+      } catch { return false }
+    })()
+
+    return reply.send({
+      profile: {
+        discord_id: req.session.userId,
+        username: req.session.username,
+        avatar: req.session.avatar ?? null,
+        is_booster: isBooster,
+        total_slots: totalSlots,
+        used_slots: usedSlots,
+        steam_ids: allSteamIds,
+        eos_ids: allEosIds,
+        verified_steam_ids: allVerifiedSteam,
+        verified_eos_ids: allVerifiedEos,
+        is_fully_linked: allSteamIds.length > 0 && allSteamIds.every(id => allVerifiedSteam.includes(id)),
+      },
+      whitelists: results,
+    })
   })
 
   // GET /my-whitelist/:type

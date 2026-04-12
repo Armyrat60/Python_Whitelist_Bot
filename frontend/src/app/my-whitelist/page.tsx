@@ -3,14 +3,16 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Save, Shield, Clock, Tag, BadgeCheck } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Save, Shield, Clock, Tag, BadgeCheck, Trash2, ClipboardPaste, Zap } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useGuild } from "@/hooks/use-guild";
+import { useSession } from "@/hooks/use-session";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,6 +23,22 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+interface ProfileData {
+  discord_id: string;
+  username: string;
+  avatar: string | null;
+  is_booster: boolean;
+  total_slots: number;
+  used_slots: number;
+  steam_ids: string[];
+  eos_ids: string[];
+  verified_steam_ids: string[];
+  verified_eos_ids: string[];
+  is_fully_linked: boolean;
+}
 
 interface MyWhitelistData {
   whitelist_slug: string;
@@ -38,47 +56,48 @@ interface MyWhitelistData {
   category_name: string | null;
 }
 
+interface MyWhitelistResponse {
+  profile: ProfileData;
+  whitelists: MyWhitelistData[];
+}
+
 function useMyWhitelists(activeGuildId: string | undefined) {
-  return useQuery<MyWhitelistData[]>({
+  return useQuery<MyWhitelistResponse>({
     queryKey: ["my-whitelists", activeGuildId ?? null],
-    queryFn: () => api.get<MyWhitelistData[]>("/api/my-whitelist"),
+    queryFn: () => api.get<MyWhitelistResponse>("/api/my-whitelist"),
     enabled: !!activeGuildId,
   });
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function discordAvatarUrl(userId: string, avatar: string | null) {
+  if (!avatar) return `https://cdn.discordapp.com/embed/avatars/${parseInt(userId) % 5}.png`;
+  return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.webp?size=128`;
 }
 
 function guildIconUrl(guildId: string, icon: string) {
   return `https://cdn.discordapp.com/icons/${guildId}/${icon}.webp?size=64`;
 }
 
-function GuildBanner({ guildId, name, icon }: { guildId: string; name: string; icon: string | null }) {
-  return (
-    <div className="mb-6 flex items-center gap-3">
-      <Avatar size="lg">
-        {icon ? (
-          <AvatarImage src={guildIconUrl(guildId, icon)} alt={name} />
-        ) : null}
-        <AvatarFallback className="text-sm font-semibold">
-          {name.slice(0, 2).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Whitelist Portal
-        </p>
-        <h2 className="text-xl font-bold text-foreground">{name}</h2>
-      </div>
-    </div>
-  );
+function detectIdType(val: string): "steam64" | "eosid" | "steam_url" | "unknown" {
+  if (/^7656119\d{10}$/.test(val)) return "steam64";
+  if (/^[0-9a-f]{32}$/i.test(val)) return "eosid";
+  if (/steamcommunity\.com\/profiles\/\d{17}/i.test(val)) return "steam_url";
+  return "unknown";
 }
 
-// ── Status helpers ───────────────────────────────────────────────────────────
+function extractSteam64FromUrl(val: string): string {
+  const m = val.match(/steamcommunity\.com\/profiles\/(\d{17})/i);
+  return m ? m[1] : val;
+}
 
 function computeStatus(status: string | null, expiresAt: string | null): "active" | "expiring_soon" | "expired" | "inactive" {
   if (status === "inactive" || status === "deactivated") return "inactive";
   if (!expiresAt) return status === "active" ? "active" : "inactive";
   const msLeft = new Date(expiresAt).getTime() - Date.now();
   if (msLeft <= 0) return "expired";
-  if (msLeft < 7 * 24 * 60 * 60 * 1000) return "expiring_soon"; // < 7 days
+  if (msLeft < 7 * 24 * 60 * 60 * 1000) return "expiring_soon";
   return "active";
 }
 
@@ -91,36 +110,7 @@ function formatExpiry(expiresAt: string): string {
   return `Expires in ${days} days`;
 }
 
-function StatusBadge({ status, expiresAt }: { status: string | null; expiresAt: string | null }) {
-  const computed = computeStatus(status, expiresAt);
-  if (computed === "active") {
-    return (
-      <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 border">
-        Active
-      </Badge>
-    );
-  }
-  if (computed === "expiring_soon") {
-    return (
-      <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 border">
-        <Clock className="mr-1 h-3 w-3" />
-        Expiring Soon
-      </Badge>
-    );
-  }
-  if (computed === "expired") {
-    return (
-      <Badge className="bg-red-500/15 text-red-400 border-red-500/30 border">
-        Expired
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="secondary">Inactive</Badge>
-  );
-}
-
-// ── Steam verification toast (needs Suspense boundary for useSearchParams) ───
+// ── Steam verification toast ────────────────────────────────────────────────
 
 function SteamVerifyToast() {
   const searchParams = useSearchParams();
@@ -149,172 +139,66 @@ function SteamVerifyToast() {
   return null;
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Profile Card ────────────────────────────────────────────────────────────
 
-export default function MyWhitelistPage() {
-  const { activeGuild } = useGuild();
-  const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-16 w-64 rounded-xl" />
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-48 w-full rounded-xl" />
-        ))}
-      </div>
-    );
-  }
-
-  const guildBanner = activeGuild ? (
-    <GuildBanner guildId={activeGuild.id} name={activeGuild.name} icon={activeGuild.icon} />
-  ) : null;
-
-  if (error || !data) {
-    return (
-      <>
-        {guildBanner}
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Unable to load your whitelist data</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Please try again later or contact{" "}
-            {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} for help.
-          </p>
-        </div>
-      </>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <>
-        {guildBanner}
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">You don&apos;t have whitelist access</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Contact{" "}
-            {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} to get whitelisted.
-          </p>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <Suspense fallback={null}><SteamVerifyToast /></Suspense>
-      {guildBanner}
-      <p className="text-sm text-muted-foreground">
-        Entries here are the same as using{" "}
-        <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/whitelist</code> in Discord.
-      </p>
-      {data.map((wl) =>
-        wl.is_manual ? (
-          <ManualRosterCard key={wl.whitelist_slug} data={wl} />
-        ) : (
-          <WhitelistCard key={wl.whitelist_slug} data={wl} />
-        )
-      )}
-    </div>
-  );
-}
-
-// ── Manual Roster card (read-only) ───────────────────────────────────────────
-
-function ManualRosterCard({ data }: { data: MyWhitelistData }) {
-  const allIds = [...(data.steam_ids ?? []), ...(data.eos_ids ?? [])];
-
+function ProfileCard({ profile, guild }: { profile: ProfileData; guild: { id: string; name: string; icon: string | null } }) {
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>{data.whitelist_name}</CardTitle>
-          <StatusBadge status={data.status} expiresAt={data.expires_at} />
-        </div>
-        <CardDescription className="flex flex-wrap items-center gap-3 pt-1">
-          {data.category_name && (
-            <span className="flex items-center gap-1">
-              <Tag className="h-3 w-3" />
-              {data.category_name}
-            </span>
-          )}
-          {data.expires_at && (
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {formatExpiry(data.expires_at)}
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {allIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No identifiers on file. Contact an admin to add your Steam ID.</p>
-        ) : (
-          <div className="space-y-2">
-            {(data.steam_ids ?? []).map((id) => {
-              const linkSource = data.linked_ids?.[id];
-              const isLinked = !!linkSource || (data.verified_steam_ids ?? []).includes(id);
-              return (
-                <div key={id} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 shrink-0">Steam64</Badge>
-                  <code className="text-xs text-muted-foreground">{id}</code>
-                  {isLinked ? (
-                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
-                      <BadgeCheck className="h-3 w-3" />
-                      Linked
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="shrink-0 text-yellow-400 border-yellow-500/30">
-                      Not Linked
-                    </Badge>
-                  )}
-                </div>
-              );
-            })}
-            {(data.eos_ids ?? []).map((id) => {
-              const isLinked = (data.verified_eos_ids ?? []).includes(id);
-              return (
-                <div key={id} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-blue-400 border-blue-500/30 shrink-0">EOS</Badge>
-                  <code className="text-xs text-muted-foreground">{id}</code>
-                  {isLinked ? (
-                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
-                      <BadgeCheck className="h-3 w-3" />
-                      Linked
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="shrink-0 text-muted-foreground border-white/10">
-                      Auto-links in-game
-                    </Badge>
-                  )}
-                </div>
-              );
-            })}
+      <CardContent className="pt-6">
+        <div className="flex items-start gap-4">
+          <Avatar size="lg" className="h-16 w-16">
+            <AvatarImage src={discordAvatarUrl(profile.discord_id, profile.avatar)} alt={profile.username} />
+            <AvatarFallback className="text-lg font-semibold">
+              {profile.username.slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold truncate">{profile.username}</h2>
+              {profile.is_fully_linked ? (
+                <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 border gap-1">
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  Linked
+                </Badge>
+              ) : profile.used_slots > 0 ? (
+                <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30 border">
+                  Not Fully Linked
+                </Badge>
+              ) : (
+                <Badge variant="secondary">No IDs Submitted</Badge>
+              )}
+              {profile.is_booster && (
+                <Badge className="bg-pink-500/15 text-pink-400 border-pink-500/30 border">
+                  Server Booster
+                </Badge>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
+              <span>{profile.used_slots} / {profile.total_slots} slots used</span>
+              <span>{profile.verified_steam_ids.length} verified Steam ID{profile.verified_steam_ids.length !== 1 ? "s" : ""}</span>
+              {profile.verified_eos_ids.length > 0 && (
+                <span>{profile.verified_eos_ids.length} verified EOS ID{profile.verified_eos_ids.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+            {!profile.is_fully_linked && profile.used_slots > 0 && (
+              <p className="mt-2 text-xs text-yellow-400/80">
+                Verify your IDs to link them to your account. Use <code className="rounded bg-muted px-1 py-0.5">/verify</code> in Discord or click the verify link next to unlinked IDs below.
+              </p>
+            )}
           </div>
-        )}
-        <p className="mt-3 text-xs text-muted-foreground">
-          Managed by server admins. Contact them to update your IDs.
-        </p>
+          {guild.icon && (
+            <Avatar className="h-10 w-10 shrink-0">
+              <AvatarImage src={guildIconUrl(guild.id, guild.icon)} alt={guild.name} />
+              <AvatarFallback className="text-xs">{guild.name.slice(0, 2)}</AvatarFallback>
+            </Avatar>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-// ── Discord Roster card (editable) ───────────────────────────────────────────
-
-function detectIdType(val: string): "steam64" | "eosid" | "steam_url" | "unknown" {
-  if (/^7656119\d{10}$/.test(val)) return "steam64";
-  if (/^[0-9a-f]{32}$/i.test(val)) return "eosid";
-  if (/steamcommunity\.com\/profiles\/\d{17}/i.test(val)) return "steam_url";
-  return "unknown";
-}
-
-function extractSteam64FromUrl(val: string): string {
-  const m = val.match(/steamcommunity\.com\/profiles\/(\d{17})/i);
-  return m ? m[1] : val;
-}
+// ── Whitelist Card (editable) ───────────────────────────────────────────────
 
 function buildSlotsFromData(d: MyWhitelistData): string[] {
   const existingIds = [...(d.steam_ids ?? []), ...(d.eos_ids ?? [])];
@@ -323,7 +207,8 @@ function buildSlotsFromData(d: MyWhitelistData): string[] {
   return padded;
 }
 
-function WhitelistCard({ data }: { data: MyWhitelistData }) {
+function WhitelistCard({ data, hideTitle }: { data: MyWhitelistData; hideTitle?: boolean }) {
+  const queryClient = useQueryClient();
   const totalSlots = data.effective_slot_limit;
   const serverFingerprint = useMemo(
     () =>
@@ -334,6 +219,8 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   const [slots, setSlots] = useState<string[]>(() => buildSlotsFromData(data));
   const [baseline, setBaseline] = useState<string[]>(() => buildSlotsFromData(data));
   const [saving, setSaving] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState("");
 
   useEffect(() => {
     const next = buildSlotsFromData(data);
@@ -370,6 +257,29 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
     const val = slots[index]?.trim();
     if (val && detectIdType(val) === "steam_url") {
       updateSlot(index, extractSteam64FromUrl(val));
+    }
+  }
+
+  function handleClearAll() {
+    setSlots(Array(totalSlots).fill(""));
+  }
+
+  function handleBulkApply() {
+    const lines = bulkText
+      .split(/[,\n\r]+/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (detectIdType(l) === "steam_url" ? extractSteam64FromUrl(l) : l));
+
+    const newSlots = Array(totalSlots).fill("");
+    for (let i = 0; i < Math.min(lines.length, totalSlots); i++) {
+      newSlots[i] = lines[i];
+    }
+    setSlots(newSlots);
+    setBulkMode(false);
+    setBulkText("");
+    if (lines.length > totalSlots) {
+      toast.error(`You have ${totalSlots} slots but pasted ${lines.length} IDs. Only the first ${totalSlots} were kept.`);
     }
   }
 
@@ -412,6 +322,7 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
       });
       toast.success("Whitelist saved!");
       setBaseline([...slots]);
+      queryClient.invalidateQueries({ queryKey: ["my-whitelists"] });
     } catch {
       toast.error("Failed to save whitelist");
     } finally {
@@ -422,112 +333,133 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>{data.whitelist_name}</CardTitle>
-          {data.tier_name && (
-            <Badge
-              variant="secondary"
-              style={{
-                background: "color-mix(in srgb, var(--accent-primary) 15%, transparent)",
-                color: "var(--accent-primary)",
-                border: "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
-              }}
-            >
-              {data.tier_name}
-            </Badge>
-          )}
-          {data.status && (
-            <StatusBadge status={data.status} expiresAt={data.expires_at} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {!hideTitle && <CardTitle className="text-base">{data.whitelist_name}</CardTitle>}
+            {data.tier_name && (
+              <Badge
+                variant="secondary"
+                style={{
+                  background: "color-mix(in srgb, var(--accent-primary) 15%, transparent)",
+                  color: "var(--accent-primary)",
+                  border: "1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)",
+                }}
+              >
+                {data.tier_name}
+              </Badge>
+            )}
+            {data.expires_at && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                {formatExpiry(data.expires_at)}
+              </span>
+            )}
+          </div>
+          <span className="text-sm text-muted-foreground">{usedSlots} / {totalSlots} slots</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Instructions */}
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-1.5">
+          <p className="text-sm font-medium">How to add your IDs</p>
+          <p className="text-xs text-muted-foreground">
+            Paste one ID per slot. We accept:
+          </p>
+          <ul className="text-xs text-muted-foreground space-y-0.5 pl-4 list-disc">
+            <li><strong>Steam64 ID</strong> — 17-digit number starting with 7656 (e.g. <code className="bg-muted px-1 rounded">76561198012345678</code>)</li>
+            <li><strong>Steam Profile URL</strong> — steamcommunity.com/profiles/... (auto-converted)</li>
+            <li><strong>EOS ID</strong> — 32-character hex string from Epic Online Services</li>
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            After adding your ID, verify it using <code className="bg-muted px-1 rounded">/verify</code> in Discord or click &quot;Not Linked&quot; next to the ID.
+          </p>
+        </div>
+
+        {/* Bulk paste / Clear all toolbar */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setBulkMode(!bulkMode); setBulkText(slots.filter(Boolean).join("\n")); }}
+          >
+            <ClipboardPaste className="mr-1.5 h-3.5 w-3.5" />
+            {bulkMode ? "Cancel Bulk" : "Bulk Paste"}
+          </Button>
+          {usedSlots > 0 && (
+            <Button variant="outline" size="sm" onClick={handleClearAll}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Clear All
+            </Button>
           )}
         </div>
-        <CardDescription className="flex flex-wrap items-center gap-3 pt-1">
-          <span>{usedSlots} / {totalSlots} slot{totalSlots !== 1 ? "s" : ""} used</span>
-          {data.expires_at && (
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {formatExpiry(data.expires_at)}
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="text-xs text-muted-foreground pb-1">
-          Paste your Steam64 ID, EOS ID, or Steam profile URL. To find your Steam64 ID, visit your Steam profile and copy the number from the URL (e.g. steamcommunity.com/profiles/<strong>76561198012345678</strong>).
-        </p>
-        {slots.map((val, i) => {
-          const status = getSlotStatus(val);
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <span className="w-12 text-right text-xs text-muted-foreground">
-                Slot {i + 1}
-              </span>
-              <Input
-                value={val}
-                onChange={(e) => updateSlot(i, e.target.value)}
-                onBlur={() => handleBlur(i)}
-                placeholder="Paste Steam64, EOS ID, or Steam profile URL"
-                className={!status.valid ? "border-destructive" : ""}
-              />
-              {val && (
-                <Badge
-                  variant="outline"
-                  className={
-                    status.type === "Steam64"
-                      ? "text-emerald-400 border-emerald-500/30"
-                      : status.type === "EOS"
-                      ? "text-blue-400 border-blue-500/30"
-                      : status.type === "Invalid"
-                      ? "text-red-400 border-red-500/30"
-                      : "text-violet-400 border-violet-500/30"
-                  }
-                >
-                  {status.type}
-                </Badge>
-              )}
-              {val && (() => {
-                const linkSource = data.linked_ids?.[val] || data.linked_ids?.[val.toLowerCase()];
-                const isLinked = !!linkSource ||
-                  (data.verified_steam_ids ?? []).includes(val) ||
-                  (data.verified_steam_ids ?? []).includes(val.toLowerCase()) ||
-                  (data.verified_eos_ids ?? []).includes(val) ||
-                  (data.verified_eos_ids ?? []).includes(val.toLowerCase());
 
-                if (isLinked) {
-                  const label = linkSource === "discord" ? "Linked via Discord"
-                    : linkSource === "steam" ? "Linked via Steam"
-                    : linkSource === "bridge" ? "Linked via Server"
-                    : "Linked";
-                  return (
-                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1">
+        {/* Bulk paste mode */}
+        {bulkMode ? (
+          <div className="space-y-2">
+            <Textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              placeholder={"Paste all your IDs here, one per line or comma-separated.\n\nExample:\n76561198012345678\n76561198087654321\nabc123def456..."}
+              rows={Math.min(Math.max(totalSlots, 4), 12)}
+              className="font-mono text-xs"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleBulkApply}>
+                <Zap className="mr-1.5 h-3.5 w-3.5" />
+                Apply ({bulkText.split(/[,\n\r]+/).filter((l) => l.trim()).length} IDs)
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setBulkMode(false)}>Cancel</Button>
+            </div>
+          </div>
+        ) : (
+          /* Individual slot inputs */
+          <div className="space-y-1.5">
+            {slots.map((val, i) => {
+              const status = getSlotStatus(val);
+              const linkSource = val ? (data.linked_ids?.[val] || data.linked_ids?.[val.toLowerCase()]) : undefined;
+              const isLinked = val ? (!!linkSource ||
+                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val) ||
+                (data.verified_steam_ids ?? []).concat(data.verified_eos_ids ?? []).includes(val.toLowerCase())
+              ) : false;
+
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-8 text-right text-xs text-muted-foreground shrink-0">{i + 1}</span>
+                  <Input
+                    value={val}
+                    onChange={(e) => updateSlot(i, e.target.value)}
+                    onBlur={() => handleBlur(i)}
+                    placeholder="Steam64 ID, EOS ID, or Steam profile URL"
+                    className={`text-sm ${!status.valid ? "border-destructive" : ""}`}
+                  />
+                  {val && isLinked && (
+                    <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 gap-1 text-[10px]">
                       <BadgeCheck className="h-3 w-3" />
-                      {label}
+                      Linked
                     </Badge>
-                  );
-                }
-                if (status.type === "Steam64") {
-                  return (
-                    <a
-                      href="/api/steam/verify"
-                      className="shrink-0"
-                    >
-                      <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 cursor-pointer hover:bg-yellow-500/10">
-                        Not Linked — Click to verify
+                  )}
+                  {val && !isLinked && status.type === "Steam64" && (
+                    <a href="/api/steam/verify" className="shrink-0">
+                      <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 cursor-pointer hover:bg-yellow-500/10 text-[10px]">
+                        Not Linked
                       </Badge>
                     </a>
-                  );
-                }
-                if (status.type === "EOS") {
-                  return (
-                    <Badge variant="outline" className="shrink-0 text-muted-foreground border-white/10">
-                      Auto-links in-game
+                  )}
+                  {val && !isLinked && status.type === "EOS" && (
+                    <Badge variant="outline" className="shrink-0 text-muted-foreground border-white/10 text-[10px]">
+                      In-game
                     </Badge>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-          );
-        })}
+                  )}
+                  {val && !status.valid && (
+                    <Badge variant="outline" className="shrink-0 text-red-400 border-red-500/30 text-[10px]">
+                      Invalid
+                    </Badge>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
       <CardFooter>
         <Button
@@ -537,9 +469,124 @@ function WhitelistCard({ data }: { data: MyWhitelistData }) {
           style={{ background: "var(--accent-primary)" }}
         >
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving..." : "Save Changes"}
         </Button>
       </CardFooter>
     </Card>
+  );
+}
+
+// ── Manual Roster card (read-only) ──────────────────────────────────────────
+
+function ManualRosterCard({ data }: { data: MyWhitelistData }) {
+  const allIds = [...(data.steam_ids ?? []), ...(data.eos_ids ?? [])];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          {data.category_name && (
+            <Badge variant="outline" className="gap-1">
+              <Tag className="h-3 w-3" />
+              {data.category_name}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {allIds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No identifiers on file. Contact an admin to add your Steam ID.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {(data.steam_ids ?? []).map((id) => {
+              const isLinked = !!(data.linked_ids?.[id]) || (data.verified_steam_ids ?? []).includes(id);
+              return (
+                <div key={id} className="flex items-center gap-2 text-sm">
+                  <code className="text-xs text-muted-foreground">{id}</code>
+                  <Badge variant="outline" className={`text-[10px] ${isLinked ? "text-emerald-400 border-emerald-500/30" : "text-yellow-400 border-yellow-500/30"}`}>
+                    {isLinked ? "Linked" : "Not Linked"}
+                  </Badge>
+                </div>
+              );
+            })}
+            {(data.eos_ids ?? []).map((id) => (
+              <div key={id} className="flex items-center gap-2 text-sm">
+                <code className="text-xs text-muted-foreground">{id}</code>
+                <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-500/30">EOS</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          Managed by server admins. Contact them to update your IDs.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Main page ───────────────────────────────────────────────────────────────
+
+export default function MyWhitelistPage() {
+  const { activeGuild } = useGuild();
+  const { data, isLoading, error } = useMyWhitelists(activeGuild?.id);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Unable to load your whitelist data</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Please try again later or contact{" "}
+          {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} for help.
+        </p>
+      </div>
+    );
+  }
+
+  const { profile, whitelists } = data;
+  const hideTitle = whitelists.filter((wl) => !wl.is_manual).length <= 1;
+
+  if (whitelists.length === 0) {
+    return (
+      <div className="space-y-6">
+        {activeGuild && <ProfileCard profile={profile} guild={activeGuild} />}
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Shield className="mb-4 h-12 w-12 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">You don&apos;t have whitelist access</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Contact{" "}
+            {activeGuild ? <strong>{activeGuild.name}</strong> : "a server administrator"} to get whitelisted.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Suspense fallback={null}><SteamVerifyToast /></Suspense>
+
+      {/* Profile Card */}
+      {activeGuild && <ProfileCard profile={profile} guild={activeGuild} />}
+
+      {/* Whitelist Cards */}
+      {whitelists.map((wl) =>
+        wl.is_manual ? (
+          <ManualRosterCard key={wl.whitelist_slug} data={wl} />
+        ) : (
+          <WhitelistCard key={wl.whitelist_slug} data={wl} hideTitle={hideTitle} />
+        )
+      )}
+    </div>
   );
 }
