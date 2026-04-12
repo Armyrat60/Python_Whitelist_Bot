@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RotateCcw, Clock, UserRound } from "lucide-react";
+import { Trash2, Clock, UserRound } from "lucide-react";
+import { useIsAdmin } from "@/hooks/use-session";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -71,15 +72,18 @@ export function RoleHistoryTab({ whitelists }: { whitelists: { slug: string; nam
 
   const entries = data?.users ?? [];
 
-  async function handleRestore(entry: RoleLossEntry) {
+  const isAdmin = useIsAdmin();
+
+  async function handleDelete(entry: RoleLossEntry) {
+    if (!confirm(`Permanently delete ${entry.discord_name} from ${entry.whitelist_name}? This cannot be undone.`)) return;
     try {
-      await api.patch(`/api/admin/users/${entry.discord_id}/${entry.whitelist_slug}`, { status: "active" });
-      toast.success(`Restored ${entry.discord_name}`);
+      await api.delete(`/api/admin/users/${entry.discord_id}/${entry.whitelist_slug}`);
+      toast.success(`Deleted ${entry.discord_name}`);
       queryClient.invalidateQueries({ queryKey: ["role-loss"] });
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
     } catch {
-      toast.error("Failed to restore user");
+      toast.error("Failed to delete user");
     }
   }
 
@@ -159,15 +163,17 @@ export function RoleHistoryTab({ whitelists }: { whitelists: { slug: string; nam
                   </span>
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
-                onClick={() => handleRestore(entry)}
-              >
-                <RotateCcw className="mr-1.5 h-3 w-3" />
-                Restore
-              </Button>
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                  onClick={() => handleDelete(entry)}
+                >
+                  <Trash2 className="mr-1.5 h-3 w-3" />
+                  Delete
+                </Button>
+              )}
             </div>
           ))}
         </div>
