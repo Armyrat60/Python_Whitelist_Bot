@@ -79,18 +79,28 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
 
       if (slots <= 0) slots = wl.defaultSlotLimit
 
-      // Get existing identifiers
+      // Get existing identifiers — include both whitelist-specific and global (NULL whitelist_id) links
       const identifiers = await app.prisma.whitelistIdentifier.findMany({
-        where: { guildId, discordId, whitelistId: wl.id },
+        where: { guildId, discordId, OR: [{ whitelistId: wl.id }, { whitelistId: null }] },
       })
-      const steamIds = identifiers.filter((i) => i.idType === "steam64").map((i) => i.idValue)
-      const eosIds = identifiers.filter((i) => i.idType === "eosid").map((i) => i.idValue)
-      const verifiedSteamIds = identifiers.filter((i) => i.idType === "steam64" && i.isVerified).map((i) => i.idValue)
-      const verifiedEosIds = identifiers.filter((i) => i.idType === "eosid" && i.isVerified).map((i) => i.idValue)
+      // Deduplicate: if same ID exists both globally and per-whitelist, keep the per-whitelist one
+      const deduped = new Map<string, typeof identifiers[number]>()
+      for (const ident of identifiers) {
+        const key = `${ident.idType}:${ident.idValue}`
+        const existing = deduped.get(key)
+        if (!existing || (ident.whitelistId !== null)) {
+          deduped.set(key, ident)
+        }
+      }
+      const dedupedIdentifiers = Array.from(deduped.values())
+      const steamIds = dedupedIdentifiers.filter((i) => i.idType === "steam64").map((i) => i.idValue)
+      const eosIds = dedupedIdentifiers.filter((i) => i.idType === "eosid").map((i) => i.idValue)
+      const verifiedSteamIds = dedupedIdentifiers.filter((i) => i.idType === "steam64" && i.isVerified).map((i) => i.idValue)
+      const verifiedEosIds = dedupedIdentifiers.filter((i) => i.idType === "eosid" && i.isVerified).map((i) => i.idValue)
 
       // Build linking status per identifier
       const linkedIds: Record<string, string> = {}
-      for (const ident of identifiers) {
+      for (const ident of dedupedIdentifiers) {
         if (ident.isVerified) {
           linkedIds[ident.idValue] = ident.verificationSource === "discord_connection"
             ? "discord" : ident.verificationSource === "steam_oauth"
@@ -112,8 +122,10 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         tierName = userRecord.lastPlanName ?? null
       }
 
-      // Only show if user has tier access, existing entries, or is on a manual roster
-      if (tierName || identifiers.length > 0 || userRecord) {
+      // Only show if user has tier access, existing IDs, or an active record
+      // Skip inactive records with no IDs (e.g. stale imports)
+      const hasContent = dedupedIdentifiers.length > 0 || (userRecord && userRecord.status === "active")
+      if (tierName || hasContent) {
         results.push({
           whitelist_slug: wl.slug,
           whitelist_name: wl.name,
