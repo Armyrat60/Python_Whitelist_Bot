@@ -245,68 +245,113 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      {/* ---- Stats Banner ---- */}
+      {/* ---- Compact Stats ---- */}
       {statsData && (() => {
         const slotsGranted = Object.values(statsData.per_type).reduce((sum, wl) => sum + wl.slots_used, 0);
         const totalWithRoles = statsData.total_active_users + (gapData?.total ?? 0);
-        const stats = [
-          { label: "Active Members", value: statsData.total_active_users, sub: `of ${totalWithRoles} with roles`, color: "text-emerald-400" },
-          { label: "Slots Granted", value: slotsGranted, sub: "total across all roles", color: "text-white/80" },
-          { label: "IDs Submitted", value: statsData.total_identifiers, sub: `${slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0}% fill rate · all users`, color: "var(--accent-primary)" },
-        ];
+        const fillRate = slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0;
         return (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {stats.map(({ label, value, sub, color }) => (
-              <div key={label} className="flex flex-col gap-0.5 rounded-xl border border-white/[0.10] bg-white/[0.02] px-4 py-3">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
-                <span className="text-2xl font-semibold tabular-nums" style={{ color }}>{value}</span>
-                <span className="text-[11px] text-muted-foreground/50">{sub}</span>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-sm">
+            <span><strong className="text-emerald-400 tabular-nums">{statsData.total_active_users}</strong> <span className="text-muted-foreground">registered</span></span>
+            <span><strong className="tabular-nums">{totalWithRoles}</strong> <span className="text-muted-foreground">with roles</span></span>
+            <span><strong className="tabular-nums">{slotsGranted}</strong> <span className="text-muted-foreground">slots</span></span>
+            <span><strong className="tabular-nums">{statsData.total_identifiers}</strong> <span className="text-muted-foreground">IDs</span> <span className="text-muted-foreground/50">({fillRate}%)</span></span>
+            {gapData && gapData.total > 0 && (
+              <span><strong className="text-yellow-400 tabular-nums">{gapData.total}</strong> <span className="text-muted-foreground">not registered</span></span>
+            )}
           </div>
         );
       })()}
 
-      {/* ---- Tabs (roles inline + Removed at end) ---- */}
-      <div className="flex flex-wrap items-center gap-1">
-        <button
-          onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: "" })); }}
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            activeTab === "members" && !filters.role_name
-              ? "bg-white/[0.08] text-white"
-              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-          )}
-        >
-          <Users className="h-3.5 w-3.5" />
-          All
-        </button>
-        {roleOptions.map(r => (
-          <button
-            key={r.value}
-            onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              activeTab === "members" && filters.role_name === r.value
-                ? "bg-white/[0.08] text-white"
-                : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+      {/* ---- Role Tabs ---- */}
+      {(() => {
+        const MAX_VISIBLE = 6;
+        const visibleRoles = roleOptions.slice(0, MAX_VISIBLE);
+        const overflowRoles = roleOptions.slice(MAX_VISIBLE);
+        const roleCountMap = new Map<string, number>();
+        for (const r of roleStatsData?.stats ?? []) {
+          roleCountMap.set(r.role_name, (roleCountMap.get(r.role_name) ?? 0) + (r.registered_count ?? 0));
+        }
+        const [showMoreRoles, setShowMoreRoles] = [showGapReport, setShowGapReport]; // reuse state
+
+        return (
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: "" })); }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  activeTab === "members" && !filters.role_name
+                    ? "bg-white/[0.08] text-white"
+                    : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+                )}
+              >
+                <Users className="h-3.5 w-3.5" />
+                All
+              </button>
+              {visibleRoles.map(r => {
+                const count = roleCountMap.get(r.value) ?? 0;
+                return (
+                  <button
+                    key={r.value}
+                    onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      activeTab === "members" && filters.role_name === r.value
+                        ? "bg-white/[0.08] text-white"
+                        : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+                    )}
+                  >
+                    {r.label} {count > 0 && <span className="ml-0.5 text-muted-foreground/50">({count})</span>}
+                  </button>
+                );
+              })}
+              {overflowRoles.length > 0 && (
+                <button
+                  onClick={() => setShowMoreRoles(!showMoreRoles)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+                >
+                  +{overflowRoles.length} more
+                </button>
+              )}
+              <div className="mx-1 h-4 w-px shrink-0 bg-white/[0.10]" />
+              <button
+                onClick={() => setActiveTab("removed")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  activeTab === "removed"
+                    ? "bg-white/[0.08] text-white"
+                    : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+                )}
+              >
+                <UserMinus className="h-3.5 w-3.5" />
+                Removed
+              </button>
+            </div>
+            {showMoreRoles && overflowRoles.length > 0 && (
+              <div className="flex flex-wrap gap-1 pl-1">
+                {overflowRoles.map(r => {
+                  const count = roleCountMap.get(r.value) ?? 0;
+                  return (
+                    <button
+                      key={r.value}
+                      onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                        activeTab === "members" && filters.role_name === r.value
+                          ? "bg-white/[0.08] text-white"
+                          : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+                      )}
+                    >
+                      {r.label} {count > 0 && <span className="ml-0.5 text-muted-foreground/50">({count})</span>}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          >{r.label}</button>
-        ))}
-        <div className="mx-1 h-4 w-px shrink-0 bg-white/[0.10]" />
-        <button
-          onClick={() => setActiveTab("removed")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            activeTab === "removed"
-              ? "bg-white/[0.08] text-white"
-              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-          )}
-        >
-          <UserMinus className="h-3.5 w-3.5" />
-          Removed
-        </button>
-      </div>
+          </div>
+        );
+      })()}
 
       {activeTab === "removed" && <RoleHistoryTab whitelists={whitelists ?? []} />}
       {activeTab !== "removed" && <>
@@ -536,42 +581,7 @@ export default function UsersPage() {
         );
       })()}
 
-      {/* ---- Unregistered Role Holders ---- */}
-      {gapData && gapData.total > 0 && (
-        <div id="gap-section" className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                Not Registered
-                <Badge variant="outline" className="text-yellow-400 border-yellow-500/30">{gapData.total}</Badge>
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                These members have a whitelist role but haven't submitted their IDs yet
-              </p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowGapReport(!showGapReport)}>
-              {showGapReport ? "Hide" : "Show"}
-            </Button>
-          </div>
-          {showGapReport && (
-            <div className="max-h-96 overflow-y-auto space-y-1">
-              {gapData.members.map((m) => (
-                <div key={m.discord_id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-yellow-500/10">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{m.display_name || m.username}</span>
-                    <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 text-[10px]">Not Registered</Badge>
-                  </div>
-                  <div className="flex gap-1">
-                    {m.whitelisted_roles.map((r) => (
-                      <Badge key={r} variant="outline" className="text-[10px] border-white/10 text-muted-foreground">{r}</Badge>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Gap report data loaded in background for stats — no separate section */}
 
       {/* ---- Content ---- */}
       {isLoading ? (
@@ -901,49 +911,37 @@ function ListRowDetail({
         {/* Slot details */}
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">
-            Slot Details
+            IDs ({allIds.length}/{slotLimit})
           </p>
-          {Array.from({ length: slotLimit }).map((_, idx) => {
-            const id = allIds[idx];
-            const isSteam = idx < (user.steam_ids?.length ?? 0);
-            const resolvedName =
-              isSteam && id ? steamNames[id] : undefined;
-            const isOwner = idx === 0;
-            return (
-              <div
-                key={idx}
-                className="flex items-center gap-2 text-xs"
-              >
-                <span className="w-14 shrink-0 font-mono text-muted-foreground">
-                  Slot {idx + 1}:
-                </span>
-                {id ? (
-                  <>
-                    <span className="min-w-0 truncate font-mono">
-                      {id}
-                      {resolvedName && (
-                        <span className="ml-1 text-muted-foreground">
-                          ({resolvedName})
-                        </span>
-                      )}
-                    </span>
-                    {isOwner && (
-                      <Badge
-                        variant="secondary"
-                        className="ml-auto shrink-0 text-[10px]"
-                      >
-                        owner
-                      </Badge>
+          {allIds.length > 0 ? (
+            <>
+              {allIds.map((id, idx) => {
+                const isSteam = idx < (user.steam_ids?.length ?? 0);
+                const resolvedName = isSteam && id ? steamNames[id] : undefined;
+                return (
+                  <div key={idx} className="flex items-center gap-2 text-xs">
+                    <span className="w-8 shrink-0 font-mono text-muted-foreground">{idx + 1}.</span>
+                    <span className="min-w-0 truncate font-mono">{id}</span>
+                    {resolvedName && (
+                      <span className="text-muted-foreground truncate">({resolvedName})</span>
                     )}
-                  </>
-                ) : (
-                  <span className="italic text-muted-foreground/50">
-                    — empty —
-                  </span>
-                )}
-              </div>
-            );
-          })}
+                    <Badge variant="outline" className="ml-auto shrink-0 text-[9px] py-0 h-4">
+                      {isSteam ? "Steam" : "EOS"}
+                    </Badge>
+                  </div>
+                );
+              })}
+              {slotLimit > allIds.length && (
+                <p className="text-xs text-muted-foreground/50 italic">
+                  {slotLimit - allIds.length} empty slot{slotLimit - allIds.length !== 1 ? "s" : ""} remaining
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground/50 italic">
+              No IDs submitted — {slotLimit} slot{slotLimit !== 1 ? "s" : ""} available
+            </p>
+          )}
         </div>
 
         {/* Meta info */}
