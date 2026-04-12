@@ -123,7 +123,9 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       }
 
       // Only show if user has tier access, existing IDs, or an active record
-      // Skip inactive records with no IDs (e.g. stale imports)
+      // Skip manual/imported whitelists that are inactive — these are stale imports
+      // and the IDs are already visible on the Discord whitelist card if linked
+      if (wl.isManual && userRecord?.status !== "active") continue
       const hasContent = dedupedIdentifiers.length > 0 || (userRecord && userRecord.status === "active")
       if (tierName || hasContent) {
         results.push({
