@@ -129,11 +129,25 @@ export default async function panelRoutes(app: FastifyInstance) {
     if (body.enabled            !== undefined) data["enabled"]          = body.enabled
     if (body.whitelist_id       !== undefined) data["whitelistId"]      = body.whitelist_id
     if (body.show_role_mentions !== undefined) data["showRoleMentions"] = body.show_role_mentions
+    // Track if channel is changing so we can clean up the old message
+    let channelChanged = false
     if (body.channel_id         !== undefined) {
-      data["channelId"] = body.channel_id ? BigInt(body.channel_id) : null
+      const newChannelId = body.channel_id ? BigInt(body.channel_id) : null
+      if (existing.channelId !== newChannelId) {
+        channelChanged = true
+      }
+      data["channelId"] = newChannelId
     }
     if (body.log_channel_id     !== undefined) {
       data["logChannelId"] = body.log_channel_id ? BigInt(body.log_channel_id) : null
+    }
+
+    // If channel changed and there's an old message, queue its deletion and clear the message ID
+    if (channelChanged && existing.channelId && existing.panelMessageId) {
+      await queueDelete(app, guildId, panelId, existing.channelId, existing.panelMessageId)
+      data["panelMessageId"] = null  // Force fresh post in the new channel
+      data["lastPushStatus"] = null  // Clear stale status
+      data["lastPushError"] = null
     }
 
     await prisma.panel.update({ where: { id: panelId }, data })
