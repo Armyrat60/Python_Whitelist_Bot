@@ -169,7 +169,7 @@ export default async function playerRoutes(app: FastifyInstance) {
       }),
       prisma.squadPlayer.findMany({
         where: { guildId, discordId },
-        select: { steamId: true, lastSeenName: true, serverName: true, lastSeenAt: true },
+        select: { steamId: true, eosId: true, lastSeenName: true, serverName: true, lastSeenAt: true },
         orderBy: { lastSeenAt: "desc" },
       }),
     ])
