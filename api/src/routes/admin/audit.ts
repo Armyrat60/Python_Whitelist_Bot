@@ -45,7 +45,7 @@ export default async function auditRoutes(app: FastifyInstance) {
 
     const [activeCount, identCount, recentAudit, orphanCount, whitelists, totalRegistered, disabledRoleLostCount, noAccessCount, linkedCount] = await Promise.all([
       prisma.whitelistUser.count({ where: { guildId, status: "active" } }),
-      prisma.whitelistIdentifier.count({ where: { guildId } }),
+      prisma.whitelistIdentifier.count({ where: { guildId, discordId: { gt: 0n } } }),
       prisma.auditLog.count({
         where: { guildId, createdAt: { gte: new Date(Date.now() - 7 * 86400000) } },
       }),
