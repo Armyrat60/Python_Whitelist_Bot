@@ -215,9 +215,9 @@ class WhitelistPanelView(discord.ui.View):
         self.add_item(manage_wl_btn)
 
         verify_btn = discord.ui.Button(
-            label="Verify ID",
+            label="Link ID",
             style=discord.ButtonStyle.primary,
-            emoji="✅",
+            emoji="🔗",
             custom_id=f"panel:verify:{whitelist_type}",
             row=0,
         )
@@ -500,23 +500,24 @@ async def _panel_verify_callback(bot, whitelist_type: str, whitelist_id: int, in
 
         # No IDs at all — offer direct verification options instead of redirecting
         embed = discord.Embed(
-            title="Verify Your Identity",
+            title="Link Your Game Account",
             description=(
-                "Link your game account to your Discord profile.\n\n"
+                "Connect your Steam or EOS account to your Discord profile so we can "
+                "identify you in-game. This is required for whitelist features and player stats.\n\n"
                 "**Option 1 — Steam Login** (recommended)\n"
-                "Click the button below to log in with Steam. This automatically links your Steam ID.\n\n"
+                "Click the button below to log in with Steam. This instantly links your Steam ID.\n\n"
                 "**Option 2 — Discord Connection**\n"
-                "Add Steam to your Discord profile under **Settings > Connections**. "
-                "It will be linked automatically next time you visit the dashboard.\n\n"
+                "Add Steam to your Discord under **User Settings > Connections > Steam**. "
+                "It links automatically next time you visit the dashboard.\n\n"
                 "**Option 3 — Manual**\n"
-                "Click **Manage Whitelist** to paste your Steam64 or EOS ID manually."
+                "Click **Manage Whitelist** to paste your Steam64 or EOS ID, then come back here to link it."
             ),
             color=discord.Color.blurple(),
         )
         view = discord.ui.View(timeout=120)
         if WEB_BASE_URL:
             view.add_item(discord.ui.Button(
-                label="Verify via Steam Login",
+                label="Link via Steam Login",
                 url=f"{WEB_BASE_URL}/api/steam/verify",
                 style=discord.ButtonStyle.link,
             ))
@@ -528,7 +529,7 @@ async def _panel_verify_callback(bot, whitelist_type: str, whitelist_id: int, in
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         return
 
-    embed = discord.Embed(title="Verify Your IDs", color=discord.Color.blurple())
+    embed = discord.Embed(title="Link Your IDs", color=discord.Color.blurple())
 
     if unverified_steam:
         verify_url = f"{WEB_BASE_URL}/api/steam/verify" if WEB_BASE_URL else ""
@@ -725,7 +726,7 @@ class WhitelistCog(commands.Cog):
             await interaction.response.send_message("Could not post panel. Check bot permissions.", ephemeral=True)
 
 
-    @app_commands.command(name="verify", description="Verify your Steam or EOS IDs to link them to your account")
+    @app_commands.command(name="verify", description="Link your Steam or EOS account to your Discord profile")
     async def verify_cmd(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         discord_id = interaction.user.id
@@ -755,8 +756,8 @@ class WhitelistCog(commands.Cog):
                 all_ids.extend(await self.bot.db.get_identifiers(guild_id, discord_id, wl["id"]))
             if all_ids or global_ids:
                 embed = discord.Embed(
-                    title="All IDs Verified",
-                    description="All your Steam and EOS IDs are already verified!",
+                    title="All IDs Linked",
+                    description="All your Steam and EOS IDs are already linked to your account!",
                     color=discord.Color.green(),
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -813,7 +814,7 @@ class _VerifyView(discord.ui.View):
         from bot.config import WEB_BASE_URL
         if WEB_BASE_URL:
             self.add_item(discord.ui.Button(
-                label="Verify via Steam Login",
+                label="Link via Steam Login",
                 url=f"{WEB_BASE_URL}/api/steam/verify",
                 style=discord.ButtonStyle.link,
                 row=0,
