@@ -46,7 +46,8 @@ async def _build_tier_lines(db: "Database", guild_id: int, panel: dict, wl: dict
     wl_roles = await db.get_panel_roles(guild_id, panel_id) if panel_id else []
     wl_roles = sorted(
         [r for r in wl_roles if bool(r[6])],  # r[6] = is_active
-        key=lambda r: r[3],  # sort by slot_limit ascending
+        key=lambda r: r[3],  # sort by slot_limit
+        reverse=True,  # largest first
     )
     for r in wl_roles:
         slots = r[3]
