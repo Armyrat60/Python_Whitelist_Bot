@@ -151,7 +151,7 @@ export default function PanelsTab() {
   }
 
   const channelsList = channels ?? [];
-  const whitelistsList = whitelists ?? [];
+  const whitelistsList = (whitelists ?? []).filter((wl) => !wl.is_manual);
 
   return (
     <div className="space-y-4">

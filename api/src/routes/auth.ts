@@ -257,17 +257,25 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
               where: { guildId, steamId: steamConn.id, discordId: null },
               data: { discordId },
             })
-            // Send one DM notification per login session (first new guild only)
+            // Send one DM notification — but only if we haven't already notified this user+steam combo
             if (!notified) {
-              notified = true
-              await app.prisma.$executeRaw`
-                INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
-                VALUES (${guildId}, 'steam_account_linked', ${JSON.stringify({
-                  discord_id: discordUser.id,
-                  steam_id: steamConn.id,
-                  username: discordUser.username,
-                })}::jsonb, NOW())
-              `.catch(() => {}) // non-fatal
+              const alreadySent = await app.prisma.$queryRaw<{ count: bigint }[]>`
+                SELECT COUNT(*)::bigint AS count FROM seeding_notifications
+                WHERE event_type = 'steam_account_linked'
+                  AND payload->>'discord_id' = ${discordUser.id}
+                  AND payload->>'steam_id' = ${steamConn.id}
+              `.catch(() => [{ count: 0n }])
+              if (!alreadySent[0]?.count || alreadySent[0].count === 0n) {
+                notified = true
+                await app.prisma.$executeRaw`
+                  INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
+                  VALUES (${guildId}, 'steam_account_linked', ${JSON.stringify({
+                    discord_id: discordUser.id,
+                    steam_id: steamConn.id,
+                    username: discordUser.username,
+                  })}::jsonb, NOW())
+                `.catch(() => {}) // non-fatal
+              }
             }
           }
           app.log.info(`Auto-linked Steam ${steamConn.id} for Discord user ${discordUser.id}`)
