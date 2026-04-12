@@ -23,6 +23,7 @@ class GeneralCog(commands.Cog):
             name="👤 Member Commands",
             value=(
                 "`/whitelist` — Submit or update your Steam64 / EOS IDs\n"
+                "`/verify` — Verify your Steam or EOS ID (Steam login or in-game code)\n"
                 "`/my_whitelist` — View your current whitelist entries\n"
                 "`/status` — Check bot and whitelist status\n"
                 "`/help` — Show this message\n"

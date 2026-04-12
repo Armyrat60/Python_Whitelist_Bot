@@ -65,6 +65,7 @@ def _build_description(tier_lines: list[str], base_url: str, domain: str) -> str
         desc += "**Available Tiers:**\n" + "\n".join(tier_lines) + "\n\n"
     desc += (
         "🛡️ **Manage Whitelist** — View your slots and IDs, or register for the first time\n"
+        "✅ **Verify ID** — Verify your Steam or EOS ID to link it to your account\n"
         "⚙️ **Manager Tools** — Admin lookup and management *(mods only)*\n\n"
         f"🌐 [**{domain}**]({base_url})"
     )
@@ -129,6 +130,13 @@ def build_panel_components(wl_slug: str) -> list[dict]:
                     "label": "Manage Whitelist",
                     "emoji": {"name": "🛡️"},
                     "custom_id": f"panel:submit:{wl_slug}",
+                },
+                {
+                    "type": 2,  # BUTTON
+                    "style": 1,  # PRIMARY (blue)
+                    "label": "Verify ID",
+                    "emoji": {"name": "✅"},
+                    "custom_id": f"panel:verify:{wl_slug}",
                 },
                 {
                     "type": 2,  # BUTTON

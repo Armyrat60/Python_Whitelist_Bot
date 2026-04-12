@@ -13,6 +13,7 @@
  */
 
 import { io, Socket } from "socket.io-client"
+import { pool } from "./db.js"
 
 const STEAM64_RE = /^[0-9]{17}$/
 const EOSID_RE = /^[0-9a-fA-F]{32}$/
@@ -132,6 +133,20 @@ export function connect(
     // Only log every 5th attempt to avoid spam
     if (state.reconnectAttempts % 5 === 1) {
       console.error(`[seeding/squadjs] Connection error for guild ${guildId} server ${serverId} (attempt ${state.reconnectAttempts}): ${err.message}`)
+    }
+  })
+
+  // Listen for chat messages — used for in-game verification codes
+  socket.on("CHAT_MESSAGE", async (data: { steamID?: string; eosID?: string; name?: string; message?: string }) => {
+    if (!data?.message) return
+    const msg = data.message.trim().toUpperCase()
+    // Verification codes are exactly 6 chars, alphanumeric (no ambiguous chars)
+    if (!/^[A-Z0-9]{6}$/.test(msg)) return
+
+    try {
+      await handleVerificationCode(guildId, msg, data.steamID ?? null, data.eosID ?? null)
+    } catch (err) {
+      console.error(`[seeding/verify] Error processing code ${msg}:`, err)
     }
   })
 
@@ -339,4 +354,71 @@ export async function testConnection(
       resolve({ ok: false, message: `Connection failed: ${err.message}` })
     })
   })
+}
+
+/**
+ * Handle an in-game verification code from chat.
+ * Looks up the code in verification_tokens, marks it used,
+ * and updates the identifier as verified.
+ */
+async function handleVerificationCode(
+  guildId: string,
+  code: string,
+  steamId: string | null,
+  eosId: string | null,
+): Promise<void> {
+  const result = await pool.query<{
+    id: number
+    guild_id: string
+    discord_id: string
+    id_type: string
+    id_value: string
+    expires_at: Date
+    used: boolean
+  }>(
+    `SELECT id, guild_id::text, discord_id::text, id_type, id_value, expires_at, used
+     FROM verification_tokens WHERE code = $1`,
+    [code],
+  )
+
+  if (result.rows.length === 0) return
+  const token = result.rows[0]
+
+  if (token.used) return
+  if (new Date(token.expires_at) < new Date()) return
+  if (token.guild_id !== guildId) return
+
+  console.log(`[seeding/verify] Code ${code} matched for discord=${token.discord_id} id=${token.id_value}`)
+
+  await pool.query("UPDATE verification_tokens SET used = true WHERE id = $1", [token.id])
+
+  await pool.query(
+    `UPDATE whitelist_identifiers
+     SET is_verified = true, verification_source = 'in_game_code', updated_at = NOW()
+     WHERE guild_id = $1 AND discord_id = $2 AND id_type = $3 AND id_value = $4`,
+    [token.guild_id, token.discord_id, token.id_type, token.id_value],
+  )
+
+  if (steamId && eosId) {
+    await pool.query(
+      `UPDATE squad_players SET eos_id = $1 WHERE guild_id = $2 AND steam_id = $3`,
+      [eosId, token.guild_id, steamId],
+    ).catch(() => {})
+  }
+
+  await pool.query(
+    `INSERT INTO seeding_notifications (guild_id, event_type, payload, created_at)
+     VALUES ($1, 'id_verified', $2::jsonb, NOW())`,
+    [
+      token.guild_id,
+      JSON.stringify({
+        discord_id: token.discord_id,
+        id_type: token.id_type,
+        id_value: token.id_value,
+        method: "in_game_code",
+      }),
+    ],
+  ).catch(() => {})
+
+  console.log(`[seeding/verify] Verified ${token.id_type}=${token.id_value} for discord=${token.discord_id} via in-game code`)
 }

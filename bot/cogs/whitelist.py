@@ -214,6 +214,16 @@ class WhitelistPanelView(discord.ui.View):
         manage_wl_btn.callback = self._manage_whitelist_callback
         self.add_item(manage_wl_btn)
 
+        verify_btn = discord.ui.Button(
+            label="Verify ID",
+            style=discord.ButtonStyle.primary,
+            emoji="✅",
+            custom_id=f"panel:verify:{whitelist_type}",
+            row=0,
+        )
+        verify_btn.callback = self._verify_callback
+        self.add_item(verify_btn)
+
         manage_btn = discord.ui.Button(
             label="Manager Tools",
             style=discord.ButtonStyle.secondary,
@@ -448,6 +458,71 @@ class _EditIDsView(discord.ui.View):
         await interaction.response.send_message("All your IDs have been cleared.", ephemeral=True)
 
 
+    async def _verify_callback(self, interaction: discord.Interaction):
+        """Verify ID button on the panel — same flow as /verify command."""
+        guild_id = interaction.guild.id
+        discord_id = interaction.user.id
+
+        # Get identifiers for this whitelist
+        if self.whitelist_id:
+            ids = await self.bot.db.get_identifiers(guild_id, discord_id, self.whitelist_id)
+        else:
+            wl = await self.bot.db.get_whitelist_by_slug(guild_id, self.whitelist_type)
+            ids = await self.bot.db.get_identifiers(guild_id, discord_id, wl["id"]) if wl else []
+
+        # Also check global identifiers
+        global_ids = await self.bot.db.fetchall(
+            "SELECT id_type, id_value, is_verified FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id IS NULL",
+            (guild_id, discord_id),
+        )
+
+        unverified_steam = []
+        unverified_eos = []
+        for id_type, id_value, is_verified, *_ in ids:
+            if not is_verified:
+                if id_type == "steam64":
+                    unverified_steam.append(id_value)
+                elif id_type == "eosid":
+                    unverified_eos.append(id_value)
+        for row in global_ids:
+            if not row[2]:
+                if row[0] == "steam64":
+                    unverified_steam.append(row[1])
+                elif row[0] == "eosid":
+                    unverified_eos.append(row[1])
+
+        if not unverified_steam and not unverified_eos:
+            if ids or global_ids:
+                await interaction.response.send_message("All your IDs are already verified!", ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    "You haven't submitted any IDs yet. Click **Manage Whitelist** first to add your Steam or EOS ID.",
+                    ephemeral=True,
+                )
+            return
+
+        from bot.config import WEB_BASE_URL
+        embed = discord.Embed(title="Verify Your IDs", color=discord.Color.blurple())
+
+        if unverified_steam:
+            verify_url = f"{WEB_BASE_URL}/api/steam/verify" if WEB_BASE_URL else ""
+            embed.add_field(
+                name="Steam IDs",
+                value="\n".join(f"`{s}`" for s in unverified_steam) + (f"\n\n[Verify via Steam Login]({verify_url})" if verify_url else ""),
+                inline=False,
+            )
+        if unverified_eos:
+            embed.add_field(
+                name="EOS IDs",
+                value="\n".join(f"`{e}`" for e in unverified_eos) + "\n\nUse the button below to get an in-game verification code.",
+                inline=False,
+            )
+
+        eos_pairs = [("", v) for v in unverified_eos]
+        view = _VerifyView(self.bot, guild_id, discord_id, eos_pairs)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
 async def _panel_manage_callback(bot, whitelist_type: str, interaction: discord.Interaction):
     """Manager tools callback — standalone function called from WhitelistPanelView."""
     if not await bot.user_is_mod(interaction.guild.id, interaction.user):
@@ -622,6 +697,156 @@ class WhitelistCog(commands.Cog):
             await interaction.response.send_message(f"Panel ready: https://discord.com/channels/{interaction.guild.id}/{posted.channel.id}/{posted.id}", ephemeral=True)
         else:
             await interaction.response.send_message("Could not post panel. Check bot permissions.", ephemeral=True)
+
+
+    @app_commands.command(name="verify", description="Verify your Steam or EOS IDs to link them to your account")
+    async def verify_cmd(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        discord_id = interaction.user.id
+
+        # Get all whitelists and find unverified identifiers
+        whitelists = await self.bot.db.get_whitelists(guild_id)
+        unverified = []
+        for wl in whitelists:
+            ids = await self.bot.db.get_identifiers(guild_id, discord_id, wl["id"])
+            for id_type, id_value, is_verified, *_ in ids:
+                if not is_verified:
+                    unverified.append((wl["name"], id_type, id_value))
+
+        # Also check global identifiers (whitelist_id = NULL from auto-link)
+        global_ids = await self.bot.db.fetchall(
+            "SELECT id_type, id_value, is_verified FROM whitelist_identifiers WHERE guild_id=%s AND discord_id=%s AND whitelist_id IS NULL",
+            (guild_id, discord_id),
+        )
+        for row in global_ids:
+            if not row[2]:  # not verified
+                unverified.append(("Global", row[0], row[1]))
+
+        if not unverified:
+            # Check if they have any IDs at all
+            all_ids = []
+            for wl in whitelists:
+                all_ids.extend(await self.bot.db.get_identifiers(guild_id, discord_id, wl["id"]))
+            if all_ids or global_ids:
+                embed = discord.Embed(
+                    title="All IDs Verified",
+                    description="All your Steam and EOS IDs are already verified!",
+                    color=discord.Color.green(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                embed = discord.Embed(
+                    title="No IDs Found",
+                    description="You haven't submitted any Steam or EOS IDs yet.\nUse `/whitelist` or the whitelist panel to add your IDs first.",
+                    color=discord.Color.yellow(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        from bot.config import WEB_BASE_URL
+        embed = discord.Embed(
+            title="Verify Your IDs",
+            description="Choose how to verify your unverified IDs:",
+            color=discord.Color.blurple(),
+        )
+
+        steam_ids = [(wl, v) for wl, t, v in unverified if t == "steam64"]
+        eos_ids = [(wl, v) for wl, t, v in unverified if t == "eosid"]
+
+        if steam_ids:
+            verify_url = f"{WEB_BASE_URL}/api/steam/verify" if WEB_BASE_URL else ""
+            steam_lines = []
+            for wl_name, sid in steam_ids:
+                steam_lines.append(f"`{sid}`")
+            embed.add_field(
+                name="Steam IDs (Not Verified)",
+                value="\n".join(steam_lines) + (f"\n\n[Click here to verify via Steam Login]({verify_url})" if verify_url else "\nVisit the web dashboard to verify via Steam Login."),
+                inline=False,
+            )
+
+        if eos_ids:
+            embed.add_field(
+                name="EOS IDs (Not Verified)",
+                value="\n".join(f"`{v}`" for _, v in eos_ids) + "\n\nUse the **Verify In-Game** button below to get a temp code.\nType the code in any in-game chat to verify.",
+                inline=False,
+            )
+
+        view = _VerifyView(self.bot, guild_id, discord_id, eos_ids)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class _VerifyView(discord.ui.View):
+    """View with buttons for verification methods."""
+    def __init__(self, bot, guild_id: int, discord_id: int, eos_ids: list):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.discord_id = discord_id
+        self.eos_ids = eos_ids
+
+        from bot.config import WEB_BASE_URL
+        if WEB_BASE_URL:
+            self.add_item(discord.ui.Button(
+                label="Verify via Steam Login",
+                url=f"{WEB_BASE_URL}/api/steam/verify",
+                style=discord.ButtonStyle.link,
+                row=0,
+            ))
+
+        if eos_ids:
+            btn = discord.ui.Button(
+                label="Get In-Game Code",
+                style=discord.ButtonStyle.primary,
+                custom_id="verify_ingame_code",
+                row=0,
+            )
+            btn.callback = self._generate_code
+            self.add_item(btn)
+
+    async def _generate_code(self, interaction: discord.Interaction):
+        import aiohttp
+        from bot.config import WEB_INTERNAL_URL, BOT_INTERNAL_SECRET
+
+        if not self.eos_ids:
+            await interaction.response.send_message("No EOS IDs to verify.", ephemeral=True)
+            return
+
+        # Generate a code for the first unverified EOS ID
+        wl_name, eos_id = self.eos_ids[0]
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{WEB_INTERNAL_URL}/api/internal/verify/create-code",
+                    json={
+                        "guild_id": str(self.guild_id),
+                        "discord_id": str(self.discord_id),
+                        "id_type": "eosid",
+                        "id_value": eos_id,
+                    },
+                    headers={"x-bot-secret": BOT_INTERNAL_SECRET},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status != 200:
+                        await interaction.response.send_message("Failed to generate code. Try again later.", ephemeral=True)
+                        return
+                    data = await resp.json()
+        except Exception:
+            await interaction.response.send_message("Failed to contact the API. Try again later.", ephemeral=True)
+            return
+
+        code = data["code"]
+        embed = discord.Embed(
+            title="In-Game Verification Code",
+            description=(
+                f"Your verification code is:\n\n"
+                f"# `{code}`\n\n"
+                f"**Type this code in any in-game chat** (All, Team, or Squad) within 10 minutes.\n\n"
+                f"This will verify your EOS ID: `{eos_id}`"
+            ),
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text="Code expires in 10 minutes")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

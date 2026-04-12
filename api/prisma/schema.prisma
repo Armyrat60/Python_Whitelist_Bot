@@ -367,6 +367,24 @@ model SquadPlayer {
   @@map("squad_players")
 }
 
+// ─── Verification ──────────────────────────────────────────────────────────
+
+model VerificationToken {
+  id        Int      @id @default(autoincrement())
+  guildId   BigInt   @map("guild_id")
+  discordId BigInt   @map("discord_id")
+  idType    String   @map("id_type") @db.VarChar(20)
+  idValue   String   @map("id_value") @db.VarChar(255)
+  code      String   @db.VarChar(10)
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([code])
+  @@index([guildId, idValue])
+  @@map("verification_tokens")
+}
+
 // ─── Seeding Module ─────────────────────────────────────────────────────────
 
 model SeedingConfig {
