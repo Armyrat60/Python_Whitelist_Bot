@@ -252,11 +252,11 @@ export default function UsersPage() {
         const fillRate = slotsGranted > 0 ? Math.round((statsData.total_identifiers / slotsGranted) * 100) : 0;
         return (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-sm">
-            <span><strong className="text-emerald-400 tabular-nums">{statsData.total_linked_users ?? 0}</strong> <span className="text-muted-foreground">linked</span></span>
-            <span><strong className="tabular-nums">{statsData.total_active_users}</strong> <span className="text-muted-foreground">enrolled</span></span>
-            <span><strong className="tabular-nums">{totalWithRoles}</strong> <span className="text-muted-foreground">with roles</span></span>
-            <span><strong className="tabular-nums">{slotsGranted}</strong> <span className="text-muted-foreground">slots</span></span>
-            <span><strong className="tabular-nums">{statsData.total_identifiers}</strong> <span className="text-muted-foreground">IDs</span> <span className="text-muted-foreground/50">({fillRate}%)</span></span>
+            <span title="Members who verified their Steam/EOS ID via Steam login, Discord, or in-game code" className="cursor-default"><strong className="text-emerald-400 tabular-nums">{statsData.total_linked_users ?? 0}</strong> <span className="text-muted-foreground">linked</span></span>
+            <span title="Members auto-enrolled from qualifying Discord roles" className="cursor-default"><strong className="tabular-nums">{statsData.total_active_users}</strong> <span className="text-muted-foreground">enrolled</span></span>
+            <span title="Total Discord members with at least one whitelist role" className="cursor-default"><strong className="tabular-nums">{totalWithRoles}</strong> <span className="text-muted-foreground">with roles</span></span>
+            <span title="Total whitelist slots granted across all roles" className="cursor-default"><strong className="tabular-nums">{slotsGranted}</strong> <span className="text-muted-foreground">slots</span></span>
+            <span title={`${statsData.total_identifiers} Steam/EOS IDs submitted out of ${slotsGranted} slots (${fillRate}% fill rate)`} className="cursor-default"><strong className="tabular-nums">{statsData.total_identifiers}</strong> <span className="text-muted-foreground">IDs</span> <span className="text-muted-foreground/50">({fillRate}%)</span></span>
           </div>
         );
       })()}
