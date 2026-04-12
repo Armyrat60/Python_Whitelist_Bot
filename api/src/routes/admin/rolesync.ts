@@ -459,6 +459,8 @@ export default async function roleSyncRoutes(app: FastifyInstance) {
 
     await triggerSync(app, guildId)
 
-    return reply.send({ ok: true, updated, disabled, reactivated, total: users.length })
+    // Count active users after sync (original active - disabled + reactivated)
+    const activeAfterSync = users.filter(u => u.status === "active").length - disabled + reactivated
+    return reply.send({ ok: true, updated, disabled, reactivated, total: users.length, total_active: activeAfterSync })
   })
 }
