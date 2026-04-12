@@ -100,6 +100,7 @@ class WhitelistBot(commands.Bot):
         self.weekly_report.start()
         self.daily_housekeeping.start()
         self.panel_refresh_poller.start()
+        self.scheduled_panel_refresh.start()
 
     async def on_ready(self):
         log.info("Connected as %s (%s)", self.user, self.user.id)
@@ -1319,3 +1320,28 @@ class WhitelistBot(commands.Bot):
     @panel_refresh_poller.before_loop
     async def _before_panel_poller(self):
         await self.wait_until_ready()
+
+    @tasks.loop(hours=1)
+    async def scheduled_panel_refresh(self):
+        """Refresh all panel embeds hourly to keep tier info and role names current."""
+        try:
+            for guild in self.guilds:
+                panels = await self.db.get_panels(guild.id)
+                for panel in panels:
+                    if not panel.get("enabled") or not panel.get("whitelist_id") or not panel.get("panel_message_id"):
+                        continue
+                    wl = await self.db.get_whitelist_by_id(panel["whitelist_id"])
+                    if not wl:
+                        continue
+                    try:
+                        await self.post_or_refresh_panel(None, guild.id, wl["slug"], wl_dict=wl, panel_override=panel)
+                    except Exception:
+                        log.debug("Scheduled refresh failed for panel %s in guild %s", panel["id"], guild.id)
+                    await asyncio.sleep(1)  # Rate limit: 1 panel per second
+        except Exception:
+            log.exception("[scheduled_panel_refresh] Unexpected error")
+
+    @scheduled_panel_refresh.before_loop
+    async def _before_scheduled_refresh(self):
+        await self.wait_until_ready()
+        await asyncio.sleep(300)  # Wait 5 minutes after startup before first hourly refresh
