@@ -864,6 +864,22 @@ class WhitelistBot(commands.Bot):
                     await self.db.audit(guild_id, "auto_disable_role_lost", None, member.id, f"type={wl['slug']}", whitelist_id)
                     await self.send_log_embed(guild_id, whitelist_id, "Whitelist Disabled", f"User <@{member.id}> lost required role(s).", discord.Color.orange())
                     await self.send_notification_event(guild_id, "role_lost", "⚠️ Role Lost — Whitelist Disabled", f"<@{member.id}> lost their required role and was auto-disabled from `{wl['name']}`.", discord.Color.orange())
+                    # DM the user about their deactivated whitelist
+                    try:
+                        guild = self.get_guild(guild_id)
+                        embed = discord.Embed(
+                            title="Whitelist Deactivated",
+                            description=(
+                                f"Your whitelist for **{wl['name']}** has been deactivated because "
+                                f"you no longer have the required role.\n\n"
+                                f"Your saved IDs have been retained. Re-acquire your role to reactivate."
+                            ),
+                            color=discord.Color.orange(),
+                        )
+                        embed.set_footer(text=guild.name if guild else "Squad Whitelister")
+                        await member.send(embed=embed)
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass  # DMs disabled
             else:
                 _m_name = member.nick or member.display_name or str(member)
                 _m_tag, _ = parse_clan_tag(_m_name)

@@ -262,94 +262,33 @@ export default function UsersPage() {
       })()}
 
       {/* ---- Role Tabs ---- */}
-      {(() => {
-        const MAX_VISIBLE = 6;
-        const visibleRoles = roleOptions.slice(0, MAX_VISIBLE);
-        const overflowRoles = roleOptions.slice(MAX_VISIBLE);
-        const roleCountMap = new Map<string, number>();
-        for (const r of roleStatsData?.stats ?? []) {
-          roleCountMap.set(r.role_name, (roleCountMap.get(r.role_name) ?? 0) + (r.registered_count ?? 0));
-        }
-        const [showMoreRoles, setShowMoreRoles] = [showGapReport, setShowGapReport]; // reuse state
-
-        return (
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-1">
-              <button
-                onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: "" })); }}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  activeTab === "members" && !filters.role_name
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                )}
-              >
-                <Users className="h-3.5 w-3.5" />
-                All
-              </button>
-              {visibleRoles.map(r => {
-                const count = roleCountMap.get(r.value) ?? 0;
-                return (
-                  <button
-                    key={r.value}
-                    onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
-                    className={cn(
-                      "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      activeTab === "members" && filters.role_name === r.value
-                        ? "bg-white/[0.08] text-white"
-                        : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                    )}
-                  >
-                    {r.label} {count > 0 && <span className="ml-0.5 text-muted-foreground/50">({count})</span>}
-                  </button>
-                );
-              })}
-              {overflowRoles.length > 0 && (
-                <button
-                  onClick={() => setShowMoreRoles(!showMoreRoles)}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                >
-                  +{overflowRoles.length} more
-                </button>
-              )}
-              <div className="mx-1 h-4 w-px shrink-0 bg-white/[0.10]" />
-              <button
-                onClick={() => setActiveTab("removed")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  activeTab === "removed"
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                )}
-              >
-                <UserMinus className="h-3.5 w-3.5" />
-                Removed
-              </button>
-            </div>
-            {showMoreRoles && overflowRoles.length > 0 && (
-              <div className="flex flex-wrap gap-1 pl-1">
-                {overflowRoles.map(r => {
-                  const count = roleCountMap.get(r.value) ?? 0;
-                  return (
-                    <button
-                      key={r.value}
-                      onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: r.value })); }}
-                      className={cn(
-                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                        activeTab === "members" && filters.role_name === r.value
-                          ? "bg-white/[0.08] text-white"
-                          : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                      )}
-                    >
-                      {r.label} {count > 0 && <span className="ml-0.5 text-muted-foreground/50">({count})</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* ---- Tabs: All / Removed ---- */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => { setActiveTab("members"); setFilters(f => ({ ...f, role_name: "" })); }}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            activeTab === "members"
+              ? "bg-white/[0.08] text-white"
+              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+          )}
+        >
+          <Users className="h-3.5 w-3.5" />
+          All Members
+        </button>
+        <button
+          onClick={() => setActiveTab("removed")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            activeTab === "removed"
+              ? "bg-white/[0.08] text-white"
+              : "text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
+          )}
+        >
+          <UserMinus className="h-3.5 w-3.5" />
+          Removed
+        </button>
+      </div>
 
       {activeTab === "removed" && <RoleHistoryTab whitelists={whitelists ?? []} />}
       {activeTab !== "removed" && <>
@@ -357,7 +296,7 @@ export default function UsersPage() {
       {/* ---- Toolbar ---- */}
       {(() => {
         // Count active non-default filters (role_name handled by tabs, excluded here)
-        const activeFilterKeys = ["whitelist", "status", "category_id", "verified"] as const;
+        const activeFilterKeys = ["whitelist", "status", "category_id", "role_name", "verified"] as const;
         const defaultFilters: Record<string, string> = { status: "active" };
         const activeCount = activeFilterKeys.filter(k => {
           const v = filters[k] ?? "";
@@ -493,6 +432,22 @@ export default function UsersPage() {
                       </Select>
                     </div>
                   )}
+
+                  {/* Role */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Role</label>
+                    <select
+                      value={filters.role_name ?? ""}
+                      onChange={(e) => setFilters(p => ({ ...p, role_name: e.target.value }))}
+                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      <option value="">All roles</option>
+                      {roleOptions.map(r => {
+                        const count = (roleStatsData?.stats ?? []).filter(s => s.role_name === r.value).reduce((sum, s) => sum + (s.registered_count ?? 0), 0);
+                        return <option key={r.value} value={r.value}>{r.label} ({count})</option>;
+                      })}
+                    </select>
+                  </div>
 
                   {/* Linked Status */}
                   <div className="space-y-1.5">
