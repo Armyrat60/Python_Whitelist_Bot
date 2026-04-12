@@ -426,17 +426,6 @@ export default function UsersPage() {
                   </Button>
                 </a>
 
-                {/* Gap Report */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setShowGapReport(true); document.getElementById("gap-section")?.scrollIntoView({ behavior: "smooth" }); }}
-                  title="Discord members with a whitelist role who haven't submitted any IDs yet"
-                >
-                  <Users className="mr-1.5 h-3.5 w-3.5" />
-                  Gap Report {gapData?.total ? `(${gapData.total})` : ""}
-                </Button>
-
                 <SyncTiersButton onDone={() => queryClient.invalidateQueries({ queryKey: ["users"] })} />
               </div>
             </div>
@@ -1107,49 +1096,27 @@ function UserCard({
           </span>
         </div>
 
-        {/* Slot list */}
+        {/* IDs */}
         <div className="space-y-1">
-          {Array.from({ length: slotLimit }).map((_, idx) => {
-            const id = allIds[idx];
-            const isSteam = idx < (user.steam_ids?.length ?? 0);
-            const resolvedName =
-              isSteam && id ? steamNames[id] : undefined;
-            const isOwner = idx === 0;
-            return (
-              <div
-                key={idx}
-                className="flex items-center gap-2 text-xs"
-              >
-                <span className="w-14 shrink-0 font-mono text-muted-foreground">
-                  Slot {idx + 1}:
-                </span>
-                {id ? (
-                  <>
-                    <span className="min-w-0 truncate font-mono">
-                      {id}
-                      {resolvedName && (
-                        <span className="ml-1 text-muted-foreground">
-                          ({resolvedName})
-                        </span>
-                      )}
-                    </span>
-                    {isOwner && (
-                      <Badge
-                        variant="secondary"
-                        className="ml-auto shrink-0 text-[10px]"
-                      >
-                        owner
-                      </Badge>
-                    )}
-                  </>
-                ) : (
-                  <span className="italic text-muted-foreground/50">
-                    — empty —
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          {allIds.length > 0 ? (
+            <>
+              {allIds.map((id, idx) => {
+                const isSteam = idx < (user.steam_ids?.length ?? 0);
+                const resolvedName = isSteam ? steamNames[id] : undefined;
+                return (
+                  <div key={idx} className="flex items-center gap-2 text-xs">
+                    <span className="min-w-0 truncate font-mono">{id}</span>
+                    {resolvedName && <span className="text-muted-foreground truncate">({resolvedName})</span>}
+                  </div>
+                );
+              })}
+              {slotLimit > allIds.length && (
+                <p className="text-[11px] text-muted-foreground/50">{slotLimit - allIds.length} empty slots</p>
+              )}
+            </>
+          ) : (
+            <p className="text-[11px] text-muted-foreground/50 italic">No IDs — {slotLimit} slots available</p>
+          )}
         </div>
       </CardContent>
 
